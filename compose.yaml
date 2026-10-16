@@ -1,0 +1,12 @@
+services:
+  scope:
+    build: .
+    restart: unless-stopped
+    environment:
+      HARNESS_SCOPE_TOKEN: ${HARNESS_SCOPE_TOKEN:?Set a random token of at least 24 characters}
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - scope-data:/data
+volumes:
+  scope-data:

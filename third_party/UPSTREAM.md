@@ -1,0 +1,112 @@
+# CC Switch source provenance
+
+Upstream: https://github.com/farion1231/cc-switch
+Pinned commit: e8880e6f57e25bce1bf3125cc6e33d9fb2b0d806
+License: MIT, Copyright (c) 2025 Jason Young; see CC-Switch-LICENSE.
+
+Copied frontend files (subsequently adapted for standalone data APIs, paths, pricing provenance and unknown measurements):
+
+- `postcss.config.cjs`
+- `src/components/ConfirmDialog.tsx`
+- `src/components/common/FullScreenPanel.tsx`
+- `src/components/sessions/SessionItem.tsx`
+- `src/components/sessions/reader/PathChip.tsx`
+- `src/components/sessions/reader/SessionAgentAvatar.tsx`
+- `src/components/sessions/reader/SessionCodeBlock.tsx`
+- `src/components/sessions/reader/SessionDiff.tsx`
+- `src/components/sessions/reader/SessionEventRow.tsx`
+- `src/components/sessions/reader/SessionFinalReply.tsx`
+- `src/components/sessions/reader/SessionImage.tsx`
+- `src/components/sessions/reader/SessionImageLightbox.tsx`
+- `src/components/sessions/reader/SessionMarkdown.tsx`
+- `src/components/sessions/reader/SessionNoteRow.tsx`
+- `src/components/sessions/reader/SessionOutline.tsx`
+- `src/components/sessions/reader/SessionQuestion.tsx`
+- `src/components/sessions/reader/SessionReader.tsx`
+- `src/components/sessions/reader/SessionReaderHeader.tsx`
+- `src/components/sessions/reader/SessionStep.tsx`
+- `src/components/sessions/reader/SessionStepDetails.tsx`
+- `src/components/sessions/reader/SessionThinkingRow.tsx`
+- `src/components/sessions/reader/SessionTimeline.tsx`
+- `src/components/sessions/reader/agentStyles.ts`
+- `src/components/sessions/reader/context.ts`
+- `src/components/sessions/reader/exportMarkdown.ts`
+- `src/components/sessions/reader/i18n.ts`
+- `src/components/sessions/reader/rowStyles.tsx`
+- `src/components/sessions/reader/toolSummary.ts`
+- `src/components/sessions/reader/turns.ts`
+- `src/components/sessions/utils.ts`
+- `src/components/shell/AppPageHeader.tsx`
+- `src/components/ui/accordion.tsx`
+- `src/components/ui/alert.tsx`
+- `src/components/ui/badge.tsx`
+- `src/components/ui/button.tsx`
+- `src/components/ui/card.tsx`
+- `src/components/ui/checkbox.tsx`
+- `src/components/ui/collapsible.tsx`
+- `src/components/ui/command.tsx`
+- `src/components/ui/dialog.tsx`
+- `src/components/ui/dropdown-menu.tsx`
+- `src/components/ui/form.tsx`
+- `src/components/ui/help-tip.tsx`
+- `src/components/ui/hover-tip.tsx`
+- `src/components/ui/ime-safe-input.tsx`
+- `src/components/ui/input.tsx`
+- `src/components/ui/label.tsx`
+- `src/components/ui/notice.tsx`
+- `src/components/ui/page-tabs.tsx`
+- `src/components/ui/popover.tsx`
+- `src/components/ui/scroll-area.tsx`
+- `src/components/ui/search-field.tsx`
+- `src/components/ui/segmented-control.tsx`
+- `src/components/ui/select.tsx`
+- `src/components/ui/sheet.tsx`
+- `src/components/ui/sliding-indicator.tsx`
+- `src/components/ui/sonner.tsx`
+- `src/components/ui/switch.tsx`
+- `src/components/ui/table.tsx`
+- `src/components/ui/tabs.tsx`
+- `src/components/ui/textarea.tsx`
+- `src/components/ui/toggle-row.tsx`
+- `src/components/ui/tooltip.tsx`
+- `src/components/usage/ModelStatsTable.tsx`
+- `src/components/usage/ModelsDevAutoSyncPanel.tsx`
+- `src/components/usage/ModelsDevPickerDialog.tsx`
+- `src/components/usage/PricingConfigPanel.tsx`
+- `src/components/usage/PricingEditModal.tsx`
+- `src/components/usage/ProviderStatsTable.tsx`
+- `src/components/usage/RequestDetailPanel.tsx`
+- `src/components/usage/RequestLogTable.tsx`
+- `src/components/usage/TablePagination.tsx`
+- `src/components/usage/UsageDashboard.tsx`
+- `src/components/usage/UsageDataSourcesSheet.tsx`
+- `src/components/usage/UsageDateRangePicker.tsx`
+- `src/components/usage/UsageHeatmap.tsx`
+- `src/components/usage/UsageHero.tsx`
+- `src/components/usage/UsagePage.tsx`
+- `src/components/usage/UsageTooltipCard.tsx`
+- `src/components/usage/UsageTrendChart.tsx`
+- `src/components/usage/format.ts`
+- `src/components/usage/providerLabel.ts`
+- `src/components/usage/statsColumns.tsx`
+- `src/components/usage/usageTable.ts`
+- `src/index.css`
+- `src/lib/clipboard.ts`
+- `src/lib/modelsDev.ts`
+- `src/lib/modelsDevAutoSync.ts`
+- `src/lib/modelsDevPricing.ts`
+- `src/lib/platform.ts`
+- `src/lib/toast.ts`
+- `src/lib/usageRange.ts`
+- `src/lib/utils.ts`
+- `src/types/usage.ts`
+- `src/utils/domUtils.ts`
+- `src/utils/errorUtils.ts`
+- `tailwind.config.cjs`
+- `src/i18n/locales/{zh,en}.json`
+- Session types excerpt from `src/types.ts`.
+- Built-in pricing tuples extracted from `src-tauri/src/database/schema.rs` into `crates/core/resources/builtin-pricing.json`.
+
+No routing, provider configuration or authentication code is used.
+
+Additional copied support: `src/lib/inputModality.ts`, `src/lib/unsavedChanges.ts`, `src/lib/query/usage.ts`, `src/hooks/useUsageAutoRefresh.ts`. Model-name candidate and prefix-match helpers from `src-tauri/src/services/usage_stats.rs` are adapted in `crates/core/src/pricing_match.rs` (the context marker is a local literal). The pricing panel and source sheet are replaced with standalone versions; the shell glyph wrapper uses generic Lucide icons. Copied unused `ui/form.tsx`, `ui/sonner.tsx`, and `usage/UsagePage.tsx` were removed.

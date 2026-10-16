@@ -1,0 +1,22 @@
+[workspace]
+members = ["crates/core", "crates/service", "src-tauri"]
+default-members = ["crates/core", "crates/service"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
+rust_decimal = { version = "1", features = ["serde-with-str"] }
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }

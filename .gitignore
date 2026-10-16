@@ -1,0 +1,14 @@
+node_modules/
+dist/
+target/
+src-tauri/gen/schemas/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+.env
+test-results/
+playwright-report/
+artifacts/
+output/
+.playwright-cli/
