@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useHarnessDescriptors } from "@/lib/harnessRegistry";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -53,6 +60,10 @@ import { PricingConfigPanel } from "./PricingConfigPanel";
 import { RequestDetailPanel } from "./RequestDetailPanel";
 import { UsageDataSourcesSheet } from "./UsageDataSourcesSheet";
 import { UsageDateRangePicker } from "./UsageDateRangePicker";
+import { UsageDisplaySection } from "./UsageDisplaySection";
+import { usageTable } from "./usageTable";
+import { resolveRequestLogColumns } from "./requestLogColumns";
+import { useUsageDisplay } from "@/lib/query/usageDisplay";
 import { UsageHeatmap } from "./UsageHeatmap";
 import { fmtInt, formatRelativeTime, getLocaleFromLanguage } from "./format";
 import { getUsageProviderLabel, usageProviderTitle } from "./providerLabel";
@@ -72,8 +83,8 @@ const normalizeRefreshInterval = (value: number | undefined) =>
 
 const STATUS_CODE_OPTIONS = [200, 400, 401, 429, 500] as const;
 
-type UsageTab = "logs" | "providers" | "models" | "pricing";
-const TABS: UsageTab[] = ["logs", "providers", "models", "pricing"];
+type UsageTab = "logs" | "providers" | "models" | "settings";
+const TABS: UsageTab[] = ["logs", "providers", "models", "settings"];
 
 /**
  * 手动「立即同步」的时间，离开页面再回来也还在。后端也会记下最近一次扫描（后台定时和
@@ -135,6 +146,7 @@ function MenuMeta({ children }: { children: React.ReactNode }) {
 }
 
 interface UsageDashboardProps {
+  deviceControls?: ReactNode;
   refreshIntervalMs?: number;
   onRefreshIntervalChange?: (next: number) => Promise<boolean> | boolean | void;
   sessionAutoSyncEnabled?: boolean;
@@ -153,6 +165,7 @@ interface UsageDashboardProps {
  * 用量统计全局页（v7 S6）：页头 → 筛选行 → 指标 → 趋势图 → 子页签（请求日志 / 供应商 / 模型 / 定价）。
  */
 export function UsageDashboard({
+  deviceControls,
   refreshIntervalMs: savedRefreshIntervalMs,
   onRefreshIntervalChange,
   sessionAutoSyncEnabled = true,
@@ -163,6 +176,8 @@ export function UsageDashboard({
 }: UsageDashboardProps = {}) {
   const { t, i18n } = useTranslation();
   const harnesses = useHarnessDescriptors();
+  const display = useUsageDisplay();
+  const logColumns = resolveRequestLogColumns(display.data?.requestLogColumns);
   const queryClient = useQueryClient();
   const [range, setRange] = useState<UsageRangeSelection>({
     preset: "today",
@@ -640,7 +655,7 @@ export function UsageDashboard({
     logs: t("usage.requestLogs"),
     providers: t("usage.tabs.providers"),
     models: t("usage.tabs.models"),
-    pricing: t("usage.tabs.pricing"),
+    settings: t("usage.tabs.settings"),
   };
   const statusLabel =
     statusCode == null
@@ -719,6 +734,7 @@ export function UsageDashboard({
             statusCode={statusCode}
             refreshIntervalMs={0}
             onOpenDetail={setDetailRequestId}
+            columns={logColumns}
           />
         )}
         {tab === "providers" && (
@@ -739,7 +755,31 @@ export function UsageDashboard({
             refreshIntervalMs={0}
           />
         )}
-        {tab === "pricing" && <PricingConfigPanel />}
+        {tab === "settings" && (
+          <div className="flex flex-col gap-5 pt-3">
+            {display.isError ? (
+              <p role="alert" className="text-body text-danger-text">
+                {String(display.error)}
+              </p>
+            ) : display.isLoading ? (
+              <div className={usageTable.skeleton} />
+            ) : (
+              <UsageDisplaySection
+                value={display.data}
+                onChange={display.save}
+              />
+            )}
+            <section aria-labelledby="usage-pricing-title">
+              <h3
+                id="usage-pricing-title"
+                className="m-0 text-strong font-semibold text-fg-1"
+              >
+                {t("usage.tabs.pricing")}
+              </h3>
+              <PricingConfigPanel />
+            </section>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -783,11 +823,11 @@ export function UsageDashboard({
             variant="quiet"
             size="regular"
             onClick={() => {
-              setTab("pricing");
+              setTab("settings");
               setPricingWhileEmpty(true);
             }}
           >
-            {t("usage.empty.configurePricing")}
+            {t("usage.tabs.settings")}
           </Button>
         </div>
       </div>
@@ -838,6 +878,7 @@ export function UsageDashboard({
         }
         actions={headerActions}
       />
+      {deviceControls}
       {filterRow}
       {body}
 

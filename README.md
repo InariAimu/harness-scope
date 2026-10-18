@@ -3,11 +3,14 @@
 模块化的 AI 编程工具用量统计与本机会话浏览器。React + Tauri 桌面端、Rust 核心、SQLite 存储，以及可自部署的多设备用量同步服务。
 
 详细设计见 [实现计划](docs/IMPLEMENTATION_PLAN.md)，扩展方法见 [新增 harness](docs/ADDING_A_HARNESS.md)。
+「速度」「首字」的数据来源、计算门槛与当前未知值行为见 [计时说明](docs/TIMING.md)。
 
 ## v0.1 能力
 
 * Claude Code / Codex JSONL、Codex `.jsonl.zst`；累计 Token 差分、重复扫描、Claude 分块补全和显式父会话去重。
+* OpenCode V1/V2 SQLite：只读一致性读取 `message` / `part` 和 `session_message` / `session_v2`，迁移后的同会话不重复计费，保留原生报告费用、已知零费用及推理 Token。
 * 复用 CC Switch 的统计组件、视觉 token 和会话阅读器；提供应用、用量、会话、设置四个页面。
+* 对齐 CC Switch 4.0.14 用量页设置：六种显示币种、手填汇率、侧栏今日指标、请求日志列显隐及原模型定价；显示偏好在本机持久化，原始费用仍保存 USD。
 * 本机会话搜索、项目／时间分组、正文和工具步骤、内联图片、Markdown 导出、复制恢复命令。
 * 删除已稳定至少 60 秒的会话前先采集用量；正文删除后保留历史统计。无法完成采集则取消删除。
 * 固定上游内置价表、模型匹配、models.dev 手动／自动导入，以及手动定价。费用保存来源和实际单价快照；未知与已知零费用分开。
@@ -51,6 +54,8 @@ npm run dev
 
 打开 [本机界面](http://127.0.0.1:1420)。演示只读取仓库内合成样本，显示 2 个会话、3 条用量记录、410 Tokens。关闭 models.dev 自动导入，未连接同步服务器。
 
+OpenCode 默认读取 `~/.local/share/opencode/opencode.db`，支持 `XDG_DATA_HOME` 和 `OPENCODE_DB`。在「应用」页可填写包含 `opencode.db` 的目录，或直接填写数据库绝对路径。V1 升级 V2 后优先读取新表，旧表中的相同会话只计一次。会话删除由原应用执行，界面按后端能力关闭删除入口。
+
 浏览自己的数据时，使用独立数据库启动本机服务，并在「应用」页设置日志目录。桌面端无需另外运行本机 HTTP 服务。
 
 ## 自部署同步服务器
@@ -80,6 +85,7 @@ cargo run --release -p harness-scope-service -- --db data/server.db --bind 127.0
 
 ```powershell
 npm test
+python -m unittest discover -s scripts -p "test_*.py"
 npm run build
 cargo test --workspace --locked
 cargo fmt --all --check
@@ -88,9 +94,19 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 
 测试覆盖解析、缓存语义、费用快照、重启幂等、半行补全、迁移、删除保留统计、上传重试／乱序／冲突、认证、分页镜像及服务器重建。端到端同步测试使用真实 loopback HTTP 和两个独立设备数据库。
 
+真实 CLI 对账可使用 `scripts/compare_usage.py`。脚本只读两边数据库，以会话和模型汇总，归一化输入缓存语义并用 Decimal 比较费用；差异、未知费用或没有可用参照时返回非零。OpenCode 可同时检查原生数据库，并单独标注 cc-switch 中没有记录的情况：
+
+```powershell
+python scripts/compare_usage.py --scope-db <HarnessScope数据库> --ccswitch-db <CCSwitch数据库> --harness codex --session-id <Codex会话ID> --report output/codex-comparison.json
+python scripts/compare_usage.py --scope-db <HarnessScope数据库> --ccswitch-db <CCSwitch数据库> --opencode-db <OpenCode数据库> --harness opencode --session-id <OpenCode会话ID> --report output/opencode-comparison.json
+```
+
+2026-10-17 已使用本机 Codex 和隔离安装的 OpenCode v2.0.31 发出新建／续写请求，具体对账结果见 [验证记录](docs/VALIDATION.md)。真实日志、数据库副本与详细报告均保存在已忽略的 `output/`，不提交到仓库。
+
 ## 当前边界
 
 * 首版验证范围为所附 Claude/Codex 样本及 Windows；macOS/Linux 桌面尚未实机验证。
+* OpenCode 覆盖 V1/V2 SQLite 样本和本机 v2.0.31 实际请求；早期 JSON 文件存储、分叉会话继承正文和 SQLite 附件图片未验证。未完成或损坏的助手记录会诊断并重试，暂缓该来源的完整撤销处理。
 * Codex 分页续写及未覆盖的日志版本需要补充适配；未知基线或异常字段会诊断并暂缓入账。解析器升级必须带样本回归和身份迁移策略。
 * 文件变更检测使用完整内容指纹；变更文件重解析。大规模会话目录的扫描和阅读性能仍需专项优化。
 * 会话阅读正文目前整份加载，内联图片按需加载；暂不支持外部图片文件引用和工具附件图片。

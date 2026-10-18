@@ -1,3 +1,4 @@
+import { useMoneyFormat } from "@/hooks/useMoneyFormat";
 import { Fragment, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, Loader2 } from "lucide-react";
@@ -7,7 +8,6 @@ import { useUsageFirstDate, useUsageTrends } from "@/lib/query/usage";
 import { cn } from "@/lib/utils";
 import type { UsageRangeSelection } from "@/types/usage";
 import {
-  fmtUsd,
   formatTokensShort,
   getLocaleFromLanguage,
   parseFiniteNumber,
@@ -231,6 +231,7 @@ export function UsageHeatmap({
   refreshIntervalMs,
 }: UsageHeatmapProps) {
   const { t, i18n } = useTranslation();
+  const { money } = useMoneyFormat();
   const [metric, setMetric] = useState<HeatMetric>("tokens");
   const sectionRef = useRef<HTMLElement>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
@@ -343,7 +344,7 @@ export function UsageHeatmap({
                 {t("usage.heatmap.spanSummary", {
                   tokens: formatTokensShort(span.totals.tokens, language),
                   requests: formatTokensShort(span.totals.requests, language),
-                  cost: fmtUsd(span.totals.cost, 2),
+                  cost: money(span.totals.cost, 2),
                 })}
               </span>
             </div>

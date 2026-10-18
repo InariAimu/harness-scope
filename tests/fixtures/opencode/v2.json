@@ -1,0 +1,11 @@
+{
+  "sessions": [
+    {"id":"ses_fixture","title":"Synthetic OpenCode session","directory":"/synthetic/project","created":1792112400000,"updated":1792112402000},
+    {"id":"ses_second","title":"Another synthetic session","directory":"/synthetic/other","created":1792112403000,"updated":1792112404000}
+  ],
+  "messages": [
+    {"id":"msg_user","sessionId":"ses_fixture","type":"user","data":{"text":"Synthetic prompt","time":{"created":1792112400000}}},
+    {"id":"msg_answer","sessionId":"ses_fixture","type":"assistant","data":{"model":{"id":"deepseek-flash","providerID":"deepseek"},"time":{"created":1792112401000,"completed":1792112402000},"tokens":{"input":100,"output":20,"reasoning":5,"cache":{"read":60,"write":10}},"cost":0.00012345,"finish":"stop","content":[{"type":"reasoning","text":"Synthetic reasoning"},{"type":"tool","id":"call_fixture","name":"shell","state":{"status":"completed","input":{"command":"echo synthetic"},"content":[{"type":"text","text":"synthetic"}]}},{"type":"text","text":"Synthetic answer"}]}},
+    {"id":"msg_free","sessionId":"ses_second","type":"assistant","data":{"model":{"id":"free-model","providerID":"synthetic"},"time":{"created":1792112403000,"completed":1792112404000},"tokens":{"input":30,"output":4,"reasoning":1,"cache":{"read":0,"write":0}},"cost":0,"finish":"stop","content":[{"type":"text","text":"Second synthetic answer"}]}}
+  ]
+}

@@ -86,6 +86,35 @@ impl Store {
     pub fn local_records(&self) -> Result<Vec<UsageRecord>> {
         self.read_records("SELECT payload FROM records")
     }
+    pub fn save_timing(&self, id: &str, timing: Option<&UsageTiming>) -> Result<()> {
+        let device = self.device_id()?;
+        if let Some(timing) = timing {
+            self.conn.execute("INSERT INTO record_timings(device_id,id,payload) VALUES(?1,?2,?3) ON CONFLICT(device_id,id) DO UPDATE SET payload=excluded.payload", params![device,id,serde_json::to_string(timing)?])?;
+        } else {
+            self.conn.execute(
+                "DELETE FROM record_timings WHERE device_id=?1 AND id=?2",
+                params![device, id],
+            )?;
+        }
+        Ok(())
+    }
+    pub fn timings(&self) -> Result<std::collections::BTreeMap<(String, String), UsageTiming>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT device_id,id,payload FROM record_timings")?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows.into_iter()
+            .map(|(device, id, payload)| Ok(((device, id), serde_json::from_str(&payload)?)))
+            .collect()
+    }
     fn read_records(&self, sql: &str) -> Result<Vec<UsageRecord>> {
         let mut stmt = self.conn.prepare(sql)?;
         let xs = stmt

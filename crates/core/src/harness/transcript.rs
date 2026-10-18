@@ -74,9 +74,10 @@ pub fn session(harness: &str, path: &Path, lines: &[Value]) -> Option<Session> {
         last_active_at: times.iter().max().map(|t| t * 1000),
         source_path: Some(path.to_string_lossy().into()),
         resume_command: resume,
+        can_delete: true,
     })
 }
-fn call(id: &str, name: &str, input: &Value) -> Value {
+pub(super) fn call(id: &str, name: &str, input: &Value) -> Value {
     let input_text = if let Some(s) = input.as_str() {
         s.to_owned()
     } else {
@@ -98,7 +99,7 @@ fn call(id: &str, name: &str, input: &Value) -> Value {
     };
     json!({"type":"tool_call","id":id,"rawName":name,"kind":kind,"title":name,"inputPreview":input_text,"inputTotalLen":input_text.chars().count()})
 }
-fn result(id: &str, content: &Value, error: bool) -> Value {
+pub(super) fn result(id: &str, content: &Value, error: bool) -> Value {
     let text = if content.is_string() || content.is_array() {
         files::text(content)
     } else {

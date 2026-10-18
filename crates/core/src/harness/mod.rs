@@ -1,7 +1,9 @@
 //! Adapters own formats, not persistence, pricing, networking or application state.
 pub mod claude;
 pub mod codex;
+mod codex_timing;
 pub mod files;
+pub mod opencode;
 mod transcript;
 
 use crate::model::{ParsedUsage, Session};
@@ -80,7 +82,11 @@ pub struct Registry {
 impl Default for Registry {
     fn default() -> Self {
         Self {
-            adapters: vec![Arc::new(claude::Claude), Arc::new(codex::Codex)],
+            adapters: vec![
+                Arc::new(claude::Claude),
+                Arc::new(codex::Codex),
+                Arc::new(opencode::OpenCode),
+            ],
         }
     }
 }

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
+import { getSessionKey } from "@/components/sessions/utils";
 export function SessionsPage({ onSettings }: { onSettings: () => void }) {
   const { i18n } = useTranslation();
   const l = (zh: string, en: string) =>
@@ -64,7 +65,7 @@ export function SessionsPage({ onSettings }: { onSettings: () => void }) {
         sessionId: deleting.sessionId,
         sourcePath: deleting.sourcePath,
       });
-      if (selected?.sourcePath === deleting.sourcePath) setSelected(null);
+      if (selected && getSessionKey(selected) === getSessionKey(deleting)) setSelected(null);
       setDeleting(null);
       await client.invalidateQueries();
       toast.success(
@@ -92,7 +93,7 @@ export function SessionsPage({ onSettings }: { onSettings: () => void }) {
       {selected ? (
         <SessionReader
           session={selected}
-          appName={selected.providerId === "claude" ? "Claude Code" : "Codex"}
+          appName={harnesses.find((h) => h.id === selected.providerId)?.name ?? selected.providerId}
           transcript={transcript}
           listQuery={search}
           launchTerminal={null}
@@ -186,7 +187,7 @@ export function SessionsPage({ onSettings }: { onSettings: () => void }) {
                       showAppIcon
                       showDir={group !== "project"}
                       selectionMode={selection}
-                      isChecked={checked.has(s.sourcePath || "")}
+                      isChecked={checked.has(getSessionKey(s))}
                       searchQuery={search}
                       launchTerminal={null}
                       bordered={i > 0}
@@ -196,8 +197,8 @@ export function SessionsPage({ onSettings }: { onSettings: () => void }) {
                         setChecked((old) => {
                           const next = new Set(old);
                           value
-                            ? next.add(s.sourcePath || "")
-                            : next.delete(s.sourcePath || "");
+                            ? next.add(getSessionKey(s))
+                            : next.delete(getSessionKey(s));
                           return next;
                         })
                       }

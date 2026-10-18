@@ -32,11 +32,14 @@ export interface RequestLog {
   cacheCreationCostUsd: string;
   totalCostUsd: string;
   isStreaming: boolean;
-  latencyMs: number;
+  latencyMs: number | null;
   /** 路由服务记的是精确首字；会话日志导入的是按时间戳推出来的估算值（看 dataSource） */
-  firstTokenMs?: number;
-  durationMs?: number;
-  statusCode: number;
+  firstTokenMs?: number | null;
+  durationMs?: number | null;
+  timingMethod?: "estimated";
+  timingSource?: string;
+  firstTokenSource?: string | null;
+  statusCode: number | null;
   errorMessage?: string;
   createdAt: number;
   dataSource?: string;
@@ -99,7 +102,7 @@ export interface UsageSummary {
   totalOutputTokens: number;
   totalCacheCreationTokens: number;
   totalCacheReadTokens: number;
-  successRate: number;
+  successRate: number | null;
   /** input + output + cache_creation + cache_read, all cache-normalized */
   realTotalTokens: number;
   /** cache_read / (input + cache_creation + cache_read), range 0–1 */
@@ -130,8 +133,8 @@ export interface ProviderStats {
   /** 真实消耗 Tokens（新增输入 + 输出 + 缓存写入 + 缓存命中），与指标卡同口径 */
   totalTokens: number;
   totalCost: string;
-  successRate: number;
-  avgLatencyMs: number;
+  successRate: number | null;
+  avgLatencyMs: number | null;
   /** 速度分子：有首字、输出 ≥ 100 token 的明细请求的输出之和（日汇总不计） */
   speedOutputTokens?: number;
   /** 速度分母：同一批请求的（耗时 − 首字）之和，毫秒 */
@@ -153,7 +156,7 @@ export interface ModelStats {
   totalTokens: number;
   totalCost: string;
   avgCostPerRequest: string;
-  successRate: number;
+  successRate: number | null;
   /** 速度分子分母，口径同 ProviderStats 的四个速度字段 */
   speedOutputTokens?: number;
   speedGenerationMs?: number;

@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS records(device_id TEXT NOT NULL,id TEXT NOT NULL,revision INTEGER NOT NULL,payload TEXT NOT NULL,source_path TEXT NOT NULL,PRIMARY KEY(device_id,id));
 CREATE INDEX IF NOT EXISTS records_source ON records(source_path);
+CREATE TABLE IF NOT EXISTS record_timings(device_id TEXT NOT NULL,id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(device_id,id));
 CREATE TABLE IF NOT EXISTS outbox(id TEXT PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS remote_records(device_id TEXT NOT NULL,id TEXT NOT NULL,revision INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(device_id,id));
 CREATE TABLE IF NOT EXISTS file_state(path TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,parser_version TEXT NOT NULL);

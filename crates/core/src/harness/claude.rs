@@ -85,6 +85,7 @@ impl HarnessAdapter for Claude {
                 model: m["model"].as_str().unwrap_or("unknown").into(),
                 tokens,
                 reported_cost: None,
+                timing: None,
             };
             match messages.get(&entry.id) {
                 Some(previous) if previous.tokens.output > entry.tokens.output => {}

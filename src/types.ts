@@ -8,6 +8,7 @@ export interface SessionMeta {
   lastActiveAt?: number;
   sourcePath?: string;
   resumeCommand?: string;
+  canDelete?: boolean;
 }
 
 // ─── 会话阅读页数据模型（对应 Rust session_manager/model.rs） ───
@@ -215,3 +216,11 @@ export type TranscriptChunk =
   | { type: "messages"; start: number; messages: SessionMessage[] }
   | { type: "done"; payloadBytes: number }
   | { type: "error"; message: string };
+
+/** Device-local usage presentation; persisted independently from USD facts and sync. */
+export interface UsageDisplaySettings {
+  currency?: string;
+  exchangeRates?: Record<string, number>;
+  sidebarTodayItems?: string[];
+  requestLogColumns?: Record<string, boolean>;
+}

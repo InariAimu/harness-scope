@@ -1322,6 +1322,7 @@
     "deleteEllipsis": "Delete",
     "selectSessionLabel": "Select {{title}}",
     "mcodeDeleteHint": "Delete it in MiniMax Code",
+    "nativeDeleteHint": "Delete this session in the original app",
     "groupMeta": "{{count}} sessions · {{time}}",
     "bucketToday": "Today",
     "bucketYesterday": "Yesterday",
@@ -2143,6 +2144,32 @@
     "regionLabel": "Region"
   },
   "usage": {
+    "display": {
+      "title": "Display",
+      "currency": "Currency",
+      "rate": "Exchange rate",
+      "rateHint": "Entered by hand and used only for display; costs are still recorded in USD.",
+      "rateInvalid": "Enter a number greater than 0",
+      "approxNote": "Hover a converted amount to see the USD value.",
+      "sidebarToday": "Sidebar \"Today\"",
+      "sidebarTodayItems": {
+        "cost": "Cost",
+        "tokens": "Tokens",
+        "requests": "Requests",
+        "hitRate": "Cache hit rate",
+        "none": "Hidden"
+      },
+      "sidebarTodayLimit": "Pick up to {{count}}",
+      "logColumns": "Request log columns",
+      "logColumnsSummary": "{{shown}} of {{total}} columns"
+    },
+    "logColumns": {
+      "reset": "Reset to default",
+      "cacheWrite": "Cache Write",
+      "hitRate": "Hit Rate",
+      "hitRateTip": "Cache hits {{read}} of {{total}} cacheable input",
+      "duration": "Total Time"
+    },
     "title": "Usage Statistics",
     "subtitle": "View AI model usage and cost statistics",
     "today": "24 Hours",
@@ -2410,6 +2437,7 @@
       "requestsLegend": "Requests"
     },
     "tabs": {
+      "settings": "Settings",
       "label": "Details",
       "providers": "Providers",
       "models": "Models",
@@ -2426,9 +2454,9 @@
     "speedSumHelp": "Total output tokens divided by total generation time, not an average of per-request speeds, so short requests don't skew it. Only requests through the routing service with at least 100 output tokens count. A value with ≈ is estimated from session logs (it includes the wait for the first token, and only requests with at least 200 output tokens count) and is shown only when the row has no routed data.",
     "firstToken": "First token",
     "firstTokenHelpTitle": "First-token time",
-    "firstTokenHelp": "Time from the routing service receiving the request to the upstream starting its output. A value with ≈ is derived from session-log timestamps when routing is off: it starts from when the previous log line was written, so it includes the client's own request preparation and reads high. Claude Code only yields one when the reply starts with thinking; Codex only with newer logs, and not when the reply opens with a tool call.",
+    "firstTokenHelp": "First token means the earliest model output, including reasoning, rather than the first character of the final visible answer. Values marked ≈ are log timestamp estimates: Codex uses the earliest model output item started_at_ms; OpenCode uses text / reasoning content creation time. Client overhead is included, and content creation may follow the first chunk. Missing timestamps display —.",
     "firstTokenSumHelpTitle": "How first-token time is calculated",
-    "firstTokenSumHelp": "Time from the routing service receiving a request to the upstream starting its output. The row shows the median across its requests, so an occasional slow request (queueing, cold start) doesn't pull it up. Only successful streaming requests through the routing service count; requests older than 30 days, already folded into daily rollups, don't. A value with ≈ is derived from session logs (it reads high, and only some requests yield one) and is shown only when the row has no routed data.",
+    "firstTokenSumHelp": "Values marked ≈ are the median of valid log first-token samples within the selected date, device, app and model filters. For an even sample count, the middle two values are averaged. Requests without valid timestamps are excluded rather than counted as zero.",
     "timingTip": "Duration {{duration}}s · first token {{ttft}}s",
     "estimatedTimingTip": "About {{duration}}s (estimated from session-log timestamps, including the wait for the first token)",
     "estimatedTimingTipWithFirstToken": "About {{duration}}s · first token about {{ttft}}s (estimated from session-log timestamps)",
@@ -4076,6 +4104,9 @@
     "refresh": "Refresh"
   },
   "nav": {
+    "todayHitRate": "Hit {{value}}",
+    "todayRequests": "{{value}} req",
+    "today": "Today {{value}}",
     "mainLabel": "Main navigation",
     "skipToContent": "Skip to main content",
     "expandSidebar": "Expand sidebar",
@@ -4821,6 +4852,21 @@
       "loading": "Checking quota…",
       "refresh": "Refresh quota",
       "refreshAria": "Refresh quota for {{login}}"
+    }
+  },
+  "scope": {
+    "timingMethod": "Timing method",
+    "logTimingEstimate": "≈ Log timestamp estimate (includes client overhead)",
+    "durationSource": "Duration basis",
+    "firstTokenSource": "First token basis",
+    "timingSources": {
+      "codex_token_usage_record": "Codex request boundary → token_usage_record",
+      "codex_model_output_before_tool": "Codex request boundary → last output before tools",
+      "codex_token_count": "Codex request boundary → token_count",
+      "codex_item_started_at_ms": "Earliest model output item started_at_ms",
+      "opencode_time_streamed": "time.created → time.streamed (stream end)",
+      "opencode_time_completed": "time.created → time.completed (may include tools)",
+      "opencode_content_start": "Earliest text / reasoning content creation (may follow first chunk)"
     }
   }
 }

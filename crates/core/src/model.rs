@@ -93,6 +93,41 @@ pub struct ParsedUsage {
     pub model: String,
     pub tokens: Tokens,
     pub reported_cost: Option<String>,
+    pub timing: Option<UsageTiming>,
+}
+
+/// Local log estimates, deliberately separate from the v1 usage sync allowlist.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageTiming {
+    pub duration_ms: i64,
+    pub first_token_ms: Option<i64>,
+    pub duration_source: String,
+    pub first_token_source: Option<String>,
+}
+impl UsageTiming {
+    pub fn estimate(
+        start: i64,
+        end: i64,
+        first: Option<i64>,
+        source: &str,
+        first_source: &str,
+    ) -> Option<Self> {
+        let duration_ms = end.checked_sub(start)?;
+        // Same plausibility window as CC Switch's Codex log estimates.
+        if start <= 0 || !(100..=3_600_000).contains(&duration_ms) {
+            return None;
+        }
+        let first_token_ms = first
+            .and_then(|t| t.checked_sub(start))
+            .filter(|t| (0..=duration_ms).contains(t));
+        Some(Self {
+            duration_ms,
+            first_token_ms,
+            duration_source: source.into(),
+            first_token_source: first_token_ms.map(|_| first_source.into()),
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,6 +137,66 @@ pub struct Source {
     pub harness: String,
     pub root: String,
     pub enabled: bool,
+}
+
+/// Device-local display preferences. Amounts in facts and sync remain USD.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UsageDisplaySettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exchange_rates: Option<std::collections::BTreeMap<String, f64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sidebar_today_items: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_log_columns: Option<std::collections::BTreeMap<String, bool>>,
+}
+impl UsageDisplaySettings {
+    pub fn apply(&mut self, patch: Self) -> anyhow::Result<()> {
+        const CURRENCIES: &[&str] = &["USD", "CNY", "EUR", "JPY", "TWD", "TRY"];
+        if let Some(currency) = patch.currency {
+            anyhow::ensure!(
+                CURRENCIES.contains(&currency.as_str()),
+                "Unsupported display currency"
+            );
+            self.currency = Some(currency);
+        }
+        if let Some(rates) = patch.exchange_rates {
+            for (currency, rate) in &rates {
+                anyhow::ensure!(
+                    CURRENCIES.contains(&currency.as_str())
+                        && currency != "USD"
+                        && rate.is_finite()
+                        && *rate > 0.,
+                    "Invalid display exchange rate"
+                );
+            }
+            self.exchange_rates
+                .get_or_insert_with(Default::default)
+                .extend(rates);
+        }
+        if let Some(items) = patch.sidebar_today_items {
+            let unique: std::collections::HashSet<_> = items.iter().collect();
+            anyhow::ensure!(
+                items.len() <= 2
+                    && unique.len() == items.len()
+                    && items
+                        .iter()
+                        .all(|s| ["cost", "tokens", "requests", "hitRate"].contains(&s.as_str())),
+                "Choose up to two distinct sidebar metrics"
+            );
+            self.sidebar_today_items = Some(items);
+        }
+        if let Some(columns) = patch.request_log_columns {
+            anyhow::ensure!(
+                columns.len() <= 64 && columns.get("time") != Some(&false),
+                "The request time column must stay visible"
+            );
+            self.request_log_columns = Some(columns);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,6 +246,8 @@ pub struct Session {
     pub last_active_at: Option<i64>,
     pub source_path: Option<String>,
     pub resume_command: Option<String>,
+    #[serde(default)]
+    pub can_delete: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

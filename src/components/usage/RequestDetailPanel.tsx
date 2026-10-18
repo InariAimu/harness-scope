@@ -1,3 +1,4 @@
+import { useMoneyFormat } from "@/hooks/useMoneyFormat";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -82,13 +83,10 @@ function DetailSection({ title, rows }: { title: string; rows: DetailRow[] }) {
   );
 }
 
-const usd = (value: string) => {
-  const num = parseFiniteNumber(value);
-  return num == null ? "--" : `$${num.toFixed(4)}`;
-};
-
 function useDetailSections(request: RequestLog) {
   const { t, i18n } = useTranslation();
+  const { money, moneyTitle } = useMoneyFormat();
+  const usd = (value: string) => money(value, 4);
   const locale = getLocaleFromLanguage(getResolvedLang(i18n));
   const freshInput = getFreshInputTokens(request);
   const isCacheInclusive = request.inputTokens !== freshInput;
@@ -220,9 +218,7 @@ function useDetailSections(request: RequestLog) {
     value: unpriced ? t("usage.unpriced") : usd(request.totalCostUsd),
     strong: !unpriced,
     muted: unpriced,
-    title: unpriced
-      ? undefined
-      : `$${parseFiniteNumber(request.totalCostUsd)?.toFixed(6) ?? "--"}`,
+    title: unpriced ? undefined : moneyTitle(request.totalCostUsd, 6),
   });
 
   let performance: DetailRow[];
@@ -316,12 +312,32 @@ function useDetailSections(request: RequestLog) {
     }
   }
 
+  if (request.timingMethod === "estimated") {
+    performance.push({
+      key: "timing-method",
+      label: t("scope.timingMethod"),
+      value: t("scope.logTimingEstimate"),
+    });
+    for (const [key, source, label] of [
+      ["duration-source", request.timingSource, "scope.durationSource"],
+      ["first-source", request.firstTokenSource, "scope.firstTokenSource"],
+    ] as const) {
+      if (source)
+        performance.push({
+          key,
+          label: t(label),
+          value: t(`scope.timingSources.${source}`, { defaultValue: source }),
+        });
+    }
+  }
+
   return { basic, tokens, cost, performance };
 }
 
 function RequestDetailBody({ request }: { request: RequestLog }) {
   const { t } = useTranslation();
   const sections = useDetailSections(request);
+  const { currency } = useMoneyFormat();
   return (
     <div className="flex flex-col gap-4">
       <DetailSection title={t("usage.basicInfo")} rows={sections.basic} />
@@ -329,7 +345,10 @@ function RequestDetailBody({ request }: { request: RequestLog }) {
         title={t("usage.detail.tokensTitle")}
         rows={sections.tokens}
       />
-      <DetailSection title={t("usage.detail.costTitle")} rows={sections.cost} />
+      <DetailSection
+        title={t("usage.detail.costTitle").replace("USD", currency)}
+        rows={sections.cost}
+      />
       <DetailSection
         title={t("scope.costProvenance", "费用来源")}
         rows={[

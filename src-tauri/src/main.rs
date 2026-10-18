@@ -23,6 +23,13 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            #[cfg(target_os = "windows")]
+            if let Some(window) = app.get_webview_window("main") {
+                window.set_decorations(false)?;
+                // Config dimensions are logical; request physical client pixels at local DPI.
+                window.set_size(tauri::PhysicalSize::new(1500, 1000))?;
+                window.center()?;
+            }
             let root = app.path().app_data_dir()?;
             std::fs::create_dir_all(&root)?;
             let engine = Arc::new(Engine::open(&root.join("harness-scope.db"))?);

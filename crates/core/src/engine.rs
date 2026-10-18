@@ -106,6 +106,20 @@ impl Engine {
                 &args,
             ),
             "last_scan" => Ok(json!(self.lock()?.meta::<i64>("last_scan_at")?)),
+            "usage_display" => Ok(json!(self
+                .lock()?
+                .meta::<UsageDisplaySettings>("usage_display")?
+                .unwrap_or_default())),
+            "save_usage_display" => {
+                let patch: UsageDisplaySettings = serde_json::from_value(args["patch"].clone())?;
+                let s = self.lock()?;
+                let mut display = s
+                    .meta::<UsageDisplaySettings>("usage_display")?
+                    .unwrap_or_default();
+                display.apply(patch)?;
+                s.set_meta("usage_display", &display)?;
+                Ok(json!(display))
+            }
             "prices" => Ok(json!(self.lock()?.prices()?)),
             "save_prices" => self.save_prices(args),
             "delete_price" => {
@@ -374,12 +388,8 @@ impl Engine {
                 for parsed in result.usage{
                     if parsed.occurred_at<cutoff{continue}
                     active.insert(parsed.id.clone());let old=s.record(&parsed.id)?;
-                    let cost=if let Some(old)=&old{
-                        if old.tokens==parsed.tokens&&old.model==parsed.model&&old.cost.amount_usd.is_some(){old.cost.clone()}
-                        else if let Some(price)=old.cost.snapshot.as_ref().filter(|_|old.model==parsed.model){pricing::estimate(&parsed.tokens,price)?}
-                        else if let Some(price)=pricing::find(&prices,&parsed.model){pricing::estimate(&parsed.tokens,price)?}else{Cost::default()}
-                    }else if let Some(amount)=parsed.reported_cost{Cost{amount_usd:Some(amount),method:"reported".into(),..Default::default()}}
-                    else if let Some(price)=pricing::find(&prices,&parsed.model){pricing::estimate(&parsed.tokens,price)?}else{Cost::default()};
+                    let cost=pricing::resolve(&parsed,old.as_ref(),&prices)?;
+                    s.save_timing(&parsed.id, parsed.timing.as_ref())?;
                     let r=UsageRecord{device_id:device.clone(),id:parsed.id,harness:harness.clone(),parser_version:descriptor.parser_version.into(),session_id:Some(parsed.session_id),native_event_id:Some(parsed.native_event_id),occurred_at:parsed.occurred_at,model:parsed.model,grain:"event".into(),count:1,tokens:parsed.tokens,cost,record_source:"session".into(),revision:1,deleted:false,status_code:None,legacy_date:None,legacy_timezone:None};
                     sync::validate_record(&r)?;
                     if s.upsert(r,&key)?{if old.is_some(){report.updated+=1}else{report.imported+=1}}else{report.skipped+=1}
@@ -454,7 +464,12 @@ impl Engine {
                     continue;
                 }
                 if let Ok((lines, _, _, _)) = adapter.read_source(&path) {
-                    sessions.extend(adapter.sessions(&path, &lines));
+                    sessions.extend(adapter.sessions(&path, &lines).into_iter().map(
+                        |mut session| {
+                            session.can_delete = adapter.descriptor().delete;
+                            session
+                        },
+                    ));
                 }
             }
         }
@@ -492,6 +507,7 @@ impl Engine {
         let adapter = self
             .registry
             .get(args["providerId"].as_str().unwrap_or(""))?;
+        anyhow::ensure!(adapter.descriptor().delete, "This harness does not support reliable deletion; delete sessions in the original application");
         let (lines, hash_before, errors, complete) = adapter.read_source(&path)?;
         anyhow::ensure!(
             complete && errors.is_empty(),

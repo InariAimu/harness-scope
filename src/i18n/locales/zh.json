@@ -1322,6 +1322,7 @@
     "deleteEllipsis": "删除",
     "selectSessionLabel": "选择 {{title}}",
     "mcodeDeleteHint": "请在 MiniMax Code 中删除",
+    "nativeDeleteHint": "请在原应用中删除此会话",
     "groupMeta": "{{count}} 个会话 · {{time}}",
     "bucketToday": "今天",
     "bucketYesterday": "昨天",
@@ -2144,6 +2145,32 @@
     "regionLabel": "地区"
   },
   "usage": {
+    "display": {
+      "title": "显示",
+      "currency": "币种",
+      "rate": "汇率",
+      "rateHint": "手动填写，只用于换算显示；费用仍按美元记录。",
+      "rateInvalid": "请输入大于 0 的数字",
+      "approxNote": "换算后的金额悬停可看美元原值。",
+      "sidebarToday": "侧栏「今日」",
+      "sidebarTodayItems": {
+        "cost": "金额",
+        "tokens": "Token",
+        "requests": "请求数",
+        "hitRate": "缓存命中率",
+        "none": "不显示"
+      },
+      "sidebarTodayLimit": "最多选 {{count}} 项",
+      "logColumns": "请求日志的列",
+      "logColumnsSummary": "{{shown}} / {{total}} 列"
+    },
+    "logColumns": {
+      "reset": "恢复默认",
+      "cacheWrite": "缓存写入",
+      "hitRate": "命中率",
+      "hitRateTip": "缓存命中 {{read}} / 可缓存输入 {{total}}",
+      "duration": "总耗时"
+    },
     "title": "使用统计",
     "subtitle": "查看 AI 模型的使用情况和成本统计",
     "today": "24小时",
@@ -2411,6 +2438,7 @@
       "requestsLegend": "请求数"
     },
     "tabs": {
+      "settings": "设置",
       "label": "明细",
       "providers": "供应商",
       "models": "模型",
@@ -2427,9 +2455,9 @@
     "speedSumHelp": "输出 token 总数除以生成时间总和，不是逐条平均，免得短请求把数字带歪。只算经路由服务、输出不少于 100 token 的请求。带 ≈ 的是按会话日志估算的（含首字等待，只估输出不少于 200 token 的请求），这一行没有路由数据时才显示。",
     "firstToken": "首字",
     "firstTokenHelpTitle": "首字时间",
-    "firstTokenHelp": "从路由服务收到请求，到上游开始输出的时间。带 ≈ 的是没开路由时按会话日志的时间戳推出来的：起点是上一条日志写盘的时刻，含客户端组装请求的时间，所以偏高；Claude Code 只有回复以思考开头时推得出，Codex 只有新版日志、而且回复不是一开头就调工具时推得出。",
+    "firstTokenHelp": "首字指模型最早输出（包含推理），不是最终可见答案的首字。带 ≈ 的是按会话日志时间戳估算：Codex 使用最早模型输出项 started_at_ms，OpenCode 使用 text / reasoning 内容创建时间。包含客户端开销，内容创建也可能晚于首个片段；缺少有效时间戳时显示 —。",
     "firstTokenSumHelpTitle": "首字时间怎么算",
-    "firstTokenSumHelp": "从路由服务收到请求，到上游开始输出的时间。取这一行所有请求的中位数，不会被个别排队、冷启动的慢请求拉高。只算经路由服务、成功的流式请求；超过 30 天、已并入日汇总的请求不计。带 ≈ 的是按会话日志推出来的（偏高，只有部分请求推得出），这一行没有路由数据时才显示。",
+    "firstTokenSumHelp": "带 ≈ 的是当前日期、设备、应用和模型筛选下，有有效首字时间戳的日志样本中位数；偶数样本取中间两项均值。缺少时间戳的请求不计入，也不填成 0。",
     "timingTip": "耗时 {{duration}}s · 首字 {{ttft}}s",
     "estimatedTimingTip": "耗时约 {{duration}}s（按会话日志的时间戳估算，含首字等待）",
     "estimatedTimingTipWithFirstToken": "耗时约 {{duration}}s · 首字约 {{ttft}}s（按会话日志的时间戳估算）",
@@ -4077,6 +4105,9 @@
     "refresh": "刷新"
   },
   "nav": {
+    "todayHitRate": "命中 {{value}}",
+    "todayRequests": "{{value}} 次",
+    "today": "今日 {{value}}",
     "mainLabel": "主导航",
     "skipToContent": "跳到主要内容",
     "expandSidebar": "展开侧栏",
@@ -4822,6 +4853,21 @@
       "loading": "正在查询额度…",
       "refresh": "刷新额度",
       "refreshAria": "刷新 {{login}} 的额度"
+    }
+  },
+  "scope": {
+    "timingMethod": "计时方式",
+    "logTimingEstimate": "≈ 日志时间戳估算（包含客户端开销）",
+    "durationSource": "耗时依据",
+    "firstTokenSource": "首字依据",
+    "timingSources": {
+      "codex_token_usage_record": "Codex 请求边界 → token_usage_record",
+      "codex_model_output_before_tool": "Codex 请求边界 → 工具执行前最后输出",
+      "codex_token_count": "Codex 请求边界 → token_count",
+      "codex_item_started_at_ms": "最早模型输出项 started_at_ms",
+      "opencode_time_streamed": "time.created → time.streamed（流结束）",
+      "opencode_time_completed": "time.created → time.completed（可能包含工具执行）",
+      "opencode_content_start": "最早 text / reasoning 内容创建时间（可能晚于首个片段）"
     }
   }
 }

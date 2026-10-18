@@ -1,4 +1,4 @@
-use crate::model::{Cost, Price, Tokens};
+use crate::model::{Cost, ParsedUsage, Price, Tokens, UsageRecord};
 use anyhow::Result;
 use rust_decimal::Decimal;
 use std::str::FromStr;
@@ -6,6 +6,36 @@ use std::str::FromStr;
 pub fn builtin() -> Vec<Price> {
     serde_json::from_str(include_str!("../resources/builtin-pricing.json"))
         .expect("vendored prices")
+}
+/// Freeze estimates until usage changes; native reported amounts remain authoritative.
+pub fn resolve(parsed: &ParsedUsage, old: Option<&UsageRecord>, prices: &[Price]) -> Result<Cost> {
+    if let Some(old) = old {
+        if old.tokens == parsed.tokens
+            && old.model == parsed.model
+            && old.cost.amount_usd.is_some()
+            && !(old.cost.method == "reported"
+                && parsed.reported_cost.is_some()
+                && old.cost.amount_usd != parsed.reported_cost)
+        {
+            return Ok(old.cost.clone());
+        }
+    }
+    if let Some(amount) = &parsed.reported_cost {
+        return Ok(Cost {
+            amount_usd: Some(amount.clone()),
+            method: "reported".into(),
+            ..Default::default()
+        });
+    }
+    if let Some(price) = old
+        .filter(|old| old.model == parsed.model)
+        .and_then(|old| old.cost.snapshot.as_ref())
+    {
+        return estimate(&parsed.tokens, price);
+    }
+    find(prices, &parsed.model)
+        .map(|price| estimate(&parsed.tokens, price))
+        .unwrap_or_else(|| Ok(Cost::default()))
 }
 pub fn validate(price: &Price) -> Result<()> {
     anyhow::ensure!(!price.model_id.trim().is_empty(), "Empty pricing model");

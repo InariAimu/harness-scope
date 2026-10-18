@@ -209,6 +209,16 @@ P0–P4 的首版范围已实现：两个原生适配器、四个页面、内置
 
 价格数值和匹配／导入规则参考固定上游；对费用记录增加明确的 null 与来源信息，因此缺价回填只处理 unknown，而不会覆盖已知免费零值。时间范围控件沿用系统本地时间，分组时区独立配置；跨时区控件统一与 Codex 分页续写需要后续专项验证。
 
+### 8.2 2026-10-17 增量实现
+
+新增 OpenCode SQLite 适配器，并遵守第 2.1 节的独立扩展合约。V1 从 `message` / `part` 读取，V2 从 `session_message` / `session_v2` 读取；新旧表并存时优先已迁移的 V2 会话。读取在只读 SQLite 事务中完成，支持 WAL；源数据库不执行迁移、不写入。
+
+OpenCode 的输入已排除缓存，原生输出不含推理，因此归一化 output 为 output + reasoning。只对已完成助手消息入账，不再累计 step-finish 的同一组计数。事件身份固定为 `opencode:<sessionId>:<messageId>`，V1→V2 迁移保持原 ID。已报告费用使用 reported，包括已知零；原生修正产生修订，估算仍使用冻结快照。
+
+会话删除能力由后端随列表提供，OpenCode 关闭删除入口。会话选择使用 harness、sessionId 和 sourcePath 的完整身份，支持同一 SQLite 文件中的多个会话。Codex 解析器升级为 `codex-v2`，兼容 `cache_write_input_tokens`，沿用原事件身份，已有记录按修订更新。
+
+补充合成 V1/V2、纯 V2、WAL、迁移去重、未完成／损坏消息、费用修订与新 Codex 字段回归。增加只读对账脚本，以真实 CLI 新建和续写请求验证；具体检查与边界见 [VALIDATION.md](VALIDATION.md)。OpenCode 分叉继承正文、附件图片与其他数据库版本仍需专项适配。
+
 ## 9. 上游与维护
 
 复制代码保存原版权声明及 MIT 许可证，并在 third_party 记录提交、文件和改动。上游 UI、会话和计价更新分别审查；自行维护的用量读取器不需要合并整个 CC Switch 后端。
@@ -218,3 +228,7 @@ P0–P4 的首版范围已实现：两个原生适配器、四个页面、内置
 * https://github.com/farion1231/cc-switch/tree/e8880e6f57e25bce1bf3125cc6e33d9fb2b0d806
 * https://v2.tauri.app/start/frontend/vite/
 * https://www.sqlite.org/backup.html
+
+### 2026-10-18 用量页设置
+
+参照 cc-switch v4.0.14 / c1caee80，将原定价页签合并到设置，新增币种与手填汇率、侧栏今日最多两项和请求日志列显隐。使用本机 meta.usage_display 保存设备级偏好，不进入用量同步协议。金额在显示时换算，定价输入和用量事实继续使用 USD。侧栏今日按配置时区和本机数据计算，独立于页面筛选；请求时间列固定可见，其余 13 列可选并可恢复默认。

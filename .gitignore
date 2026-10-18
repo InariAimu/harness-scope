@@ -12,3 +12,5 @@ playwright-report/
 artifacts/
 output/
 .playwright-cli/
+__pycache__/
+*.py[cod]

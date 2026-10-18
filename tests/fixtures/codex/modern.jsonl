@@ -1,0 +1,4 @@
+{"timestamp":"2026-10-17T01:00:00Z","type":"session_meta","payload":{"id":"codex-modern","cwd":"/synthetic/project"}}
+{"timestamp":"2026-10-17T01:00:00Z","type":"turn_context","payload":{"model":"gpt-6.1-sol"}}
+{"timestamp":"2026-10-17T01:00:01Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":120,"cached_input_tokens":30,"cache_write_input_tokens":10,"output_tokens":20,"reasoning_output_tokens":5,"total_tokens":140},"last_token_usage":{"input_tokens":120,"cached_input_tokens":30,"cache_write_input_tokens":10,"output_tokens":20,"reasoning_output_tokens":5,"total_tokens":140}}}}
+{"timestamp":"2026-10-17T01:00:01Z","type":"token_usage_record","payload":{"thread_id":"codex-modern","response_id":"resp_synthetic","usage":{"input_tokens":120,"cached_input_tokens":30,"cache_write_input_tokens":10,"output_tokens":20,"reasoning_output_tokens":5,"total_tokens":140}}}

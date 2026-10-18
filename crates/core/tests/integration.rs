@@ -99,6 +99,51 @@ fn missing_codex_parent_is_deferred() {
     assert!(!r.diagnostics.is_empty());
 }
 #[test]
+fn modern_codex_cache_write_alias_preserves_identity_and_paired_usage_is_not_duplicated() {
+    let fixture = include_str!("../../../tests/fixtures/codex/modern.jsonl");
+    let parsed = Codex
+        .parse(
+            Path::new("modern.jsonl"),
+            &values(fixture),
+            &TimelineIndex::new(),
+        )
+        .unwrap();
+    assert!(parsed.complete);
+    assert_eq!(parsed.usage.len(), 1);
+    let usage = &parsed.usage[0];
+    assert_eq!(usage.id, "codex:codex-modern:token:1");
+    assert_eq!(
+        (
+            usage.tokens.input,
+            usage.tokens.cache_read,
+            usage.tokens.cache_write,
+            usage.tokens.output
+        ),
+        (80, 30, 10, 20)
+    );
+    assert_eq!(usage.tokens.total(), 140);
+    assert_eq!(usage.tokens.reasoning, 5);
+}
+
+#[test]
+fn session_queries_do_not_fabricate_http_timing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("logs");
+    fs::create_dir(&root).unwrap();
+    fs::write(root.join("session.jsonl"), CODEX).unwrap();
+    let e = configured_engine(tmp.path(), &root, "codex");
+    e.scan(false).unwrap();
+    let logs = e.execute("usage_query", json!({"kind":"logs"})).unwrap();
+    assert_eq!(logs["total"], 2);
+    for row in logs["data"].as_array().unwrap() {
+        assert_eq!(row["timingMethod"], "estimated");
+        assert!(row["latencyMs"].as_i64().is_some_and(|ms| ms > 0));
+        assert!(row["firstTokenMs"].is_null());
+        assert_eq!(row["durationMs"], row["latencyMs"]);
+        assert_eq!(row["isStreaming"], false);
+    }
+}
+#[test]
 fn fork_history_is_skipped_and_new_usage_is_counted() {
     let parent = values(CODEX);
     let mut child = parent.clone();
@@ -494,6 +539,7 @@ fn a_new_sqlite_harness_needs_no_storage_or_protocol_changes() {
                             ..Default::default()
                         },
                         reported_cost: None,
+                        timing: None,
                     })
                     .collect(),
             })
@@ -514,6 +560,7 @@ fn a_new_sqlite_harness_needs_no_storage_or_protocol_changes() {
                     last_active_at: None,
                     source_path: Some(path.to_string_lossy().into()),
                     resume_command: None,
+                    can_delete: false,
                 })
                 .collect()
         }

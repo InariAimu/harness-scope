@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/lib/toast";
+import { AppGlyph } from "@/components/shell/AppGlyph";
 export function ApplicationsPage({
   snapshot,
   onChanged,
@@ -58,12 +59,21 @@ export function ApplicationsPage({
         {snapshot.harnesses.map((h) => (
           <section key={h.id} className="scope-card">
             <div className="flex items-center gap-3">
-              <div className="scope-app-icon">{h.name.slice(0, 1)}</div>
+              <div className="scope-app-icon">
+                <AppGlyph app={h.id} size={24} badgeClassName="bg-surface" />
+              </div>
               <div>
                 <h2 className="font-semibold">{h.name}</h2>
                 <p className="text-caption text-fg-3">
                   {h.parserVersion} ·{" "}
-                  {l("用量采集 / 本机会话", "Usage / local sessions")}
+                  {[
+                    h.usage && l("用量采集", "Usage"),
+                    h.transcript && l("本机会话", "Local sessions"),
+                  ]
+                    .filter(Boolean)
+                    .join(" / ")}
+                  {!h.delete &&
+                    ` · ${l("请在原应用中删除会话", "Delete sessions in the original app")}`}
                 </p>
               </div>
               <span className="flex-1" />
@@ -107,7 +117,8 @@ export function ApplicationsPage({
                       }
                     />
                     <Input
-                      aria-label={`${h.name} ${l("日志目录", "log directory")}`}
+                      aria-label={`${h.name} ${l("日志目录或数据库", "log directory or database")}`}
+                      placeholder={h.defaultRoots[0] || ""}
                       value={s.root}
                       onChange={(e) =>
                         setConfig((c) => ({

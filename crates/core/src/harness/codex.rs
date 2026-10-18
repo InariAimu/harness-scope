@@ -23,7 +23,9 @@ fn counts(v: &Value) -> [u64; 5] {
         files::number(v, "input_tokens"),
         files::number(v, "output_tokens"),
         files::number(v, "cached_input_tokens"),
-        files::number(v, "cache_creation_input_tokens"),
+        v.get("cache_write_input_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or_else(|| files::number(v, "cache_creation_input_tokens")),
         files::number(v, "reasoning_output_tokens"),
     ]
 }
@@ -56,7 +58,7 @@ impl HarnessAdapter for Codex {
         Descriptor {
             id: "codex",
             name: "Codex",
-            parser_version: "codex-v1",
+            parser_version: "codex-v3-timing",
             default_roots: vec![
                 home.join("sessions").to_string_lossy().into(),
                 home.join("archived_sessions").to_string_lossy().into(),
@@ -108,7 +110,9 @@ impl HarnessAdapter for Codex {
         let mut model = "unknown".to_owned();
         let mut seen = HashSet::new();
         let mut ordinal = 0;
+        let mut timer = super::codex_timing::RequestTimer::default();
         for v in lines {
+            timer.observe(v);
             if v["type"] == "turn_context" || v["type"] == "session_meta" {
                 if let Some(m) = v["payload"]["model"].as_str() {
                     model = m.into()
@@ -198,6 +202,7 @@ impl HarnessAdapter for Codex {
                 model: model.clone(),
                 tokens,
                 reported_cost: None,
+                timing: timer.finish(v, delta),
             });
         }
         Ok(out)

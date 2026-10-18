@@ -1,3 +1,4 @@
+import { useMoneyFormat } from "@/hooks/useMoneyFormat";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown } from "lucide-react";
@@ -7,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   fmtInt,
-  fmtUsd,
   formatTokensCompact,
   getLocaleFromLanguage,
   getResolvedLang,
@@ -41,6 +41,7 @@ interface UsageHeroProps {
 export function aggregateSummaries(items: UsageSummary[]): UsageSummary {
   let totalRequests = 0;
   let successCount = 0;
+  let knownStatusCount = 0;
   let totalCostNum = 0;
   let input = 0;
   let output = 0;
@@ -49,7 +50,11 @@ export function aggregateSummaries(items: UsageSummary[]): UsageSummary {
 
   for (const s of items) {
     totalRequests += s.totalRequests;
-    successCount += Math.round((s.totalRequests * s.successRate) / 100);
+    if (s.successRate != null) {
+      const known = s.knownStatusCount ?? s.totalRequests;
+      knownStatusCount += known;
+      successCount += Math.round((known * s.successRate) / 100);
+    }
     totalCostNum += parseFiniteNumber(s.totalCost) ?? 0;
     input += s.totalInputTokens;
     output += s.totalOutputTokens;
@@ -66,7 +71,9 @@ export function aggregateSummaries(items: UsageSummary[]): UsageSummary {
     totalOutputTokens: output,
     totalCacheCreationTokens: cacheCreation,
     totalCacheReadTokens: cacheRead,
-    successRate: totalRequests > 0 ? (successCount / totalRequests) * 100 : 0,
+    knownStatusCount,
+    successRate:
+      knownStatusCount > 0 ? (successCount / knownStatusCount) * 100 : null,
     realTotalTokens: input + output + cacheCreation + cacheRead,
     cacheHitRate: cacheableInput > 0 ? cacheRead / cacheableInput : 0,
   };
@@ -159,6 +166,7 @@ export function UsageHero({
   compact = false,
 }: UsageHeroProps) {
   const { t, i18n } = useTranslation();
+  const { money, moneyTitle } = useMoneyFormat();
   const locale = getLocaleFromLanguage(getResolvedLang(i18n));
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -220,9 +228,9 @@ export function UsageHero({
                   : t("usage.totalCost")
               }
               value={
-                placeholder ?? (totalCost == null ? "--" : fmtUsd(totalCost, 2))
+                placeholder ?? (totalCost == null ? "--" : money(totalCost, 2))
               }
-              title={totalCost == null ? undefined : fmtUsd(totalCost, 6)}
+              title={totalCost == null ? undefined : moneyTitle(totalCost, 6)}
             />
             <MetricCard
               label={t("usage.totalRequests")}

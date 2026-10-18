@@ -1,3 +1,4 @@
+import { useMoneyFormat } from "@/hooks/useMoneyFormat";
 import { memo, type ReactNode, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -39,7 +40,6 @@ import { cn } from "@/lib/utils";
 import type { SessionMeta, TurnIndex } from "@/types";
 import {
   fmtInt,
-  fmtUsd,
   formatTokensCompact,
   getLocaleFromLanguage,
   getResolvedLang,
@@ -350,10 +350,10 @@ export const SessionReaderHeader = memo(function SessionReaderHeader({
         >
           {t("sessionManager.deleteEllipsis", { defaultValue: "删除…" })}
         </DropdownMenuItem>
-        {!deletable && session.providerId === "mcode" && (
+        {!deletable && (
           <p className="px-2.5 pb-1.5 text-caption text-fg-2">
-            {t("sessionManager.mcodeDeleteHint", {
-              defaultValue: "请在 MiniMax Code 中删除",
+            {t("sessionManager.nativeDeleteHint", {
+              defaultValue: "请在原应用中删除此会话",
             })}
           </p>
         )}
@@ -509,6 +509,7 @@ const Sep = () => (
  */
 function SessionUsageSummary({ session }: { session: SessionMeta }) {
   const { i18n } = useTranslation();
+  const { money, usdHint } = useMoneyFormat();
   const rt = useReaderT();
   const { data } = useSessionUsageSummary(
     session.providerId,
@@ -536,7 +537,7 @@ function SessionUsageSummary({ session }: { session: SessionMeta }) {
         {cost !== null && (
           <>
             {" · "}
-            {fmtUsd(cost, 2)}
+            <span title={usdHint(cost)}>{money(cost, 2)}</span>
           </>
         )}
       </span>

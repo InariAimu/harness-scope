@@ -105,8 +105,8 @@ export function SessionItem({
     .join("\n");
 
   const deleteReason = !deletable
-    ? t("sessionManager.mcodeDeleteHint", {
-        defaultValue: "请在 MiniMax Code 中删除",
+    ? t("sessionManager.nativeDeleteHint", {
+        defaultValue: "请在原应用中删除此会话",
       })
     : null;
 
