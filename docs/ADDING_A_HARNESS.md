@@ -8,6 +8,10 @@
 
 非 JSONL 格式可覆盖 `discover()` 和 `read_source()`，将原生存储转换为本适配器的逻辑事件。一个数据库包含多个会话时覆盖 `sessions()`、`messages_for_session()` 和 `delete_session()`；后端与前端会传递原生 sessionId。祖先解析通过 `context_id()` / `context_events()` / `uses_ancestry()` 提供，只保存不含正文的最小用量上下文。通用编排器不识别 Codex 或其他 harness 的字段。
 
+会话阅读使用独立的 `read_metadata()` / `read_messages(path, session_id)` 投影：前者只读列表摘要，后者只读所选会话。默认回退到完整日志；大日志或多会话数据库应覆盖这两个入口。Codex／Claude 使用有上限的头尾采样，压缩日志仅读前缀；OpenCode 在只读事务内查询会话头或限定 `session_id` 的正文。不要把这些摘要用于用量计数。
+
+阅读缓存位于 `crates/core/src/sessions.rs`。摘要按修改时间、大小与创建时间失效，SQLite 还合并 WAL；正文按 harness、规范源路径及 session ID 区分，LRU 限制为 8 个快照／96 MiB。分页和长块引用绑定快照指纹，日志续写不会把旧引用解释为新正文。`session_messages` 保留完整兼容读取；`session_transcript` 每批最多 150 条／约 256 KiB，`session_block` 按 Unicode 字符分页取完整工具参数、输出及思考。正文缓存和引用不进入数据库或同步协议。
+
 ## 身份与统计规则
 
 * 原生事件 ID 优先。若源不提供事件 ID，使用原生会话身份＋不依赖 Token/价格的稳定原始序号。解析规则修复不能让旧事件变成新事件。

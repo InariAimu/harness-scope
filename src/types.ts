@@ -48,6 +48,14 @@ export type EventKind =
 
 /** 大内容的「按需取」引用：前端不解析，原样回传给后端 */
 export type ContentRef =
+  | {
+      kind: "session_block";
+      sessionId?: string | null;
+      message: number;
+      block: number;
+      field: string;
+      fingerprint: string;
+    }
   | { kind: "jsonl"; offset: number; len: number; pointer: string }
   | {
       kind: "sqlite";

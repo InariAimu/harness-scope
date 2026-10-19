@@ -256,3 +256,41 @@ fn incomplete_and_invalid_rows_preserve_usage_and_completed_corrections_update_r
         3
     );
 }
+
+#[test]
+fn scoped_reader_ignores_other_corrupt_sessions_and_wal_changes_invalidate_cache() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("opencode.db");
+    let c = seed(&path, V2);
+    c.execute(
+        "INSERT INTO session_message VALUES('bad','unrelated','assistant','broken JSON',99)",
+        [],
+    )
+    .unwrap();
+    let e = engine(tmp.path(), &path);
+    assert!(!e.sessions().unwrap().is_empty());
+    let args = json!({"providerId":"opencode","sourcePath":path,"sessionId":"ses_fixture"});
+    let first = e.execute("session_transcript", args.clone()).unwrap();
+    assert_eq!(first["header"]["cached"], false);
+    assert_eq!(
+        e.execute("session_transcript", args.clone()).unwrap()["header"]["cached"],
+        true
+    );
+    let old_main = std::fs::metadata(&path).unwrap().len();
+    c.execute(
+        "UPDATE session_v2 SET title='WAL-only updated title' WHERE id='ses_fixture'",
+        [],
+    )
+    .unwrap();
+    assert_eq!(std::fs::metadata(&path).unwrap().len(), old_main);
+    assert!(e
+        .sessions()
+        .unwrap()
+        .iter()
+        .any(|s| s.title.as_deref() == Some("WAL-only updated title")));
+    assert_eq!(
+        e.execute("session_transcript", args).unwrap()["header"]["cached"],
+        false
+    );
+    assert!(!OpenCode.read_source(&path).unwrap().3); // Full usage ingestion still reports corruption.
+}

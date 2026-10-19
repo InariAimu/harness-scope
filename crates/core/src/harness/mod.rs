@@ -57,6 +57,19 @@ pub trait HarnessAdapter: Send + Sync {
     fn read_source(&self, path: &Path) -> Result<(Vec<Value>, String, Vec<String>, bool)> {
         files::read(path)
     }
+    /// Reader projections are independent of complete, hash-verified usage ingestion.
+    fn read_metadata(&self, path: &Path) -> Result<Vec<Session>> {
+        let (events, _, _, _) = self.read_source(path)?;
+        Ok(self.sessions(path, &events))
+    }
+    fn read_messages(&self, path: &Path, session: Option<&str>) -> Result<Vec<Value>> {
+        let (events, _, errors, complete) = self.read_source(path)?;
+        anyhow::ensure!(
+            complete && errors.is_empty(),
+            "Session contains incomplete or invalid data; retry after writing finishes"
+        );
+        Ok(self.messages_for_session(&events, session))
+    }
     fn context_id(&self, _events: &[Value]) -> Option<String> {
         None
     }

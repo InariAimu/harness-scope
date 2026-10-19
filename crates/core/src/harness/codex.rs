@@ -207,6 +207,22 @@ impl HarnessAdapter for Codex {
         }
         Ok(out)
     }
+    fn read_metadata(&self, path: &Path) -> Result<Vec<Session>> {
+        let lines = files::metadata_lines(path)?;
+        let mut sessions = self.sessions(path, &lines);
+        if let Some(modified) = std::fs::metadata(path)?
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        {
+            for session in &mut sessions {
+                if path.to_string_lossy().ends_with(".zst") || session.last_active_at.is_none() {
+                    session.last_active_at = Some(modified.as_millis() as i64);
+                }
+            }
+        }
+        Ok(sessions)
+    }
     fn session(&self, path: &Path, lines: &[Value]) -> Option<Session> {
         transcript::session("codex", path, lines)
     }

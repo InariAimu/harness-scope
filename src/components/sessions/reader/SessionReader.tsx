@@ -402,35 +402,39 @@ export function SessionReader({
   );
 
   const copyTurn = useCallback(
-    (turnKey: string) => {
-      const turn = turns.find((item) => item.key === turnKey);
-      if (!turn) return;
-      onCopy(turnToMarkdown(turn, exportOptions), rt("turnCopied"));
+    async (turnKey: string) => {
+      try {
+        const full = await sessionsApi.getMessages(session.providerId, session.sourcePath!, session.sessionId);
+        const turn = buildTurns(full, { style }).find((item) => item.key === turnKey);
+        if (turn) onCopy(turnToMarkdown(turn, exportOptions), rt("turnCopied"));
+      } catch (error) { toast.error(extractErrorMessage(error)); }
     },
-    [exportOptions, onCopy, rt, turns],
+    [exportOptions, onCopy, rt, session, style],
   );
 
-  const copyMarkdown = useCallback(() => {
-    onCopy(
-      transcriptToMarkdown(title, turns, exportOptions),
-      t("sessionManager.markdownCopied", {
-        defaultValue: "已复制整段对话（Markdown）",
-      }),
-    );
-  }, [exportOptions, onCopy, t, title, turns]);
+  const copyMarkdown = useCallback(async () => {
+    try {
+      const full = await sessionsApi.getMessages(session.providerId, session.sourcePath!, session.sessionId);
+      onCopy(
+        transcriptToMarkdown(title, buildTurns(full, { style }), exportOptions),
+        t("sessionManager.markdownCopied", { defaultValue: "已复制整段对话（Markdown）" }),
+      );
+    } catch (error) { toast.error(extractErrorMessage(error)); }
+  }, [exportOptions, onCopy, t, title, session, style]);
 
   const exportMarkdownFile = useCallback(async () => {
     const name = `${toFileName(title) || session.sessionId}.md`;
     try {
+      const full = await sessionsApi.getMessages(session.providerId, session.sourcePath!, session.sessionId);
       const path = await sessionsApi.exportMarkdown(
         name,
-        transcriptToMarkdown(title, turns, exportOptions),
+        transcriptToMarkdown(title, buildTurns(full, { style }), exportOptions),
       );
       if (path) toast.success(rt("exported", { path }));
     } catch (error) {
       toast.error(rt("exportFailed", { error: extractErrorMessage(error) }));
     }
-  }, [exportOptions, rt, session.sessionId, title, turns]);
+  }, [exportOptions, rt, session, title, style]);
 
   const openFind = () => {
     setFindOpen(true);

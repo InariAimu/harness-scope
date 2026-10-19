@@ -23,6 +23,7 @@ export function SessionsPage({ onSettings }: { onSettings: () => void }) {
     queryKey: ["sessions"],
     queryFn: sessionsApi.list,
     refetchInterval: 60000,
+    staleTime: 30000,
   });
   const [selected, setSelected] = useState<SessionMeta | null>(null);
   const [search, setSearch] = useState("");
@@ -86,7 +87,9 @@ export function SessionsPage({ onSettings }: { onSettings: () => void }) {
       group === "project"
         ? s.projectDir || l("其他会话", "Other sessions")
         : new Date(s.lastActiveAt || s.createdAt || 0).toLocaleDateString();
-    groups.set(key, [...(groups.get(key) || []), s]);
+    const entries = groups.get(key);
+    if (entries) entries.push(s);
+    else groups.set(key, [s]);
   }
   return (
     <>

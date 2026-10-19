@@ -3,8 +3,46 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
     fs,
+    io::{BufRead, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
+
+/// Bounded list preview. Compressed logs only decode the prefix, never the whole stream.
+pub fn metadata_lines(path: &Path) -> Result<Vec<Value>> {
+    let compressed =
+        path.to_string_lossy().ends_with(".zst") || path.to_string_lossy().ends_with(".zstd");
+    let file = fs::File::open(path)?;
+    let len = file.metadata()?.len();
+    let reader: Box<dyn Read> = if compressed {
+        Box::new(zstd::stream::read::Decoder::new(file)?)
+    } else {
+        Box::new(file)
+    };
+    let mut lines = Vec::new();
+    let head_lines = if !compressed && len <= 16_384 {
+        usize::MAX
+    } else {
+        64
+    };
+    for line in BufReader::new(reader.take(512 * 1024))
+        .split(b'\n')
+        .take(head_lines)
+    {
+        if let Ok(value) = serde_json::from_slice::<Value>(&line?) {
+            lines.push(value);
+        }
+    }
+    if !compressed && len > 16_384 {
+        let mut tail = fs::File::open(path)?;
+        tail.seek(SeekFrom::Start(len - 16_384))?;
+        for line in BufReader::new(tail).lines().skip(1) {
+            if let Ok(value) = serde_json::from_str::<Value>(&line?) {
+                lines.push(value);
+            }
+        }
+    }
+    Ok(lines)
+}
 
 pub fn discover(root: &Path) -> Result<Vec<PathBuf>> {
     if !root.exists() {

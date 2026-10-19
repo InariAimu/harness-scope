@@ -19,15 +19,18 @@ pub fn session(harness: &str, path: &Path, lines: &[Value]) -> Option<Session> {
                     .into()
             })
     };
-    let messages = if harness == "codex" {
-        codex(lines)
-    } else {
-        claude(lines)
-    };
-    let first = messages
+    let first = lines
         .iter()
-        .find(|m| m["role"] == "user")
-        .map(|m| files::text(&m["content"]))
+        .find_map(|v| {
+            if harness == "codex" {
+                (v["type"] == "response_item"
+                    && v["payload"]["type"] == "message"
+                    && v["payload"]["role"] == "user")
+                    .then(|| files::text(&v["payload"]["content"]))
+            } else {
+                (v["type"] == "user").then(|| files::text(&v["message"]["content"]))
+            }
+        })
         .unwrap_or_default();
     let summary: String = first.chars().take(160).collect();
     let times: Vec<i64> = lines

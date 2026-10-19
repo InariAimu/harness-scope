@@ -178,116 +178,19 @@ impl HarnessAdapter for OpenCode {
     }
 
     fn read_source(&self, path: &Path) -> Result<(Vec<Value>, String, Vec<String>, bool)> {
-        let mut conn = Connection::open_with_flags(
-            path,
-            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        )?;
-        conn.busy_timeout(Duration::from_secs(5))?;
-        let tx = conn.transaction()?;
-        let v1 = table_exists(&tx, "message")?;
-        let v2 = table_exists(&tx, "session_message")?;
-        let sessions_v1 = table_exists(&tx, "session")?;
-        let sessions_v2 = table_exists(&tx, "session_v2")?;
+        read_events(path, None, false)
+    }
+    fn read_metadata(&self, path: &Path) -> Result<Vec<Session>> {
+        Ok(self.sessions(path, &read_events(path, None, true)?.0))
+    }
+    fn read_messages(&self, path: &Path, session: Option<&str>) -> Result<Vec<Value>> {
+        let session = session.context("Missing OpenCode session ID")?;
+        let (events, _, errors, complete) = read_events(path, Some(session), false)?;
         anyhow::ensure!(
-            (sessions_v1 || sessions_v2) && (v1 || v2),
-            "Unsupported OpenCode SQLite schema"
+            complete && errors.is_empty(),
+            "Session contains incomplete or invalid data"
         );
-        let mut events = Vec::new();
-        let mut diagnostics = Vec::new();
-        let mut session_ids = HashSet::new();
-        for (table, exists) in [("session_v2", sessions_v2), ("session", sessions_v1)] {
-            if !exists {
-                continue;
-            }
-            let mut stmt = tx.prepare(&format!(
-                "SELECT id,title,directory,time_created,time_updated FROM {table} ORDER BY id",
-            ))?;
-            let rows = stmt.query_map([], |r| Ok(json!({"kind":"session","id":r.get::<_,String>(0)?,"title":r.get::<_,Option<String>>(1)?,"directory":r.get::<_,String>(2)?,"created":r.get::<_,i64>(3)?,"updated":r.get::<_,i64>(4)?})))?;
-            for row in rows {
-                let row = row?;
-                if session_ids.insert(row["id"].as_str().unwrap_or_default().to_owned()) {
-                    events.push(row);
-                }
-            }
-        }
-        let mut migrated = HashSet::new();
-        if v2 {
-            let mut stmt = tx.prepare(
-                "SELECT id,session_id,type,data FROM session_message ORDER BY session_id,seq,id",
-            )?;
-            let rows = stmt.query_map([], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
-                    r.get::<_, String>(3)?,
-                ))
-            })?;
-            for row in rows {
-                let (id, session, role, data) = row?;
-                migrated.insert(session.clone());
-                match serde_json::from_str::<Value>(&data) {
-                    Ok(mut data) if data.is_object() => {
-                        data["role"] = json!(role);
-                        events.push(
-                            json!({"kind":"message","id":id,"sessionId":session,"data":data}),
-                        );
-                    }
-                    Ok(_) => diagnostics.push(format!("OpenCode message {id}: expected an object")),
-                    Err(e) => diagnostics.push(format!("OpenCode message {id}: {e}")),
-                }
-            }
-        }
-        if v1 {
-            let mut stmt = tx.prepare(
-                "SELECT id,session_id,data FROM message ORDER BY session_id,time_created,id",
-            )?;
-            let rows = stmt.query_map([], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
-                ))
-            })?;
-            for row in rows {
-                let (id, session, data) = row?;
-                if migrated.contains(&session) {
-                    continue;
-                }
-                match serde_json::from_str::<Value>(&data) {
-                    Ok(data) if data.is_object() => events
-                        .push(json!({"kind":"message","id":id,"sessionId":session,"data":data})),
-                    Ok(_) => diagnostics.push(format!("OpenCode message {id}: expected an object")),
-                    Err(e) => diagnostics.push(format!("OpenCode message {id}: {e}")),
-                }
-            }
-            if table_exists(&tx, "part")? {
-                let mut stmt = tx.prepare("SELECT id,message_id,session_id,data FROM part ORDER BY session_id,time_created,id")?;
-                let rows = stmt.query_map([], |r| {
-                    Ok((
-                        r.get::<_, String>(0)?,
-                        r.get::<_, String>(1)?,
-                        r.get::<_, String>(2)?,
-                        r.get::<_, String>(3)?,
-                    ))
-                })?;
-                for row in rows {
-                    let (id, message, session, data) = row?;
-                    if migrated.contains(&session) {
-                        continue;
-                    }
-                    match serde_json::from_str::<Value>(&data) {
-                        Ok(data) if data.is_object() => events.push(json!({"kind":"part","id":id,"messageId":message,"sessionId":session,"data":data})),
-                        Ok(_) => diagnostics.push(format!("OpenCode part {id}: expected an object")),
-                        Err(e) => diagnostics.push(format!("OpenCode part {id}: {e}")),
-                    }
-                }
-            }
-        }
-        tx.commit()?;
-        let fingerprint = files::hash(&serde_json::to_vec(&events)?);
-        let complete = diagnostics.is_empty();
-        Ok((events, fingerprint, diagnostics, complete))
+        Ok(self.messages_for_session(&events, Some(session)))
     }
 
     fn parse(&self, _: &Path, events: &[Value], _: &TimelineIndex) -> Result<ParseResult> {
@@ -432,4 +335,137 @@ impl HarnessAdapter for OpenCode {
         }
         messages
     }
+}
+
+fn read_events(
+    path: &Path,
+    session: Option<&str>,
+    metadata_only: bool,
+) -> Result<(Vec<Value>, String, Vec<String>, bool)> {
+    let header_filter = if session.is_some() { "WHERE id=?1" } else { "" };
+    let message_filter = if session.is_some() {
+        "WHERE session_id=?1"
+    } else {
+        ""
+    };
+    let mut conn = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    conn.busy_timeout(Duration::from_secs(5))?;
+    let tx = conn.transaction()?;
+    let v1 = table_exists(&tx, "message")?;
+    let v2 = table_exists(&tx, "session_message")?;
+    let sessions_v1 = table_exists(&tx, "session")?;
+    let sessions_v2 = table_exists(&tx, "session_v2")?;
+    anyhow::ensure!(
+        (sessions_v1 || sessions_v2) && (v1 || v2),
+        "Unsupported OpenCode SQLite schema"
+    );
+    let mut events = Vec::new();
+    let mut diagnostics = Vec::new();
+    let mut session_ids = HashSet::new();
+    for (table, exists) in [("session_v2", sessions_v2), ("session", sessions_v1)] {
+        if !exists {
+            continue;
+        }
+        let mut stmt = tx.prepare(&format!(
+                "SELECT id,title,directory,time_created,time_updated FROM {table} {header_filter} ORDER BY id",
+            ))?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(session), |r| Ok(json!({"kind":"session","id":r.get::<_,String>(0)?,"title":r.get::<_,Option<String>>(1)?,"directory":r.get::<_,String>(2)?,"created":r.get::<_,i64>(3)?,"updated":r.get::<_,i64>(4)?})))?;
+        for row in rows {
+            let row = row?;
+            if session_ids.insert(row["id"].as_str().unwrap_or_default().to_owned()) {
+                events.push(row);
+            }
+        }
+    }
+    let mut migrated = HashSet::new();
+    if let Some(id) = session {
+        if sessions_v2
+            && tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM session_v2 WHERE id=?1)",
+                [id],
+                |r| r.get::<_, bool>(0),
+            )?
+        {
+            migrated.insert(id.to_owned());
+        }
+    }
+    if v2 && !metadata_only {
+        let mut stmt = tx.prepare(&format!(
+                "SELECT id,session_id,type,data FROM session_message {message_filter} ORDER BY session_id,seq,id"
+            ))?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(session), |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?;
+        for row in rows {
+            let (id, session, role, data) = row?;
+            migrated.insert(session.clone());
+            match serde_json::from_str::<Value>(&data) {
+                Ok(mut data) if data.is_object() => {
+                    data["role"] = json!(role);
+                    events.push(json!({"kind":"message","id":id,"sessionId":session,"data":data}));
+                }
+                Ok(_) => diagnostics.push(format!("OpenCode message {id}: expected an object")),
+                Err(e) => diagnostics.push(format!("OpenCode message {id}: {e}")),
+            }
+        }
+    }
+    if v1 && !metadata_only {
+        let mut stmt = tx.prepare(&format!(
+                "SELECT id,session_id,data FROM message {message_filter} ORDER BY session_id,time_created,id"
+            ))?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(session), |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (id, session, data) = row?;
+            if migrated.contains(&session) {
+                continue;
+            }
+            match serde_json::from_str::<Value>(&data) {
+                Ok(data) if data.is_object() => {
+                    events.push(json!({"kind":"message","id":id,"sessionId":session,"data":data}))
+                }
+                Ok(_) => diagnostics.push(format!("OpenCode message {id}: expected an object")),
+                Err(e) => diagnostics.push(format!("OpenCode message {id}: {e}")),
+            }
+        }
+        if table_exists(&tx, "part")? {
+            let mut stmt = tx.prepare(&format!("SELECT id,message_id,session_id,data FROM part {message_filter} ORDER BY session_id,time_created,id"))?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(session), |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                ))
+            })?;
+            for row in rows {
+                let (id, message, session, data) = row?;
+                if migrated.contains(&session) {
+                    continue;
+                }
+                match serde_json::from_str::<Value>(&data) {
+                        Ok(data) if data.is_object() => events.push(json!({"kind":"part","id":id,"messageId":message,"sessionId":session,"data":data})),
+                        Ok(_) => diagnostics.push(format!("OpenCode part {id}: expected an object")),
+                        Err(e) => diagnostics.push(format!("OpenCode part {id}: {e}")),
+                    }
+            }
+        }
+    }
+    tx.commit()?;
+    let fingerprint = files::hash(&serde_json::to_vec(&events)?);
+    let complete = diagnostics.is_empty();
+    Ok((events, fingerprint, diagnostics, complete))
 }

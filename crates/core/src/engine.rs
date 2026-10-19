@@ -22,6 +22,7 @@ pub struct Engine {
     scan_lock: Mutex<()>,
     sync_lock: Mutex<()>,
     database_path: PathBuf,
+    reader: crate::sessions::ReaderCache,
 }
 impl Engine {
     pub fn open(path: &Path) -> Result<Self> {
@@ -47,6 +48,7 @@ impl Engine {
             scan_lock: Mutex::new(()),
             sync_lock: Mutex::new(()),
             database_path: path.to_path_buf(),
+            reader: Default::default(),
         })
     }
     pub fn lock(&self) -> Result<MutexGuard<'_, Store>> {
@@ -153,19 +155,49 @@ impl Engine {
                 Ok(Value::Null)
             }
             "sessions" => Ok(json!(self.sessions()?)),
-            "session_messages" => {
+            "session_messages" | "session_transcript" | "session_block" => {
                 let path = self.session_path(&args)?;
                 let adapter = self
                     .registry
                     .get(args["providerId"].as_str().context("Missing harness")?)?;
-                let (lines, _, errors, _) = adapter.read_source(&path)?;
-                anyhow::ensure!(
-                    errors.is_empty(),
-                    "Session contains incomplete or invalid JSON; retry after writing finishes"
-                );
-                Ok(json!(
-                    adapter.messages_for_session(&lines, args["sessionId"].as_str())
-                ))
+                let session = if name == "session_block" {
+                    args["reference"]["sessionId"].as_str()
+                } else {
+                    args["sessionId"].as_str()
+                };
+                let snapshot = if name == "session_block" {
+                    args["reference"]["fingerprint"].as_str()
+                } else {
+                    args["fingerprint"].as_str()
+                };
+                let loaded = self.reader.load(adapter, &path, session, snapshot)?;
+                if name == "session_messages" {
+                    return Ok(json!(loaded.transcript.restored()));
+                }
+                let offset: usize = args
+                    .get("offset")
+                    .map(|v| v.as_u64().context("Invalid content offset"))
+                    .transpose()?
+                    .unwrap_or(0)
+                    .try_into()?;
+                if name == "session_block" {
+                    let limit = args
+                        .get("limit")
+                        .map(|v| v.as_u64().context("Invalid content limit"))
+                        .transpose()?
+                        .unwrap_or(64 * 1024)
+                        .min(512 * 1024) as usize;
+                    return loaded.transcript.block(&args["reference"], offset, limit);
+                }
+                if let Some(fingerprint) = args.get("fingerprint") {
+                    anyhow::ensure!(
+                        fingerprint == &loaded.transcript.fingerprint,
+                        "Session changed; reload transcript"
+                    );
+                }
+                loaded
+                    .transcript
+                    .page(offset, loaded.cached, loaded.parse_ms)
             }
             "delete_session" => self.delete_session(&args),
             "open_data_folder" => self.execute(
@@ -454,6 +486,7 @@ impl Engine {
         let config = self.lock()?.config()?;
         let mut sessions = Vec::new();
         let mut visited = HashSet::new();
+        let mut keys = HashSet::new();
         for source in &config.sources {
             let adapter = self.registry.get(&source.harness)?;
             if !Path::new(&source.root).exists() {
@@ -463,16 +496,16 @@ impl Engine {
                 if !visited.insert(path.clone()) {
                     continue;
                 }
-                if let Ok((lines, _, _, _)) = adapter.read_source(&path) {
-                    sessions.extend(adapter.sessions(&path, &lines).into_iter().map(
-                        |mut session| {
-                            session.can_delete = adapter.descriptor().delete;
-                            session
-                        },
-                    ));
+                keys.insert((source.harness.clone(), path.clone()));
+                if let Ok(rows) = self.reader.metadata(adapter, &path) {
+                    sessions.extend(rows.into_iter().map(|mut session| {
+                        session.can_delete = adapter.descriptor().delete;
+                        session
+                    }));
                 }
             }
         }
+        self.reader.retain_metadata(&keys);
         sessions.sort_by(|a, b| b.last_active_at.cmp(&a.last_active_at));
         Ok(sessions)
     }
