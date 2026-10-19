@@ -39,7 +39,7 @@ pub fn summary(records: &[UsageRecord]) -> Value {
         }
     }))
 }
-fn summary_rows(records: &[Row]) -> Value {
+pub(crate) fn summary_rows(records: &[Row]) -> Value {
     aggregate(records.iter().map(|r| SummaryValue {
         tokens: &r.tokens,
         count: r.count,

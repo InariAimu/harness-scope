@@ -5,6 +5,7 @@ src-tauri/gen/schemas/
 *.db
 *.db-shm
 *.db-wal
+*.provider-keys/
 *.sqlite
 .env
 test-results/

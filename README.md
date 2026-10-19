@@ -10,7 +10,8 @@
 * Claude Code / Codex JSONL、Codex `.jsonl.zst`；累计 Token 差分、重复扫描、Claude 分块补全和显式父会话去重。
 * OpenCode V1/V2 SQLite：只读一致性读取 `message` / `part` 和 `session_message` / `session_v2`，迁移后的同会话不重复计费，保留原生报告费用、已知零费用及推理 Token。
 * DeepSeek Harness（dsh）：读取 `$DSH_HOME/sessions`（默认 `~/.dsh/sessions`）的 v0/v4 JSONL 与多帧 Zstandard 日志，支持缓存／推理 Token、模型与会话阅读、日志计时估算及迁移副本去重。配置和边界见 [DSH 兼容说明](docs/DSH.md)。
-* 复用 CC Switch 的统计组件、视觉 token 和会话阅读器；提供应用、用量、会话、设置四个页面。
+* 复用 CC Switch 的统计组件、视觉 token 和会话阅读器；提供应用、用量、会话、供应商、设置五个页面。
+* 供应商账号页：DeepSeek 官方余额、OpenCode Go 五小时／每周／每月额度，手动订阅信息和关联路由的本机用量；支持多个账号，官方数据与日志估算分别显示。
 * 对齐 CC Switch 4.0.15 用量页显示设置：六种显示币种、手填汇率、侧栏今日指标、请求日志列显隐、柱形图／曲线面积图切换及原模型定价；显示偏好在本机持久化，原始费用仍保存 USD。
 * 本机会话搜索、项目／时间分组、正文和工具步骤、内联图片、Markdown 导出、复制恢复命令。
 * 删除已稳定至少 60 秒的会话前先采集用量；正文删除后保留历史统计。无法完成采集则取消删除。
@@ -38,6 +39,14 @@ npm run tauri -- build --debug --no-bundle
 ```
 
 输出为 `target/debug/harness-scope-desktop.exe`。发布构建用 `npm run desktop:build`；安装器与签名尚未配置。
+
+## 供应商账号
+
+在「供应商 → 添加账号」选择 DeepSeek 或 OpenCode Go，填写名称与 API Key。DeepSeek 按官方返回的原币显示总余额、充值余额和赠金；OpenCode Go 显示三个窗口的剩余比例及重置时间。页面打开时查询，之后每分钟刷新，也可手动刷新；失败时保留上次成功的数据并标记错误。到期的额度缓存显示等待刷新，不推算为满额。
+
+套餐名称、每月费用、币种、本期开始和下次续费由用户手动记录，也可以不配置 Key，仅管理订阅和查看本机用量。「关联本机用量」按日志中的 harness／供应商原始 ID 选择路由；一条路由只能关联一个账号，历史日志不能区分同一路由的不同 Key。今天、本月和手动账期都使用设置中的统计时区；账期在续费日零点截止。折算金额复用现有价表和汇率，仅代表日志估算，不从官方余额扣减，也不据此推算套餐剩余额度。
+
+账号、订阅和查询缓存仅保存在本机数据库，不参与用量同步。API Key 单独保存在数据库旁的 `.provider-keys` 目录（例如 `harness-scope.provider-keys`），不会出现在账号查询返回值或用量记录内。Windows 使用当前用户的 DPAPI 加密；Unix 使用 0700 目录和 0600 文件权限，尚未接入系统钥匙串。仅备份数据库不包含 Key，换 Windows 用户或设备后需要重新填写。编辑时 Key 留空保留原值，可显式清除；删除账号及 Key 会保留历史用量日志。
 
 ## 浏览器开发与合成演示
 

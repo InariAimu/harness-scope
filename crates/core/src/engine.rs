@@ -26,6 +26,7 @@ pub struct Engine {
     reader: crate::sessions::ReaderCache,
     query_reader: Mutex<Store>,
     background_wake: Arc<(Mutex<u64>, Condvar)>,
+    account_vault: crate::account_credentials::Vault,
 }
 impl Engine {
     pub fn open(path: &Path) -> Result<Self> {
@@ -46,6 +47,7 @@ impl Engine {
             store.set_meta("config", &config)?
         }
         Ok(Self {
+            account_vault: crate::account_credentials::Vault::new(path),
             query_reader: Mutex::new(Store::reader(path)?),
             background_wake: Arc::new((Mutex::new(0), Condvar::new())),
             store: Mutex::new(store),
@@ -61,13 +63,21 @@ impl Engine {
             .lock()
             .map_err(|_| anyhow::anyhow!("Database lock poisoned"))
     }
-    fn read_lock(&self) -> Result<MutexGuard<'_, Store>> {
+    pub(crate) fn read_lock(&self) -> Result<MutexGuard<'_, Store>> {
         self.query_reader
             .lock()
             .map_err(|_| anyhow::anyhow!("Query lock poisoned"))
     }
     pub fn execute(&self, name: &str, args: Value) -> Result<Value> {
         match name {
+            "provider_accounts"
+            | "provider_account_routes"
+            | "provider_account_save"
+            | "provider_account_delete"
+            | "provider_account_refresh"
+            | "provider_account_usage" => {
+                crate::accounts::execute(self, &self.account_vault, name, args)
+            }
             "snapshot" => {
                 let s = self.read_lock()?;
                 let mut config = serde_json::to_value(s.config()?)?;

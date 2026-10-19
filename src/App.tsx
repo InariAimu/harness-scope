@@ -7,6 +7,7 @@ import {
   History,
   LayoutGrid,
   Settings,
+  Wallet,
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
@@ -18,6 +19,7 @@ import { SidebarToday } from "@/components/shell/SidebarToday";
 import { ApplicationsPage } from "@/pages/ApplicationsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SessionsPage } from "@/pages/SessionsPage";
+import { ProvidersPage } from "@/pages/ProvidersPage";
 import { syncModelsDevPricingOnStartup } from "@/lib/modelsDevAutoSync";
 import { Button } from "@/components/ui/button";
 import { isTauri } from "@tauri-apps/api/core";
@@ -171,6 +173,11 @@ export default function App() {
                 name: label("会话", "Sessions"),
                 Icon: History,
               },
+              {
+                id: "providers",
+                name: label("供应商", "Providers"),
+                Icon: Wallet,
+              },
             ].map(({ id, name, Icon }) => (
               <button
                 key={id}
@@ -312,6 +319,7 @@ export default function App() {
               {page === "sessions" && (
                 <SessionsPage onSettings={() => navigate("settings")} />
               )}
+              {page === "providers" && <ProvidersPage snapshot={data} />}
             </>
           )}
         </main>
