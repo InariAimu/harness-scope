@@ -9,6 +9,7 @@
 | Codex JSONL / zst | 首个模型输出之前最近的用户消息、turn_context、工具结果或上次用量边界 | 优先匹配本次用量的 token_usage_record；否则 token_count；若它紧跟工具结果写出，回退到工具执行前最后模型输出 | 本次最早 Reasoning / AgentMessage 的 item_completed.started_at_ms 减去起点；没有有效字段则未知 |
 | OpenCode v2 SQLite | 助手消息 time.created | 优先有效 time.streamed；缺失或早于起点时回退 time.completed | 本条消息 text / reasoning 内容中最早 time.created（兼容 time.start）减去起点；缺失则未知 |
 | OpenCode v1 SQLite | 同上 | 同上，通常只有 completed | 使用同一 session/message 下 text / reasoning part 的 time.start（兼容 created） |
+| DeepSeek Harness v0/v4 | 对应 turn/step 的 step/start.time | assistant/message.time（不含后续工具执行） | 首个非空 text / reasoning / tool-call delta；v0 支持打包流片段，v4 读取消息／重试 attempt 内 stream；空片段跳过 |
 
 Codex 重复累计快照不切分请求；task_started / turn_aborted 清除未结算请求；旧布局在 token_count 后补写的同批输出不归到下一次请求。沿用原有用量去重、分叉和稳定事件 ID。OpenCode v2 的流结束时间不包含后续工具执行；completed 回退可能包含工具执行、使估算速度偏低，详情中会明确展示。
 

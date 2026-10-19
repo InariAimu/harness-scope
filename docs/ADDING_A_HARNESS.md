@@ -26,4 +26,6 @@ UI 的注册表来自后端；新增适配器后应补充品牌图标和可选�
 
 OpenCode 已作为原生 SQLite 适配器实现这一扩展方式，见 `crates/core/src/harness/opencode.rs`。V1 和 V2 同库存放时按会话选择新表，避免重复；不要仅依据旧 `session` 表判定 V2 会话是否存在，V2 新会话写入 `session_v2`。统计和会话列表必须来自同一读取事务。适配器描述的 `delete` 由引擎注入会话 `canDelete`，前端据此决定是否允许删除。
 
+DeepSeek Harness 的 JSONL／多帧 Zstandard 适配器见 `crates/core/src/harness/dsh.rs`，版本差异见 [DSH.md](DSH.md)。目录发现限定原生规范 session 文件，按同目录最高版本选择并检查头部版本；使用稳定的 `message.id`，不把迁移后变化的事件序号作为请求身份。流片段不计用量；v0 继承边界使用 `seedLength`，App v4 使用最后一个 `session/end-seed.data.inherited=true`，普通恢复的空标记不能当成分叉边界。没有继承历史的新建子代理保留自己的全部用量。阅读器通过 `injected` 标记隐藏运行时上下文等注入消息，避免多算提问。
+
 当前解析器覆盖测试样本里的 JSONL 和 Zstandard 压缩 JSONL。分页续写及其他版本日志格式应增加对应样本和适配，遇到不支持的来源必须呈现诊断，不把缺少数据当成零使用。

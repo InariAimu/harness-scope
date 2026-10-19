@@ -2460,7 +2460,7 @@
     "speedSumHelp": "输出 token 总数除以生成时间总和，不是逐条平均，免得短请求把数字带歪。只算经路由服务、输出不少于 100 token 的请求。带 ≈ 的是按会话日志估算的（含首字等待，只估输出不少于 200 token 的请求），这一行没有路由数据时才显示。",
     "firstToken": "首字",
     "firstTokenHelpTitle": "首字时间",
-    "firstTokenHelp": "首字指模型最早输出（包含推理），不是最终可见答案的首字。带 ≈ 的是按会话日志时间戳估算：Codex 使用最早模型输出项 started_at_ms，OpenCode 使用 text / reasoning 内容创建时间。包含客户端开销，内容创建也可能晚于首个片段；缺少有效时间戳时显示 —。",
+    "firstTokenHelp": "首字指模型最早输出（包含推理），不是最终可见答案的首字。带 ≈ 的是按会话日志时间戳估算：Codex 使用最早模型输出项 started_at_ms，OpenCode 使用 text / reasoning 内容创建时间，DSH 使用首个非空流片段。包含客户端开销，内容创建也可能晚于首个片段；缺少有效时间戳时显示 —。",
     "firstTokenSumHelpTitle": "首字时间怎么算",
     "firstTokenSumHelp": "带 ≈ 的是当前日期、设备、应用和模型筛选下，有有效首字时间戳的日志样本中位数；偶数样本取中间两项均值。缺少时间戳的请求不计入，也不填成 0。",
     "timingTip": "耗时 {{duration}}s · 首字 {{ttft}}s",
@@ -4861,6 +4861,8 @@
     }
   },
   "scope": {
+    "nativeSources": "本机会话日志",
+    "sourceNote": "读取已配置的本机会话日志或数据库。会话正文留在本机，用量与费用来源可同步到自己的服务器。",
     "timingMethod": "计时方式",
     "logTimingEstimate": "≈ 日志时间戳估算（包含客户端开销）",
     "durationSource": "耗时依据",
@@ -4872,7 +4874,9 @@
       "codex_item_started_at_ms": "最早模型输出项 started_at_ms",
       "opencode_time_streamed": "time.created → time.streamed（流结束）",
       "opencode_time_completed": "time.created → time.completed（可能包含工具执行）",
-      "opencode_content_start": "最早 text / reasoning 内容创建时间（可能晚于首个片段）"
+      "opencode_content_start": "最早 text / reasoning 内容创建时间（可能晚于首个片段）",
+      "dsh_step_message": "step/start → assistant/message（不含后续工具执行）",
+      "dsh_stream_delta": "首个非空文本／推理／工具调用流片段"
     }
   }
 }

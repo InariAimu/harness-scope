@@ -29,11 +29,11 @@ export function UsageDataSourcesSheet(p: Props) {
         </SheetHeader>
         <SheetBody>
           <div className="rounded-panel border border-border p-4 space-y-3">
-            <h3>Claude Code / Codex</h3>
+            <h3>{t("scope.nativeSources", "本机会话日志")}</h3>
             <p className="text-body text-fg-2">
               {t(
                 "scope.sourceNote",
-                "直接读取本机已配置目录中的 JSONL。会话正文留在本机，用量与费用来源可同步到自己的服务器。",
+                "读取已配置的本机会话日志或数据库。会话正文留在本机，用量与费用来源可同步到自己的服务器。",
               )}
             </p>
             <p className="text-caption text-fg-3">{p.syncedLabel}</p>

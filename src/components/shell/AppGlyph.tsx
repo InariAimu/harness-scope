@@ -12,6 +12,7 @@ export const APP_DISPLAY_NAME: Record<AppId, string> = {
   gemini: "Gemini CLI",
   grokbuild: "Grok Build",
   opencode: "OpenCode",
+  dsh: "DeepSeek Harness",
   openclaw: "OpenClaw",
   hermes: "Hermes",
   pi: "Pi",
@@ -55,6 +56,8 @@ export function AppGlyph({
           style={{ width: size, height: size, fontSize: size, lineHeight: 1 }}
           dangerouslySetInnerHTML={{ __html: svg }}
         />
+      ) : app === "dsh" ? (
+        <Terminal size={size} strokeWidth={1.8} className="text-[#4d6bfe]" />
       ) : (
         <Code2 size={size} strokeWidth={1.8} />
       )}

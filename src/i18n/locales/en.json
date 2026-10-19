@@ -2459,7 +2459,7 @@
     "speedSumHelp": "Total output tokens divided by total generation time, not an average of per-request speeds, so short requests don't skew it. Only requests through the routing service with at least 100 output tokens count. A value with ≈ is estimated from session logs (it includes the wait for the first token, and only requests with at least 200 output tokens count) and is shown only when the row has no routed data.",
     "firstToken": "First token",
     "firstTokenHelpTitle": "First-token time",
-    "firstTokenHelp": "First token means the earliest model output, including reasoning, rather than the first character of the final visible answer. Values marked ≈ are log timestamp estimates: Codex uses the earliest model output item started_at_ms; OpenCode uses text / reasoning content creation time. Client overhead is included, and content creation may follow the first chunk. Missing timestamps display —.",
+    "firstTokenHelp": "First token means the earliest model output, including reasoning, rather than the first character of the final visible answer. Values marked ≈ are log timestamp estimates: Codex uses the earliest model output item started_at_ms; OpenCode uses text / reasoning content creation time; DSH uses the first nonempty stream delta. Client overhead is included, and content creation may follow the first chunk. Missing timestamps display —.",
     "firstTokenSumHelpTitle": "How first-token time is calculated",
     "firstTokenSumHelp": "Values marked ≈ are the median of valid log first-token samples within the selected date, device, app and model filters. For an even sample count, the middle two values are averaged. Requests without valid timestamps are excluded rather than counted as zero.",
     "timingTip": "Duration {{duration}}s · first token {{ttft}}s",
@@ -4860,6 +4860,8 @@
     }
   },
   "scope": {
+    "nativeSources": "Local session logs",
+    "sourceNote": "Read configured local session logs or databases. Transcripts stay on this device; usage and cost provenance can sync to your own server.",
     "timingMethod": "Timing method",
     "logTimingEstimate": "≈ Log timestamp estimate (includes client overhead)",
     "durationSource": "Duration basis",
@@ -4871,7 +4873,9 @@
       "codex_item_started_at_ms": "Earliest model output item started_at_ms",
       "opencode_time_streamed": "time.created → time.streamed (stream end)",
       "opencode_time_completed": "time.created → time.completed (may include tools)",
-      "opencode_content_start": "Earliest text / reasoning content creation (may follow first chunk)"
+      "opencode_content_start": "Earliest text / reasoning content creation (may follow first chunk)",
+      "dsh_step_message": "step/start → assistant/message (excludes subsequent tools)",
+      "dsh_stream_delta": "First nonempty text / reasoning / tool-call stream delta"
     }
   }
 }

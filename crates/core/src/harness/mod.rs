@@ -2,6 +2,7 @@
 pub mod claude;
 pub mod codex;
 mod codex_timing;
+pub mod dsh;
 pub mod files;
 pub mod opencode;
 mod transcript;
@@ -86,6 +87,7 @@ impl Default for Registry {
                 Arc::new(claude::Claude),
                 Arc::new(codex::Codex),
                 Arc::new(opencode::OpenCode),
+                Arc::new(dsh::Dsh),
             ],
         }
     }

@@ -70,7 +70,7 @@ pub fn timestamp(v: &Value) -> Option<i64> {
 }
 pub fn read_bytes(path: &Path) -> Result<Vec<u8>> {
     let file = fs::File::open(path).with_context(|| format!("Read {}", path.display()))?;
-    if path.to_string_lossy().ends_with(".zst") {
+    if path.to_string_lossy().ends_with(".zst") || path.to_string_lossy().ends_with(".zstd") {
         Ok(zstd::stream::decode_all(file)?)
     } else {
         Ok(fs::read(path)?)

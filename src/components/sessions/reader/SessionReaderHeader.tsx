@@ -508,7 +508,7 @@ const Sep = () => (
  * 没导入过（扫描关着、超过 30 天被汇总、应用没有用量来源）时不显示。
  */
 function SessionUsageSummary({ session }: { session: SessionMeta }) {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { money, usdHint } = useMoneyFormat();
   const rt = useReaderT();
   const { data } = useSessionUsageSummary(
@@ -519,6 +519,7 @@ function SessionUsageSummary({ session }: { session: SessionMeta }) {
 
   const locale = getLocaleFromLanguage(getResolvedLang(i18n));
   const cost = parseFiniteNumber(data.totalCost);
+  const unpriced = (data.unpricedCount ?? 0) > 0;
   const tokens = (value: number) => formatTokensCompact(value, locale);
   return (
     <>
@@ -534,10 +535,12 @@ function SessionUsageSummary({ session }: { session: SessionMeta }) {
         })}
       >
         {rt("usage.tokens", { tokens: tokens(data.realTotalTokens) })}
-        {cost !== null && (
+        {(unpriced || cost !== null) && (
           <>
             {" · "}
-            <span title={usdHint(cost)}>{money(cost, 2)}</span>
+            <span title={unpriced ? undefined : usdHint(cost)}>
+              {unpriced ? t("usage.unpriced") : money(cost, 2)}
+            </span>
           </>
         )}
       </span>

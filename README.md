@@ -9,6 +9,7 @@
 
 * Claude Code / Codex JSONL、Codex `.jsonl.zst`；累计 Token 差分、重复扫描、Claude 分块补全和显式父会话去重。
 * OpenCode V1/V2 SQLite：只读一致性读取 `message` / `part` 和 `session_message` / `session_v2`，迁移后的同会话不重复计费，保留原生报告费用、已知零费用及推理 Token。
+* DeepSeek Harness（dsh）：读取 `$DSH_HOME/sessions`（默认 `~/.dsh/sessions`）的 v0/v4 JSONL 与多帧 Zstandard 日志，支持缓存／推理 Token、模型与会话阅读、日志计时估算及迁移副本去重。配置和边界见 [DSH 兼容说明](docs/DSH.md)。
 * 复用 CC Switch 的统计组件、视觉 token 和会话阅读器；提供应用、用量、会话、设置四个页面。
 * 对齐 CC Switch 4.0.15 用量页显示设置：六种显示币种、手填汇率、侧栏今日指标、请求日志列显隐、柱形图／曲线面积图切换及原模型定价；显示偏好在本机持久化，原始费用仍保存 USD。
 * 本机会话搜索、项目／时间分组、正文和工具步骤、内联图片、Markdown 导出、复制恢复命令。
