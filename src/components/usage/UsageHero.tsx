@@ -64,6 +64,7 @@ export function aggregateSummaries(items: UsageSummary[]): UsageSummary {
 
   const cacheableInput = input + cacheCreation + cacheRead;
   return {
+    costConverted: items.some((item) => item.costConverted),
     totalRequests,
     unpricedCount: items.reduce((sum, s) => sum + (s.unpricedCount ?? 0), 0),
     totalCost: totalCostNum.toFixed(6),

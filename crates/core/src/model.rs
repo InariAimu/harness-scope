@@ -33,6 +33,43 @@ pub struct Price {
     pub source: String,
     pub source_key: Option<String>,
     pub fetched_at: i64,
+    #[serde(default = "usd_currency")]
+    pub currency: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pricing_rule: Option<String>,
+}
+fn usd_currency() -> String {
+    "USD".into()
+}
+
+/// Decimal strings, quoted as native currency units per USD. Separate from display FX.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PricingSettings {
+    #[serde(default)]
+    pub exchange_rates: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub holiday_calendars: std::collections::BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CurrencyConversion {
+    pub currency: String,
+    pub original_amount: String,
+    pub units_per_usd: Option<String>,
+    pub configured_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PricingContext {
+    pub period: String,
+    pub timestamp: i64,
+    pub time_basis: String,
+    pub calendar_version: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,6 +82,10 @@ pub struct Cost {
     pub priced_at: i64,
     pub rule_version: String,
     pub snapshot: Option<Price>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversion: Option<CurrencyConversion>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<PricingContext>,
 }
 impl Default for Cost {
     fn default() -> Self {
@@ -56,6 +97,8 @@ impl Default for Cost {
             priced_at: 0,
             rule_version: "ccswitch-e8880e6-v1".into(),
             snapshot: None,
+            conversion: None,
+            context: None,
         }
     }
 }

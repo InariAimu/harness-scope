@@ -41,6 +41,55 @@ pub fn validate_record(r: &UsageRecord) -> Result<()> {
     if let Some(p) = &r.cost.snapshot {
         crate::pricing::validate(p)?
     }
+    if let Some(c) = &r.cost.conversion {
+        anyhow::ensure!(
+            crate::pricing::CURRENCIES.contains(&c.currency.as_str())
+                && c.currency != "USD"
+                && c.configured_at >= 0,
+            "Invalid original currency"
+        );
+        let native = Decimal::from_str(&c.original_amount)?;
+        anyhow::ensure!(
+            native >= Decimal::ZERO && native < Decimal::from(1_000_000_000u64),
+            "Invalid native amount"
+        );
+        anyhow::ensure!(
+            r.cost
+                .snapshot
+                .as_ref()
+                .is_some_and(|p| p.currency == c.currency),
+            "Currency differs from price snapshot"
+        );
+        if let Some(rate) = &c.units_per_usd {
+            let rate = crate::pricing::validate_rate(rate)?;
+            anyhow::ensure!(
+                r.cost
+                    .amount_usd
+                    .as_deref()
+                    .is_some_and(|v| Decimal::from_str(v).ok() == Some(native / rate)),
+                "Converted amount differs from FX snapshot"
+            );
+        } else {
+            anyhow::ensure!(
+                r.cost.amount_usd.is_none(),
+                "Missing FX for converted amount"
+            );
+        }
+    } else {
+        anyhow::ensure!(
+            r.cost.snapshot.as_ref().is_none_or(|p| p.currency == "USD"),
+            "Non-USD estimate needs original amount"
+        );
+    }
+    if let Some(c) = &r.cost.context {
+        anyhow::ensure!(
+            ["peak", "off_peak"].contains(&c.period.as_str())
+                && c.timestamp > 0
+                && c.time_basis == "log_timestamp"
+                && c.calendar_version.len() <= 128,
+            "Invalid pricing context"
+        );
+    }
     Ok(())
 }
 pub fn push(store: &Store, request: PushRequest) -> Result<PushResponse> {

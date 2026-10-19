@@ -59,6 +59,15 @@ export const usageApi = {
   syncSessionUsage: () => command<SessionSyncResult>("scan"),
   rebuildCodexUsage: () => command<SessionSyncResult>("rescan"),
   getModelPricing: () => command<ModelPricing[]>("prices"),
+  getPricingSettings: () =>
+    command<import("@/types/usage").PricingSettings>("pricing_settings"),
+  savePricingSettings: (
+    patch: Partial<import("@/types/usage").PricingSettings>,
+  ) =>
+    command<import("@/types/usage").PricingSettings>("save_pricing_settings", {
+      patch,
+    }),
+  repriceUsage: (model?: string) => command<number>("reprice_usage", { model }),
   updateModelPricing: (
     modelId: string,
     displayName: string,
@@ -68,6 +77,7 @@ export const usageApi = {
     cacheCreationCost: string,
     source = "manual",
     sourceKey?: string,
+    currency = "USD",
   ) =>
     command<number>("save_prices", {
       entries: [
@@ -80,6 +90,7 @@ export const usageApi = {
           cacheCreationCostPerMillion: cacheCreationCost,
           source,
           sourceKey,
+          currency,
         },
       ],
     }),

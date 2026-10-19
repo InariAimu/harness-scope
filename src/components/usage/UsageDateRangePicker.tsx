@@ -16,7 +16,14 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { getUsageRangePresetLabel, resolveUsageRange } from "@/lib/usageRange";
+import {
+  getUsageRangePresetLabel,
+  resolveUsageRange,
+  usageCalendarDate,
+  usageDateParts,
+  usageTimestamp,
+} from "@/lib/usageRange";
+import { useUsageTimezone } from "@/lib/query/usageTimezone";
 import { getLocaleFromLanguage } from "./format";
 import type { UsageRangePreset, UsageRangeSelection } from "@/types/usage";
 
@@ -44,51 +51,49 @@ function isSameDay(a: Date, b: Date): boolean {
   );
 }
 
-function toTs(d: Date): number {
-  return Math.floor(d.getTime() / 1000);
+function fromTs(ts: number, timeZone: string): Date {
+  return usageCalendarDate(ts, timeZone);
 }
 
-function fromTs(ts: number): Date {
-  return new Date(ts * 1000);
-}
-
-function fmtDate(ts: number): string {
-  const d = fromTs(ts);
+function fmtDate(ts: number, timeZone: string): string {
+  const d = fromTs(ts, timeZone);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function fmtTime(ts: number): string {
-  const d = fromTs(ts);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+function fmtTime(ts: number, timeZone: string): string {
+  const p = usageDateParts(ts, timeZone);
+  return `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
 }
 
-function parseDateInput(ts: number, value: string): number {
+function parseDateInput(ts: number, value: string, timeZone: string): number {
   const [y, m, d] = value.split("-").map(Number);
   if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d))
     return ts;
-  const base = fromTs(ts);
-  return toTs(new Date(y, m - 1, d, base.getHours(), base.getMinutes()));
-}
-
-function parseTimeInput(ts: number, value: string): number {
-  const [h, min] = value.split(":").map(Number);
-  if (!Number.isFinite(h) || !Number.isFinite(min)) return ts;
-  const base = fromTs(ts);
-  return toTs(
-    new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, min),
+  return usageTimestamp(
+    { ...usageDateParts(ts, timeZone), year: y, month: m, day: d, second: 0 },
+    timeZone,
   );
 }
 
-function setDateKeepTime(ts: number, day: Date): number {
-  const base = fromTs(ts);
-  return toTs(
-    new Date(
-      day.getFullYear(),
-      day.getMonth(),
-      day.getDate(),
-      base.getHours(),
-      base.getMinutes(),
-    ),
+function parseTimeInput(ts: number, value: string, timeZone: string): number {
+  const [h, min] = value.split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(min)) return ts;
+  return usageTimestamp(
+    { ...usageDateParts(ts, timeZone), hour: h, minute: min, second: 0 },
+    timeZone,
+  );
+}
+
+function setDateKeepTime(ts: number, day: Date, timeZone: string): number {
+  return usageTimestamp(
+    {
+      ...usageDateParts(ts, timeZone),
+      year: day.getFullYear(),
+      month: day.getMonth() + 1,
+      day: day.getDate(),
+      second: 0,
+    },
+    timeZone,
   );
 }
 
@@ -105,8 +110,11 @@ function getCalendarDays(month: Date): Date[] {
 
 /* ── component ── */
 
-function resolveCalendarRange(selection: UsageRangeSelection) {
-  const r = resolveUsageRange(selection);
+function resolveCalendarRange(
+  selection: UsageRangeSelection,
+  timeZone: string,
+) {
+  const r = resolveUsageRange(selection, Date.now(), timeZone);
   if (selection.preset !== "all") return r;
   return { startDate: r.endDate - 30 * 24 * 60 * 60, endDate: r.endDate };
 }
@@ -117,14 +125,15 @@ export function UsageDateRangePicker({
   triggerLabel,
 }: UsageDateRangePickerProps) {
   const { t, i18n } = useTranslation();
+  const timeZone = useUsageTimezone();
   const [open, setOpen] = useState(false);
   const prevMonthLabel = t("usage.prevMonth", { defaultValue: "上个月" });
   const nextMonthLabel = t("usage.nextMonth", { defaultValue: "下个月" });
   const [activeField, setActiveField] = useState<DraftField>("start");
   // 「全部」的起点是 0，日历草稿改从结束日往前 30 天开始，避免跳到 1970 年
   const resolvedRange = useMemo(
-    () => resolveCalendarRange(selection),
-    [selection],
+    () => resolveCalendarRange(selection, timeZone),
+    [selection, timeZone],
   );
   const [draftStart, setDraftStart] = useState(resolvedRange.startDate);
   const [draftEnd, setDraftEnd] = useState(resolvedRange.endDate);
@@ -134,8 +143,8 @@ export function UsageDateRangePicker({
   const [displayMonth, setDisplayMonth] = useState(
     () =>
       new Date(
-        fromTs(resolvedRange.startDate).getFullYear(),
-        fromTs(resolvedRange.startDate).getMonth(),
+        fromTs(resolvedRange.startDate, timeZone).getFullYear(),
+        fromTs(resolvedRange.startDate, timeZone).getMonth(),
         1,
       ),
   );
@@ -147,7 +156,7 @@ export function UsageDateRangePicker({
   // Reset draft when popover opens
   useEffect(() => {
     if (!open) return;
-    const r = resolveCalendarRange(selection);
+    const r = resolveCalendarRange(selection, timeZone);
     setDraftStart(r.startDate);
     setDraftEnd(r.endDate);
     setDraftLiveEnd(
@@ -155,14 +164,14 @@ export function UsageDateRangePicker({
     );
     setDisplayMonth(
       new Date(
-        fromTs(r.startDate).getFullYear(),
-        fromTs(r.startDate).getMonth(),
+        fromTs(r.startDate, timeZone).getFullYear(),
+        fromTs(r.startDate, timeZone).getMonth(),
         1,
       ),
     );
     setActiveField("start");
     setError(null);
-  }, [open, selection]);
+  }, [open, selection, timeZone]);
 
   // Keep draftEnd ticking when live mode is active and popover is open
   useEffect(() => {
@@ -188,9 +197,9 @@ export function UsageDateRangePicker({
     [locale],
   );
 
-  const startDay = fromTs(draftStart);
-  const endDay = fromTs(draftEnd);
-  const today = new Date();
+  const startDay = fromTs(draftStart, timeZone);
+  const endDay = fromTs(draftEnd, timeZone);
+  const today = fromTs(Date.now() / 1000, timeZone);
 
   /* Pick a date from the calendar */
   const handleDatePick = (day: Date) => {
@@ -198,7 +207,7 @@ export function UsageDateRangePicker({
 
     // When live end time is active, calendar only controls start date
     if (draftLiveEnd) {
-      const nextTs = setDateKeepTime(draftStart, day);
+      const nextTs = setDateKeepTime(draftStart, day, timeZone);
       setDraftStart(nextTs);
       return;
     }
@@ -206,6 +215,7 @@ export function UsageDateRangePicker({
     const nextTs = setDateKeepTime(
       activeField === "start" ? draftStart : draftEnd,
       day,
+      timeZone,
     );
 
     if (activeField === "start") {
@@ -289,12 +299,12 @@ export function UsageDateRangePicker({
               "h-7 flex-1 border-0 bg-transparent p-0 text-body shadow-none focus:ring-0 focus-visible:ring-0",
               isEndLive && "pointer-events-none",
             )}
-            value={fmtDate(ts)}
+            value={fmtDate(ts, timeZone)}
             onChange={(e) => {
               if (isEndLive) return;
-              const next = parseDateInput(ts, e.target.value);
+              const next = parseDateInput(ts, e.target.value, timeZone);
               setTs(next);
-              const d = fromTs(next);
+              const d = fromTs(next, timeZone);
               setDisplayMonth(new Date(d.getFullYear(), d.getMonth(), 1));
               setError(null);
             }}
@@ -310,10 +320,10 @@ export function UsageDateRangePicker({
               "h-7 w-[90px] flex-none border-0 bg-transparent p-0 text-body shadow-none focus:ring-0 focus-visible:ring-0",
               isEndLive && "pointer-events-none",
             )}
-            value={fmtTime(ts)}
+            value={fmtTime(ts, timeZone)}
             onChange={(e) => {
               if (isEndLive) return;
-              setTs(parseTimeInput(ts, e.target.value));
+              setTs(parseTimeInput(ts, e.target.value, timeZone));
               setError(null);
             }}
             onFocus={() => {

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import {
   formatMoney,
+  formatCostMoney,
   formatMoneyCompact,
   formatMoneyShort,
   formatMoneyTick,
@@ -11,7 +12,7 @@ import { useUsageDisplay } from "@/lib/query/usageDisplay";
 
 /**
  * 用量金额的统一出口：用量面板、侧栏「今日」、会话阅读页的费用都经这里显示。
- * 定价（按美元录入）和额度 / 余额（供应商自己的币种）不走这里。
+ * 定价单价和额度 / 余额（供应商自己的币种）不走这里。
  */
 export function useMoneyFormat() {
   const { data: settings } = useUsageDisplay();
@@ -26,7 +27,10 @@ export function useMoneyFormat() {
       rate,
       money: (usd: unknown, digits: number, fallback?: string) =>
         formatMoney(usd, digits, display, fallback),
-      moneyCompact: (usd: number) => formatMoneyCompact(usd, display),
+      costMoney: (usd: unknown, digits: number, costConverted = false) =>
+        formatCostMoney(usd, digits, display, costConverted),
+      moneyCompact: (usd: number, costConverted = false) =>
+        `${converted || costConverted ? "≈" : ""}${formatMoneyCompact(usd, display)}`,
       moneyShort: (usd: unknown) => formatMoneyShort(usd, display),
       moneyTick: (value: unknown) => formatMoneyTick(value, display),
       /** 换算显示时悬停给出美元原值；按美元显示时没有，调用方别挂 title */

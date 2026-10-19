@@ -177,6 +177,20 @@ export function formatMoney(
   return `${symbol}${groupThousands(fixed)}`;
 }
 
+/** A converted stored cost stays approximate even when displayed in USD. */
+export function formatCostMoney(
+  usd: unknown,
+  digits: number,
+  display: MoneyDisplay,
+  costConverted = false,
+  fallback = "--",
+): string {
+  const approximate =
+    parseFiniteNumber(usd) != null &&
+    (costConverted || display.currency !== "USD");
+  return `${approximate ? "≈" : ""}${formatMoney(usd, digits, display, fallback)}`;
+}
+
 /** 按大小取位数并去掉末尾的 0：`$0.0081` / `$0.012` / `$1.25` */
 export function formatMoneyCompact(usd: number, display: MoneyDisplay): string {
   const value = usd * display.rate;

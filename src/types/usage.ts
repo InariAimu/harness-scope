@@ -8,6 +8,20 @@ export interface TokenUsage {
 }
 
 export interface RequestLog {
+  costConverted?: boolean;
+  costConversion?: {
+    currency: string;
+    originalAmount: string;
+    unitsPerUsd: string | null;
+    configuredAt: number;
+  } | null;
+  pricingContext?: {
+    period: "peak" | "off_peak";
+    timestamp: number;
+    timeBasis: string;
+    calendarVersion: string;
+  } | null;
+  pricingRuleVersion?: string;
   deviceId?: string;
   costSource?: string;
   priceSource?: string;
@@ -68,6 +82,8 @@ export interface PaginatedLogs {
 }
 
 export interface ModelPricing {
+  currency?: string;
+  pricingRule?: string;
   source?: string;
   sourceKey?: string;
   fetchedAt?: number;
@@ -77,6 +93,12 @@ export interface ModelPricing {
   outputCostPerMillion: string;
   cacheReadCostPerMillion: string;
   cacheCreationCostPerMillion: string;
+}
+
+export interface PricingSettings {
+  exchangeRates: Record<string, string>;
+  holidayCalendars: Record<string, string[]>;
+  updatedAt: number;
 }
 
 export interface ModelsDevSyncConfig {
@@ -94,6 +116,7 @@ export interface ModelsDevSyncState {
 }
 
 export interface UsageSummary {
+  costConverted?: boolean;
   unpricedCount?: number;
   knownStatusCount?: number;
   totalRequests: number;
@@ -115,6 +138,7 @@ export interface UsageSummaryByApp {
 }
 
 export interface DailyStats {
+  costConverted?: boolean;
   date: string;
   requestCount: number;
   totalCost: string;
@@ -126,6 +150,7 @@ export interface DailyStats {
 }
 
 export interface ProviderStats {
+  costConverted?: boolean;
   providerId: string;
   appType: string;
   providerName: string;
@@ -150,6 +175,7 @@ export interface ProviderStats {
 }
 
 export interface ModelStats {
+  costConverted?: boolean;
   model: string;
   requestCount: number;
   /** 真实消耗 Tokens（新增输入 + 输出 + 缓存写入 + 缓存命中），与指标卡同口径 */

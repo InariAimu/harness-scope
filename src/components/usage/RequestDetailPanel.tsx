@@ -85,8 +85,8 @@ function DetailSection({ title, rows }: { title: string; rows: DetailRow[] }) {
 
 function useDetailSections(request: RequestLog) {
   const { t, i18n } = useTranslation();
-  const { money, moneyTitle } = useMoneyFormat();
-  const usd = (value: string) => money(value, 4);
+  const { costMoney, moneyTitle } = useMoneyFormat();
+  const usd = (value: string) => costMoney(value, 4, request.costConverted);
   const locale = getLocaleFromLanguage(getResolvedLang(i18n));
   const freshInput = getFreshInputTokens(request);
   const isCacheInclusive = request.inputTokens !== freshInput;
@@ -220,6 +220,52 @@ function useDetailSections(request: RequestLog) {
     muted: unpriced,
     title: unpriced ? undefined : moneyTitle(request.totalCostUsd, 6),
   });
+  if (request.costConversion) {
+    const conversion = request.costConversion;
+    cost.push(
+      {
+        key: "original",
+        label: t("scope.pricing.originalAmount", "原币费用"),
+        value: `${conversion.originalAmount} ${conversion.currency}`,
+        mono: true,
+      },
+      {
+        key: "fx",
+        label: t("scope.pricing.usedRate", "计价汇率快照"),
+        value: conversion.unitsPerUsd
+          ? `1 USD = ${conversion.unitsPerUsd} ${conversion.currency}`
+          : t("scope.pricing.missingRate", "请在定价界面配置汇率"),
+        mono: true,
+      },
+    );
+  }
+  if (request.pricingContext) {
+    const context = request.pricingContext;
+    cost.push(
+      {
+        key: "period",
+        label: t("scope.pricing.period", "计费时段"),
+        value:
+          context.period === "peak"
+            ? t("scope.pricing.peak", "高峰")
+            : t("scope.pricing.offPeak", "空闲"),
+      },
+      {
+        key: "pricing-time",
+        label: t("scope.pricing.timeBasis", "计价时间（日志时间估算）"),
+        value:
+          new Date(context.timestamp * 1000).toLocaleString(locale, {
+            timeZone: "Asia/Shanghai",
+          }) + " UTC+8",
+      },
+      {
+        key: "rule",
+        label: t("scope.pricing.ruleVersion", "价格规则版本"),
+        value: request.pricingRuleVersion,
+        mono: true,
+      },
+    );
+  }
 
   let performance: DetailRow[];
   if (!isProxy) {

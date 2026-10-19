@@ -53,7 +53,14 @@ impl Store {
         Ok(self.meta("config")?.unwrap())
     }
     pub fn prices(&self) -> Result<Vec<Price>> {
-        Ok(self.meta("prices")?.unwrap_or_else(crate::pricing::builtin))
+        let mut prices = self.meta("prices")?.unwrap_or_else(crate::pricing::builtin);
+        crate::pricing::deepseek::install(&mut prices);
+        Ok(prices)
+    }
+    pub fn pricing_settings(&self) -> Result<PricingSettings> {
+        Ok(self
+            .meta("pricing_settings")?
+            .unwrap_or_else(crate::pricing::deepseek::default_settings))
     }
     pub fn record(&self, id: &str) -> Result<Option<UsageRecord>> {
         let p: Option<String> = self

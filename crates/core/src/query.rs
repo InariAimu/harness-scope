@@ -1,5 +1,5 @@
 use crate::{model::*, store::Store};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{Datelike, TimeZone};
 use rust_decimal::Decimal;
 use serde_json::{json, Value};
@@ -37,7 +37,7 @@ pub fn summary(records: &[UsageRecord]) -> Value {
         }
     }
     let cacheable = t.input + t.cache_read + t.cache_write;
-    json!({"totalRequests":count,"totalCost":cost.normalize().to_string(),"totalInputTokens":t.input,"totalOutputTokens":t.output,"totalCacheReadTokens":t.cache_read,"totalCacheCreationTokens":t.cache_write,"successRate":if known>0{Some(success as f64/known as f64*100.)}else{None},"realTotalTokens":t.total(),"cacheHitRate":if cacheable>0{t.cache_read as f64/cacheable as f64}else{0.},"unpricedCount":unpriced,"knownStatusCount":known})
+    json!({"totalRequests":count,"totalCost":cost.normalize().to_string(),"totalInputTokens":t.input,"totalOutputTokens":t.output,"totalCacheReadTokens":t.cache_read,"totalCacheCreationTokens":t.cache_write,"successRate":if known>0{Some(success as f64/known as f64*100.)}else{None},"realTotalTokens":t.total(),"cacheHitRate":if cacheable>0{t.cache_read as f64/cacheable as f64}else{0.},"unpricedCount":unpriced,"knownStatusCount":known,"costConverted":records.iter().any(|r|r.cost.conversion.as_ref().is_some_and(|c|c.units_per_usd.is_some()))})
 }
 fn provider(harness: &str) -> String {
     format!("{harness} (Session)")
@@ -87,30 +87,105 @@ fn log(r: &UsageRecord, timings: &Timings) -> Value {
         v["timingSource"] = json!(t.duration_source);
         v["firstTokenSource"] = json!(t.first_token_source);
     }
+    v["costConverted"] = json!(r
+        .cost
+        .conversion
+        .as_ref()
+        .is_some_and(|c| c.units_per_usd.is_some()));
+    v["costConversion"] = json!(r.cost.conversion);
+    v["pricingContext"] = json!(r.cost.context);
+    v["pricingRuleVersion"] = json!(r.cost.rule_version);
     if let Some(p) = &r.cost.snapshot {
-        let unit = |s: &str| Decimal::from_str(s).unwrap_or_default() / Decimal::from(1_000_000);
-        v["inputCostUsd"] = json!((Decimal::from(r.tokens.input)
-            * unit(&p.input_cost_per_million))
-        .normalize()
-        .to_string());
-        v["outputCostUsd"] = json!((Decimal::from(r.tokens.output)
-            * unit(&p.output_cost_per_million))
-        .normalize()
-        .to_string());
-        v["cacheReadCostUsd"] = json!((Decimal::from(r.tokens.cache_read)
-            * unit(&p.cache_read_cost_per_million))
-        .normalize()
-        .to_string());
-        v["cacheCreationCostUsd"] = json!(((Decimal::from(
-            r.tokens.cache_write - r.tokens.cache_write1h
-        ) + Decimal::from(r.tokens.cache_write1h)
-            * Decimal::new(16, 1))
-            * unit(&p.cache_creation_cost_per_million))
-        .normalize()
-        .to_string());
+        let rate = if p.currency == "USD" {
+            Some(Decimal::ONE)
+        } else {
+            r.cost
+                .conversion
+                .as_ref()
+                .and_then(|c| c.units_per_usd.as_deref())
+                .and_then(|s| Decimal::from_str(s).ok())
+        };
+        if let (Some(rate), Ok(parts)) = (rate, crate::pricing::components(&r.tokens, p)) {
+            for (key, amount) in [
+                "inputCostUsd",
+                "outputCostUsd",
+                "cacheReadCostUsd",
+                "cacheCreationCostUsd",
+            ]
+            .into_iter()
+            .zip(parts)
+            {
+                v[key] = json!((amount / rate).normalize().to_string());
+            }
+        }
     }
     v
 }
+
+// CC Switch v4.0.15 uses range-relative hourly buckets and local calendar days,
+// including zero buckets. See third_party/UPSTREAM.md for source provenance.
+fn trends(
+    records: Vec<UsageRecord>,
+    start: i64,
+    end: i64,
+    timezone: chrono_tz::Tz,
+) -> Result<Value> {
+    anyhow::ensure!(start <= end, "Start time must not exceed end time");
+    let local = |ts| {
+        timezone
+            .timestamp_opt(ts, 0)
+            .single()
+            .context("Invalid trend timestamp")
+    };
+    let hourly = end.saturating_sub(start) <= 86_400;
+    let start_day = local(start)?.date_naive();
+    let end_day = local(end)?.date_naive();
+    let count = if hourly {
+        ((end - start + 3599) / 3600).max(1)
+    } else {
+        end_day.signed_duration_since(start_day).num_days() + 1
+    };
+    let mut groups: BTreeMap<i64, Vec<UsageRecord>> = BTreeMap::new();
+    for r in records {
+        let bucket = if hourly {
+            ((r.occurred_at - start) / 3600).min(count - 1)
+        } else {
+            // The complete-day guard uses a rollup's original timezone. Its
+            // displayed bucket must still belong to the configured query zone.
+            let day = local(r.occurred_at)?.date_naive();
+            day.signed_duration_since(start_day).num_days()
+        };
+        if (0..count).contains(&bucket) {
+            groups.entry(bucket).or_default().push(r);
+        }
+    }
+    let mut rows = Vec::new();
+    for bucket in 0..count {
+        let date = if hourly {
+            local(start + bucket * 3600)?.to_rfc3339()
+        } else {
+            let day = start_day
+                .checked_add_signed(chrono::Duration::days(bucket))
+                .context("Invalid trend day")?;
+            // Some zones advance the clock at midnight. Use the first valid minute
+            // of the day; a wholly skipped civil date has no time bucket.
+            let first = (0..1440).find_map(|minute| {
+                timezone
+                    .from_local_datetime(&day.and_hms_opt(minute / 60, minute % 60, 0).unwrap())
+                    .earliest()
+            });
+            let Some(first) = first else {
+                continue;
+            };
+            first.to_rfc3339()
+        };
+        let records = groups.remove(&bucket).unwrap_or_default();
+        let s = summary(&records);
+        rows.push(json!({"date":date,"requestCount":s["totalRequests"],"totalCost":s["totalCost"],"costConverted":s["costConverted"],"totalTokens":s["realTotalTokens"],"totalInputTokens":s["totalInputTokens"],"totalOutputTokens":s["totalOutputTokens"],"totalCacheCreationTokens":s["totalCacheCreationTokens"],"totalCacheReadTokens":s["totalCacheReadTokens"]}));
+    }
+    Ok(json!(rows))
+}
+
 pub fn query(store: &Store, kind: &str, args: &Value) -> Result<Value> {
     let scope = args["scope"].as_str().unwrap_or("local");
     let records = store.records(scope)?;
@@ -126,6 +201,16 @@ pub fn query(store: &Store, kind: &str, args: &Value) -> Result<Value> {
                 .ok_or_else(|| anyhow::anyhow!("Invalid local midnight"))
         };
         (midnight(day)?, midnight(day.succ_opt().unwrap())? - 1)
+    } else if kind == "trends" {
+        let end = args["endDate"]
+            .as_i64()
+            .unwrap_or_else(|| chrono::Utc::now().timestamp());
+        (
+            args["startDate"]
+                .as_i64()
+                .unwrap_or_else(|| end.saturating_sub(86_400)),
+            end,
+        )
     } else {
         (
             args["startDate"].as_i64().unwrap_or(0),
@@ -185,9 +270,9 @@ pub fn query(store: &Store, kind: &str, args: &Value) -> Result<Value> {
         "firstDate"=>Ok(json!(selected.iter().filter_map(|r|timezone.timestamp_opt(r.occurred_at,0).single()).min().map(|d|d.format("%Y-%m-%d").to_string()))),
         "logs"=>{let mut rows:Vec<_>=selected.into_iter().filter(|r|r.grain=="event").collect();rows.sort_by(|a,b|b.occurred_at.cmp(&a.occurred_at).then(a.id.cmp(&b.id)));let total=rows.len();let page=args["page"].as_u64().unwrap_or(0) as usize;let size=args["pageSize"].as_u64().unwrap_or(20).clamp(1,200) as usize;Ok(json!({"data":rows.iter().skip(page.saturating_mul(size)).take(size).map(|r|log(r,&timings)).collect::<Vec<_>>(),"total":total,"page":page,"pageSize":size}))},
         "detail"=>Ok(selected.iter().find(|r|format!("{}|{}",r.device_id,r.id)==args["requestId"].as_str().unwrap_or("")&&args["deviceId"].as_str().is_none_or(|id|r.device_id==id)).map(|r|log(r,&timings)).unwrap_or(Value::Null)),
-        "models"|"providers"=>{let mut groups:BTreeMap<String,Vec<UsageRecord>>=BTreeMap::new();for r in selected{groups.entry(if kind=="models"{r.model.clone()}else{r.harness.clone()}).or_default().push(r)}Ok(json!(groups.into_iter().map(|(key,rs)|{let s=summary(&rs);let mut row=json!({"model":key,"providerId":key,"providerName":provider(&rs[0].harness),"appType":rs[0].harness,"requestCount":s["totalRequests"],"totalTokens":s["realTotalTokens"],"totalCost":s["totalCost"],"successRate":s["successRate"],"avgLatencyMs":0,"avgCostPerRequest":if s["totalRequests"].as_u64().unwrap_or(0)>0{(rs.iter().map(amount).sum::<Decimal>()/Decimal::from(s["totalRequests"].as_u64().unwrap())).normalize().to_string()}else{"0".into()}});row.as_object_mut().unwrap().extend(timing_stats(&rs,&timings).as_object().unwrap().clone());row}).collect::<Vec<_>>()))},
-        "trends"=>{let hourly=end.saturating_sub(start)<=86_400;let mut groups:BTreeMap<String,Vec<UsageRecord>>=BTreeMap::new();for r in selected{let date=if let Some(day)=&r.legacy_date{day.clone()}else{timezone.timestamp_opt(r.occurred_at,0).single().map(|d|d.format(if hourly{"%Y-%m-%d %H:00:00"}else{"%Y-%m-%d"}).to_string()).unwrap_or_default()};groups.entry(date).or_default().push(r)}Ok(json!(groups.into_iter().map(|(date,rs)|{let s=summary(&rs);json!({"date":date,"requestCount":s["totalRequests"],"totalCost":s["totalCost"],"totalTokens":s["realTotalTokens"],"totalInputTokens":s["totalInputTokens"],"totalOutputTokens":s["totalOutputTokens"],"totalCacheCreationTokens":s["totalCacheCreationTokens"],"totalCacheReadTokens":s["totalCacheReadTokens"]})}).collect::<Vec<_>>()))},
-        "sources"=>{let mut groups:BTreeMap<String,Vec<UsageRecord>>=BTreeMap::new();for r in selected{groups.entry(r.record_source.clone()).or_default().push(r)}Ok(json!(groups.into_iter().map(|(source,rs)|{let s=summary(&rs);json!({"dataSource":source,"requestCount":s["totalRequests"],"totalCostUsd":s["totalCost"]})}).collect::<Vec<_>>()))},
+        "models"|"providers"=>{let mut groups:BTreeMap<String,Vec<UsageRecord>>=BTreeMap::new();for r in selected{groups.entry(if kind=="models"{r.model.clone()}else{r.harness.clone()}).or_default().push(r)}Ok(json!(groups.into_iter().map(|(key,rs)|{let s=summary(&rs);let mut row=json!({"model":key,"providerId":key,"providerName":provider(&rs[0].harness),"appType":rs[0].harness,"requestCount":s["totalRequests"],"totalTokens":s["realTotalTokens"],"totalCost":s["totalCost"],"costConverted":s["costConverted"],"successRate":s["successRate"],"avgLatencyMs":0,"avgCostPerRequest":if s["totalRequests"].as_u64().unwrap_or(0)>0{(rs.iter().map(amount).sum::<Decimal>()/Decimal::from(s["totalRequests"].as_u64().unwrap())).normalize().to_string()}else{"0".into()}});row.as_object_mut().unwrap().extend(timing_stats(&rs,&timings).as_object().unwrap().clone());row}).collect::<Vec<_>>()))},
+        "trends"=>trends(selected,start,end,timezone),
+        "sources"=>{let mut groups:BTreeMap<String,Vec<UsageRecord>>=BTreeMap::new();for r in selected{groups.entry(r.record_source.clone()).or_default().push(r)}Ok(json!(groups.into_iter().map(|(source,rs)|{let s=summary(&rs);json!({"dataSource":source,"requestCount":s["totalRequests"],"totalCostUsd":s["totalCost"],"costConverted":s["costConverted"]})}).collect::<Vec<_>>()))},
         "heatmap"=>Ok(json!(selected.iter().filter_map(|r|timezone.timestamp_opt(r.occurred_at,0).single().map(|d|json!({"date":d.format("%Y-%m-%d").to_string(),"weekday":d.weekday().num_days_from_monday(),"count":r.count}))).collect::<Vec<_>>())),
         _=>anyhow::bail!("Unknown usage query: {kind}")
     }

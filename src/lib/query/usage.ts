@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { usageApi } from "@/lib/api/usage";
 import { resolveUsageRange } from "@/lib/usageRange";
+import { useUsageTimezone } from "./usageTimezone";
 import type {
   LogFilters,
   UsageRangeSelection,
@@ -182,17 +183,25 @@ export function useUsageSummary(
   filters?: UsageScopeFilters,
   options?: UsageQueryOptions,
 ) {
+  const timeZone = useUsageTimezone();
   const effective = normalizeScopeFilters(filters);
   return useQuery({
-    queryKey: usageKeys.summary(
-      range.preset,
-      range.customStartDate,
-      range.customEndDate,
-      effective,
-      range.liveEndTime,
-    ),
+    queryKey: [
+      ...usageKeys.summary(
+        range.preset,
+        range.customStartDate,
+        range.customEndDate,
+        effective,
+        range.liveEndTime,
+      ),
+      timeZone,
+    ],
     queryFn: () => {
-      const { startDate, endDate } = resolveUsageRange(range);
+      const { startDate, endDate } = resolveUsageRange(
+        range,
+        Date.now(),
+        timeZone,
+      );
       return usageApi.getUsageSummary(
         startDate,
         endDate,
@@ -212,16 +221,24 @@ export function useUsageSummaryByApp(
   filters?: Pick<UsageScopeFilters, "providerName" | "model">,
   options?: UsageQueryOptions,
 ) {
+  const timeZone = useUsageTimezone();
   return useQuery({
-    queryKey: usageKeys.summaryByApp(
-      range.preset,
-      range.customStartDate,
-      range.customEndDate,
-      filters,
-      range.liveEndTime,
-    ),
+    queryKey: [
+      ...usageKeys.summaryByApp(
+        range.preset,
+        range.customStartDate,
+        range.customEndDate,
+        filters,
+        range.liveEndTime,
+      ),
+      timeZone,
+    ],
     queryFn: () => {
-      const { startDate, endDate } = resolveUsageRange(range);
+      const { startDate, endDate } = resolveUsageRange(
+        range,
+        Date.now(),
+        timeZone,
+      );
       return usageApi.getUsageSummaryByApp(
         startDate,
         endDate,
@@ -240,17 +257,25 @@ export function useUsageTrends(
   filters?: UsageScopeFilters,
   options?: UsageQueryOptions,
 ) {
+  const timeZone = useUsageTimezone();
   const effective = normalizeScopeFilters(filters);
   return useQuery({
-    queryKey: usageKeys.trends(
-      range.preset,
-      range.customStartDate,
-      range.customEndDate,
-      effective,
-      range.liveEndTime,
-    ),
+    queryKey: [
+      ...usageKeys.trends(
+        range.preset,
+        range.customStartDate,
+        range.customEndDate,
+        effective,
+        range.liveEndTime,
+      ),
+      timeZone,
+    ],
     queryFn: () => {
-      const { startDate, endDate } = resolveUsageRange(range);
+      const { startDate, endDate } = resolveUsageRange(
+        range,
+        Date.now(),
+        timeZone,
+      );
       return usageApi.getUsageTrends(
         startDate,
         endDate,
@@ -271,9 +296,10 @@ export function useUsageFirstDate(
   filters?: UsageScopeFilters,
   options?: UsageQueryOptions,
 ) {
+  const timeZone = useUsageTimezone();
   const effective = normalizeScopeFilters(filters);
   return useQuery({
-    queryKey: usageKeys.firstDate(effective),
+    queryKey: [...usageKeys.firstDate(effective), timeZone],
     queryFn: () =>
       usageApi.getUsageFirstDate(
         effective.appType,
@@ -291,17 +317,25 @@ export function useProviderStats(
   filters?: UsageScopeFilters,
   options?: UsageQueryOptions,
 ) {
+  const timeZone = useUsageTimezone();
   const effective = normalizeScopeFilters(filters);
   return useQuery({
-    queryKey: usageKeys.providerStats(
-      range.preset,
-      range.customStartDate,
-      range.customEndDate,
-      effective,
-      range.liveEndTime,
-    ),
+    queryKey: [
+      ...usageKeys.providerStats(
+        range.preset,
+        range.customStartDate,
+        range.customEndDate,
+        effective,
+        range.liveEndTime,
+      ),
+      timeZone,
+    ],
     queryFn: () => {
-      const { startDate, endDate } = resolveUsageRange(range);
+      const { startDate, endDate } = resolveUsageRange(
+        range,
+        Date.now(),
+        timeZone,
+      );
       return usageApi.getProviderStats(
         startDate,
         endDate,
@@ -321,17 +355,25 @@ export function useModelStats(
   filters?: UsageScopeFilters,
   options?: UsageQueryOptions,
 ) {
+  const timeZone = useUsageTimezone();
   const effective = normalizeScopeFilters(filters);
   return useQuery({
-    queryKey: usageKeys.modelStats(
-      range.preset,
-      range.customStartDate,
-      range.customEndDate,
-      effective,
-      range.liveEndTime,
-    ),
+    queryKey: [
+      ...usageKeys.modelStats(
+        range.preset,
+        range.customStartDate,
+        range.customEndDate,
+        effective,
+        range.liveEndTime,
+      ),
+      timeZone,
+    ],
     queryFn: () => {
-      const { startDate, endDate } = resolveUsageRange(range);
+      const { startDate, endDate } = resolveUsageRange(
+        range,
+        Date.now(),
+        timeZone,
+      );
       return usageApi.getModelStats(
         startDate,
         endDate,
@@ -353,6 +395,7 @@ export function useRequestLogs({
   pageSize = 20,
   options,
 }: RequestLogsQueryArgs) {
+  const timeZone = useUsageTimezone();
   const key: RequestLogsKey = {
     preset: range.preset,
     customStartDate: range.customStartDate,
@@ -365,9 +408,12 @@ export function useRequestLogs({
   };
 
   return useQuery({
-    queryKey: usageKeys.logs(key, page, pageSize),
+    queryKey: [...usageKeys.logs(key, page, pageSize), timeZone],
     queryFn: () => {
-      const effectiveFilters = { ...filters, ...resolveUsageRange(range) };
+      const effectiveFilters = {
+        ...filters,
+        ...resolveUsageRange(range, Date.now(), timeZone),
+      };
       return usageApi.getRequestLogs(effectiveFilters, page, pageSize);
     },
     placeholderData: keepPreviousData,
@@ -435,6 +481,7 @@ export function useUpdateModelPricing() {
       cacheCreationCost: string;
       source?: string;
       sourceKey?: string;
+      currency?: string;
     }) =>
       usageApi.updateModelPricing(
         params.modelId,
@@ -445,6 +492,7 @@ export function useUpdateModelPricing() {
         params.cacheCreationCost,
         params.source,
         params.sourceKey,
+        params.currency,
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: usageKeys.all });

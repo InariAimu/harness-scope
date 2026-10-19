@@ -31,7 +31,7 @@ export function ProviderStatsTable({
   refreshIntervalMs,
 }: ProviderStatsTableProps) {
   const { t, i18n } = useTranslation();
-  const { money, moneyTitle } = useMoneyFormat();
+  const { costMoney, moneyTitle } = useMoneyFormat();
   const locale = getLocaleFromLanguage(getResolvedLang(i18n));
   const { data: stats, isLoading } = useProviderStats(
     range,
@@ -107,7 +107,7 @@ export function ProviderStatsTable({
                       className={cn(usageTable.td, "font-medium")}
                       title={moneyTitle(stat.totalCost, 6)}
                     >
-                      {money(stat.totalCost, 2)}
+                      {costMoney(stat.totalCost, 2, stat.costConverted)}
                     </td>
                     <PerformanceCells stat={stat} />
                   </tr>

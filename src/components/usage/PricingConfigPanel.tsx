@@ -9,6 +9,10 @@ import { PricingEditModal } from "./PricingEditModal";
 import { ModelsDevPickerDialog } from "./ModelsDevPickerDialog";
 import { ModelsDevAutoSyncPanel } from "./ModelsDevAutoSyncPanel";
 import { toast } from "@/lib/toast";
+import {
+  PricingSettingsPanel,
+  usePricingSettings,
+} from "./PricingSettingsPanel";
 const empty: ModelPricing = {
   modelId: "",
   displayName: "",
@@ -20,12 +24,14 @@ const empty: ModelPricing = {
 export function PricingConfigPanel() {
   const { t } = useTranslation();
   const query = useModelPricing();
+  const settings = usePricingSettings();
   const remove = useDeleteModelPricing();
   const [edit, setEdit] = useState<ModelPricing | null>(null);
   const [picker, setPicker] = useState(false);
   const [search, setSearch] = useState("");
   return (
     <div className="space-y-5">
+      <PricingSettingsPanel />
       <ModelsDevAutoSyncPanel />
       <div className="flex items-center gap-2">
         <Input
@@ -50,7 +56,11 @@ export function PricingConfigPanel() {
         </Button>
       </div>
       <p className="text-caption text-fg-2">
-        USD / 1M tokens ·{" "}
+        {t(
+          "scope.pricing.nativeUnits",
+          "原币 / 1M Tokens；DeepSeek 按空闲 / 高峰显示",
+        )}{" "}
+        ·{" "}
         {t(
           "scope.pricingNote",
           "费用保存实际价表来源和单价快照。更新价表仅补齐未知费用。",
@@ -98,34 +108,75 @@ export function PricingConfigPanel() {
                     p.cacheCreationCostPerMillion,
                   ].map((n, i) => (
                     <td key={i} className="px-3 tabular-nums">
-                      ${n}
+                      <div>
+                        {p.currency === "CNY"
+                          ? "¥"
+                          : p.currency && p.currency !== "USD"
+                            ? `${p.currency} `
+                            : "$"}
+                        {n}
+                        {p.pricingRule ? ` / ¥${Number(n) * 2}` : ""}
+                      </div>
+                      {p.currency &&
+                        p.currency !== "USD" &&
+                        Number(settings.data?.exchangeRates[p.currency]) >
+                          0 && (
+                          <div className="text-caption text-fg-3">
+                            ≈$
+                            {(
+                              Number(n) /
+                              Number(settings.data?.exchangeRates[p.currency])
+                            ).toFixed(6)}
+                            {p.pricingRule
+                              ? ` / $${((Number(n) * 2) / Number(settings.data?.exchangeRates[p.currency])).toFixed(6)}`
+                              : ""}
+                          </div>
+                        )}
                     </td>
                   ))}
                   <td className="px-3">
-                    <button
-                      aria-label={`Edit ${p.modelId}`}
-                      className="p-1"
-                      onClick={() => setEdit(p)}
-                    >
-                      <Pencil size={14} />
-                    </button>
-                    <button
-                      aria-label={`Delete ${p.modelId}`}
-                      className="p-1"
-                      onClick={() =>
-                        remove.mutate(p.modelId, {
-                          onError: (e) => toast.error(String(e)),
-                        })
-                      }
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    {!p.pricingRule && (
+                      <button
+                        aria-label={`Edit ${p.modelId}`}
+                        className="p-1"
+                        onClick={() => setEdit(p)}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    )}
+                    {!p.pricingRule && (
+                      <button
+                        aria-label={`Delete ${p.modelId}`}
+                        className="p-1"
+                        onClick={() =>
+                          remove.mutate(p.modelId, {
+                            onError: (e) => toast.error(String(e)),
+                          })
+                        }
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
           </tbody>
         </table>
       </div>
+      <p className="text-caption text-fg-2">
+        {t(
+          "scope.pricing.officialNote",
+          "DeepSeek 官方价表按日志时间估算，统计时区不影响计价时段。当前为 Token 费用，Search / Fetch 工具费用未统计。",
+        )}{" "}
+        <a
+          className="text-link"
+          href="https://api-docs.deepseek.com/zh-cn/quick_start/pricing/"
+          target="_blank"
+          rel="noreferrer"
+        >
+          {t("scope.pricing.officialLink", "官方计价说明")}
+        </a>
+      </p>
       {edit && (
         <PricingEditModal
           open

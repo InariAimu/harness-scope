@@ -64,6 +64,7 @@ import { UsageDisplaySection } from "./UsageDisplaySection";
 import { usageTable } from "./usageTable";
 import { resolveRequestLogColumns } from "./requestLogColumns";
 import { useUsageDisplay } from "@/lib/query/usageDisplay";
+import { useUsageTimezone } from "@/lib/query/usageTimezone";
 import { UsageHeatmap } from "./UsageHeatmap";
 import { fmtInt, formatRelativeTime, getLocaleFromLanguage } from "./format";
 import { getUsageProviderLabel, usageProviderTitle } from "./providerLabel";
@@ -177,6 +178,7 @@ export function UsageDashboard({
   const { t, i18n } = useTranslation();
   const harnesses = useHarnessDescriptors();
   const display = useUsageDisplay();
+  const timeZone = useUsageTimezone();
   const logColumns = resolveRequestLogColumns(display.data?.requestLogColumns);
   const queryClient = useQueryClient();
   const [range, setRange] = useState<UsageRangeSelection>({
@@ -318,22 +320,34 @@ export function UsageDashboard({
 
   const language = i18n.resolvedLanguage || i18n.language || "en";
   const locale = getLocaleFromLanguage(language);
-  const resolvedRange = useMemo(() => resolveUsageRange(range), [range]);
+  const resolvedRange = useMemo(
+    () => resolveUsageRange(range, now, timeZone),
+    [range, now, timeZone],
+  );
   const rangeLabel = useMemo(() => {
     if (range.preset !== "custom") {
       return getUsageRangePresetLabel(range.preset, t);
     }
     const startStr = new Date(resolvedRange.startDate * 1000).toLocaleString(
       locale,
+      { timeZone },
     );
     if (range.liveEndTime) {
       return `${startStr} → ${t("usage.liveEndTimeNow", "现在")}`;
     }
     const endStr = new Date(resolvedRange.endDate * 1000).toLocaleString(
       locale,
+      { timeZone },
     );
     return `${startStr} - ${endStr}`;
-  }, [locale, range, resolvedRange.endDate, resolvedRange.startDate, t]);
+  }, [
+    locale,
+    range,
+    resolvedRange.endDate,
+    resolvedRange.startDate,
+    t,
+    timeZone,
+  ]);
 
   // 筛选下拉的选项池：供应商列表只跟应用/时间范围走（不受自身选中值影响），
   // 模型列表随所选供应商级联。所有查询（含子组件）都不轮询：会话用量由

@@ -36,6 +36,7 @@ export function PricingEditModal({
     outputCost: model.outputCostPerMillion,
     cacheReadCost: model.cacheReadCostPerMillion,
     cacheCreationCost: model.cacheCreationCostPerMillion,
+    currency: model.currency ?? "USD",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -70,6 +71,7 @@ export function PricingEditModal({
         outputCost: formData.outputCost,
         cacheReadCost: formData.cacheReadCost,
         cacheCreationCost: formData.cacheCreationCost,
+        currency: formData.currency,
       });
 
       toast.success(
@@ -134,6 +136,23 @@ export function PricingEditModal({
       )}
 
       <form id="pricing-form" onSubmit={handleSubmit} className="space-y-6">
+        <div className="space-y-2">
+          <Label htmlFor="priceCurrency">
+            {t("scope.pricing.originalCurrency", "官方单价币种")}
+          </Label>
+          <select
+            id="priceCurrency"
+            className="block rounded border border-border bg-surface p-2"
+            value={formData.currency}
+            onChange={(event) =>
+              setFormData({ ...formData, currency: event.target.value })
+            }
+          >
+            {["USD", "CNY", "EUR", "JPY", "TWD", "TRY"].map((currency) => (
+              <option key={currency}>{currency}</option>
+            ))}
+          </select>
+        </div>
         {isNew && (
           <div className="space-y-2">
             <Label htmlFor="modelId">{t("usage.modelId", "模型 ID")}</Label>
@@ -170,7 +189,10 @@ export function PricingEditModal({
 
         <div className="space-y-2">
           <Label htmlFor="inputCost">
-            {t("usage.inputCostPerMillion", "输入成本 (每百万 tokens, USD)")}
+            {t(
+              "usage.inputCostPerMillion",
+              "输入成本 (每百万 tokens, USD)",
+            ).replace("USD", formData.currency)}
           </Label>
           <Input
             id="inputCost"
@@ -187,7 +209,10 @@ export function PricingEditModal({
 
         <div className="space-y-2">
           <Label htmlFor="outputCost">
-            {t("usage.outputCostPerMillion", "输出成本 (每百万 tokens, USD)")}
+            {t(
+              "usage.outputCostPerMillion",
+              "输出成本 (每百万 tokens, USD)",
+            ).replace("USD", formData.currency)}
           </Label>
           <Input
             id="outputCost"
@@ -207,7 +232,7 @@ export function PricingEditModal({
             {t(
               "usage.cacheReadCostPerMillion",
               "缓存读取成本 (每百万 tokens, USD)",
-            )}
+            ).replace("USD", formData.currency)}
           </Label>
           <Input
             id="cacheReadCost"
@@ -227,7 +252,7 @@ export function PricingEditModal({
             {t(
               "usage.cacheCreationCostPerMillion",
               "缓存写入成本 (每百万 tokens, USD)",
-            )}
+            ).replace("USD", formData.currency)}
           </Label>
           <Input
             id="cacheCreationCost"

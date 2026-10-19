@@ -14,6 +14,8 @@ import {
 } from "./format";
 import type { UsageTrendStatLike } from "./UsageTrendChart";
 import { UsageTooltipCard } from "./UsageTooltipCard";
+import { usageCalendarDate, usageTimestamp } from "@/lib/usageRange";
+import { useUsageTimezone } from "@/lib/query/usageTimezone";
 
 const WEEKS = 53;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -30,6 +32,7 @@ interface UsageHeatmapProps {
 }
 
 interface DayCell {
+  costConverted?: boolean;
   key: string;
   date: Date;
   value: number;
@@ -46,7 +49,12 @@ interface SpanGrid {
   end: Date;
   weeks: DayCell[][];
   monthLabels: (number | null)[];
-  totals: { tokens: number; requests: number; cost: number };
+  totals: {
+    tokens: number;
+    requests: number;
+    cost: number;
+    costConverted: boolean;
+  };
 }
 
 interface HoverState {
@@ -152,8 +160,9 @@ function useAllSpansDailyTrends(
   refreshIntervalMs: number,
 ) {
   const refetchInterval = refreshIntervalMs > 0 ? refreshIntervalMs : false;
+  const timeZone = useUsageTimezone();
   const firstDateQuery = useUsageFirstDate(filters, { refetchInterval });
-  const today = startOfDay(new Date());
+  const today = startOfDay(usageCalendarDate(Date.now() / 1000, timeZone));
   const spanCount = firstDateQuery.isSuccess
     ? spanCountFor(firstDateQuery.data, today)
     : null;
@@ -161,14 +170,21 @@ function useAllSpansDailyTrends(
   const selection = useMemo<UsageRangeSelection>(
     () => ({
       preset: "custom",
-      customStartDate: Math.floor(
-        spanStart(startOfDay(new Date()), (spanCount ?? 1) - 1).getTime() /
-          1000,
-      ),
+      customStartDate: (() => {
+        const start = spanStart(today, (spanCount ?? 1) - 1);
+        return usageTimestamp(
+          {
+            year: start.getFullYear(),
+            month: start.getMonth() + 1,
+            day: start.getDate(),
+          },
+          timeZone,
+        );
+      })(),
       liveEndTime: true,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [startKey],
+    [startKey, timeZone],
   );
   const trendsQuery = useUsageTrends(selection, filters, {
     enabled: spanCount != null,
@@ -191,7 +207,7 @@ function buildSpan(
   const start = spanStart(today, index);
   const end = index === 0 ? today : addDays(spanStart(today, index - 1), -1);
   const weeks: DayCell[][] = [];
-  const totals = { tokens: 0, requests: 0, cost: 0 };
+  const totals = { tokens: 0, requests: 0, cost: 0, costConverted: false };
   for (let w = 0; w < WEEKS; w++) {
     const column: DayCell[] = [];
     for (let d = 0; d < 7; d++) {
@@ -204,11 +220,13 @@ function buildSpan(
         tokens: stat ? metricValue(stat, "tokens") : 0,
         requests: stat?.requestCount ?? 0,
         cost: stat ? metricValue(stat, "cost") : 0,
+        costConverted: stat?.costConverted,
         future: date.getTime() > today.getTime(),
       };
       totals.tokens += cell.tokens;
       totals.requests += cell.requests;
       totals.cost += cell.cost;
+      totals.costConverted ||= Boolean(cell.costConverted);
       column.push(cell);
     }
     weeks.push(column);
@@ -231,7 +249,8 @@ export function UsageHeatmap({
   refreshIntervalMs,
 }: UsageHeatmapProps) {
   const { t, i18n } = useTranslation();
-  const { money } = useMoneyFormat();
+  const { costMoney } = useMoneyFormat();
+  const timeZone = useUsageTimezone();
   const [metric, setMetric] = useState<HeatMetric>("tokens");
   const sectionRef = useRef<HTMLElement>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
@@ -260,9 +279,12 @@ export function UsageHeatmap({
   const heat = useMemo(() => {
     const byDay = new Map<string, UsageTrendStatLike>();
     for (const stat of trends ?? []) {
-      byDay.set(dayKey(new Date(stat.date)), stat);
+      byDay.set(
+        dayKey(usageCalendarDate(Date.parse(stat.date) / 1000, timeZone)),
+        stat,
+      );
     }
-    const today = startOfDay(new Date());
+    const today = startOfDay(usageCalendarDate(Date.now() / 1000, timeZone));
     // 最新的一段在上
     const spans = Array.from({ length: spanCount }, (_, index) =>
       buildSpan(index, byDay, metric, today),
@@ -274,7 +296,7 @@ export function UsageHeatmap({
     const thresholds = buildThresholds(days.map((cell) => cell.value));
 
     return { spans, thresholds };
-  }, [trends, metric, spanCount]);
+  }, [trends, metric, spanCount, timeZone]);
 
   const earlierCount = heat.spans.length - 1;
   const visibleSpans = showEarlier ? heat.spans : heat.spans.slice(0, 1);
@@ -344,7 +366,11 @@ export function UsageHeatmap({
                 {t("usage.heatmap.spanSummary", {
                   tokens: formatTokensShort(span.totals.tokens, language),
                   requests: formatTokensShort(span.totals.requests, language),
-                  cost: money(span.totals.cost, 2),
+                  cost: costMoney(
+                    span.totals.cost,
+                    2,
+                    span.totals.costConverted,
+                  ),
                 })}
               </span>
             </div>
@@ -428,6 +454,7 @@ export function UsageHeatmap({
             tokens={hover.cell.tokens}
             requests={hover.cell.requests}
             cost={hover.cell.cost}
+            costConverted={hover.cell.costConverted}
           />
         </div>
       )}

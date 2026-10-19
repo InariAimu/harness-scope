@@ -124,10 +124,34 @@ impl Engine {
                 Ok(json!(display))
             }
             "prices" => Ok(json!(self.lock()?.prices()?)),
+            "pricing_settings" => Ok(json!(self.lock()?.pricing_settings()?)),
+            "save_pricing_settings" => {
+                let patch: PricingSettings = serde_json::from_value(args["patch"].clone())?;
+                pricing::validate_settings(&patch)?;
+                let s = self.lock()?;
+                s.transaction(|| {
+                    let mut settings = s.pricing_settings()?;
+                    settings.exchange_rates.extend(patch.exchange_rates);
+                    settings.holiday_calendars.extend(patch.holiday_calendars);
+                    settings.updated_at = chrono::Utc::now().timestamp();
+                    pricing::validate_settings(&settings)?;
+                    s.set_meta("pricing_settings", &settings)?;
+                    Self::reprice(&s, false, None)?;
+                    Ok(json!(settings))
+                })
+            }
+            "reprice_usage" => {
+                let s = self.lock()?;
+                s.transaction(|| Ok(json!(Self::reprice(&s, true, args["model"].as_str())?)))
+            }
             "save_prices" => self.save_prices(args),
             "delete_price" => {
                 let s = self.lock()?;
                 let mut prices = s.prices()?;
+                anyhow::ensure!(
+                    pricing::deepseek::canonical(args["modelId"].as_str().unwrap_or("")).is_none(),
+                    "Official DeepSeek pricing is managed by the built-in rule"
+                );
                 prices.retain(|p| p.model_id != args["modelId"].as_str().unwrap_or(""));
                 s.set_meta("prices", &prices)?;
                 Ok(json!(true))
@@ -511,6 +535,7 @@ impl Engine {
             let s = self.lock()?;
             let device = s.device_id()?;
             let prices = s.prices()?;
+            let pricing_settings = s.pricing_settings()?;
             let manifests: Vec<Value> = s.meta("migration_manifests")?.unwrap_or_default();
             let cutoff = manifests
                 .iter()
@@ -527,7 +552,7 @@ impl Engine {
                 for parsed in result.usage{
                     if parsed.occurred_at<cutoff{continue}
                     active.insert(parsed.id.clone());let old=s.record(&parsed.id)?;
-                    let cost=pricing::resolve(&parsed,old.as_ref(),&prices)?;
+                    let cost=pricing::resolve_with_settings(&parsed,old.as_ref(),&prices,&pricing_settings)?;
                     s.save_timing(&parsed.id, parsed.timing.as_ref())?;
                     let r=UsageRecord{device_id:device.clone(),id:parsed.id,harness:harness.clone(),parser_version:descriptor.parser_version.into(),session_id:Some(parsed.session_id),native_event_id:Some(parsed.native_event_id),occurred_at:parsed.occurred_at,model:parsed.model,grain:"event".into(),count:1,tokens:parsed.tokens,cost,record_source:"session".into(),revision:1,deleted:false,status_code:None,legacy_date:None,legacy_timezone:None};
                     sync::validate_record(&r)?;
@@ -551,6 +576,7 @@ impl Engine {
         let s = self.lock()?;
         s.transaction(|| {
             let mut prices = s.prices()?;
+            let mut saved = 0;
             for value in entries {
                 let mut v = value.clone();
                 if v.get("source").is_none() {
@@ -568,25 +594,72 @@ impl Engine {
                     ["models_dev", "manual"].contains(&p.source.as_str()),
                     "Invalid imported price source"
                 );
+                // A flat models.dev import must never replace the official time-of-use tariff.
+                if pricing::deepseek::canonical(&p.model_id).is_some() {
+                    anyhow::ensure!(
+                        p.source == "models_dev",
+                        "Official DeepSeek pricing is managed by the built-in rule"
+                    );
+                    continue;
+                }
+                anyhow::ensure!(
+                    p.pricing_rule.is_none(),
+                    "Manual/imported prices cannot install a pricing rule"
+                );
+                if p.source == "models_dev"
+                    && prices
+                        .iter()
+                        .any(|old| old.model_id == p.model_id && old.source == "manual")
+                {
+                    continue;
+                }
                 prices.retain(|old| old.model_id != p.model_id);
-                prices.push(p)
+                prices.push(p);
+                saved += 1;
             }
             s.set_meta("prices", &prices)?;
-            for mut r in s.local_records()?.into_iter().filter(|r| {
-                !r.deleted && r.cost.amount_usd.is_none() && r.record_source == "session"
-            }) {
-                if let Some(p) = pricing::find(&prices, &r.model) {
-                    r.cost = pricing::estimate(&r.tokens, p)?;
-                    let path: String = s.conn.query_row(
-                        "SELECT source_path FROM records WHERE device_id=?1 AND id=?2",
-                        params![r.device_id, r.id],
-                        |row| row.get(0),
-                    )?;
-                    s.upsert(r, &path)?;
+            Self::reprice(&s, false, None)?;
+            Ok(json!(saved))
+        })
+    }
+    /// Local session estimates only. Reported amounts, migrations and remote facts are immutable here.
+    fn reprice(s: &Store, include_estimated: bool, model: Option<&str>) -> Result<u64> {
+        let prices = s.prices()?;
+        let settings = s.pricing_settings()?;
+        let mut changed = 0;
+        for mut r in s.local_records()?.into_iter().filter(|r| {
+            !r.deleted
+                && r.record_source == "session"
+                && r.grain == "event"
+                && r.cost.method != "reported"
+                && (include_estimated || r.cost.amount_usd.is_none())
+                && model
+                    .is_none_or(|m| pricing::deepseek::canonical(&r.model).unwrap_or(&r.model) == m)
+        }) {
+            if let Some(price) = pricing::find(&prices, &r.model) {
+                let cost = pricing::estimate_at(&r.tokens, price, r.occurred_at, &settings)?;
+                // Do not erase a known estimate when a rate or historical calendar is missing.
+                if r.cost.amount_usd.is_some() && cost.amount_usd.is_none() {
+                    continue;
+                }
+                let mut comparison = cost.clone();
+                comparison.priced_at = r.cost.priced_at;
+                if comparison == r.cost {
+                    continue;
+                }
+                r.cost = cost;
+                let path: String = s.conn.query_row(
+                    "SELECT source_path FROM records WHERE device_id=?1 AND id=?2",
+                    params![r.device_id, r.id],
+                    |row| row.get(0),
+                )?;
+                sync::validate_record(&r)?;
+                if s.upsert(r, &path)? {
+                    changed += 1;
                 }
             }
-            Ok(json!(entries.len()))
-        })
+        }
+        Ok(changed)
     }
     pub fn sessions(&self) -> Result<Vec<Session>> {
         let config = self.lock()?.config()?;

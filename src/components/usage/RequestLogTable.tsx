@@ -98,6 +98,7 @@ const APP_SHORT_NAME: Record<AppId, string> = {
   gemini: "Gemini",
   grokbuild: "Grok",
   opencode: "OpenCode",
+  dsh: "DSH",
   openclaw: "OpenClaw",
   hermes: "Hermes",
   pi: "Pi",
@@ -105,7 +106,7 @@ const APP_SHORT_NAME: Record<AppId, string> = {
 };
 
 export function appShortName(appType: string): string {
-  return isKnownAppId(appType) ? APP_SHORT_NAME[appType] : appType;
+  return APP_SHORT_NAME[appType] ?? appDisplayName(appType);
 }
 
 const isSuccessStatus = (code: number | null) =>
@@ -167,7 +168,7 @@ export function RequestLogTable({
   columns = DEFAULT_COLUMNS,
 }: RequestLogTableProps) {
   const { t, i18n } = useTranslation();
-  const { money, usdHint } = useMoneyFormat();
+  const { costMoney, usdHint } = useMoneyFormat();
   const [page, setPage] = useState(0);
   const pageSize = 20;
 
@@ -435,6 +436,9 @@ export function RequestLogTable({
           title={
             [
               unpriced ? undefined : usdHint(log.totalCostUsd),
+              log.costConversion?.unitsPerUsd
+                ? `${log.costConversion.originalAmount} ${log.costConversion.currency} · 1 USD = ${log.costConversion.unitsPerUsd} ${log.costConversion.currency}`
+                : undefined,
               multiplier != null && multiplier !== 1
                 ? `${t("usage.costMultiplier")} ×${multiplier.toFixed(2)}`
                 : undefined,
@@ -443,7 +447,9 @@ export function RequestLogTable({
               .join(" · ") || undefined
           }
         >
-          {unpriced ? t("usage.unpriced") : money(log.totalCostUsd, 4)}
+          {unpriced
+            ? t("usage.unpriced")
+            : costMoney(log.totalCostUsd, 4, log.costConverted)}
         </td>
       ),
       speed: (

@@ -509,7 +509,7 @@ const Sep = () => (
  */
 function SessionUsageSummary({ session }: { session: SessionMeta }) {
   const { t, i18n } = useTranslation();
-  const { money, usdHint } = useMoneyFormat();
+  const { costMoney, usdHint } = useMoneyFormat();
   const rt = useReaderT();
   const { data } = useSessionUsageSummary(
     session.providerId,
@@ -539,7 +539,7 @@ function SessionUsageSummary({ session }: { session: SessionMeta }) {
           <>
             {" · "}
             <span title={unpriced ? undefined : usdHint(cost)}>
-              {unpriced ? t("usage.unpriced") : money(cost, 2)}
+              {unpriced ? t("usage.unpriced") : costMoney(cost, 2, data.costConverted)}
             </span>
           </>
         )}

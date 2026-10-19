@@ -22,7 +22,8 @@ import {
   parseFiniteNumber,
   resolveTrendChartType,
 } from "./format";
-import { resolveUsageRange } from "@/lib/usageRange";
+import { resolveUsageRange, usageDateParts } from "@/lib/usageRange";
+import { useUsageTimezone } from "@/lib/query/usageTimezone";
 import type { UsageRangeSelection } from "@/types/usage";
 
 interface UsageTrendChartProps {
@@ -35,6 +36,7 @@ interface UsageTrendChartProps {
 }
 
 export interface UsageTrendStatLike {
+  costConverted?: boolean;
   date: string;
   requestCount?: number;
   totalInputTokens: number;
@@ -45,6 +47,7 @@ export interface UsageTrendStatLike {
 }
 
 export interface UsageTrendChartPoint {
+  costConverted?: boolean;
   /** Unique category key for Recharts — must not collide across years. */
   xKey: string;
   rawDate: string;
@@ -73,11 +76,12 @@ export function buildUsageTrendChartData(
     /** Inclusive range endpoints (unix seconds). Used to decide year labels. */
     startDate: number;
     endDate: number;
+    timeZone?: string;
   },
 ): UsageTrendChartPoint[] {
-  const { isHourly, dateLocale, startDate, endDate } = options;
-  const startYear = new Date(startDate * 1000).getFullYear();
-  const endYear = new Date(endDate * 1000).getFullYear();
+  const { isHourly, dateLocale, startDate, endDate, timeZone } = options;
+  const startYear = usageDateParts(startDate, timeZone).year;
+  const endYear = usageDateParts(endDate, timeZone).year;
   const spansMultipleYears = startYear !== endYear;
 
   return (
@@ -90,19 +94,23 @@ export function buildUsageTrendChartData(
       const xKey = stat.date;
       const tooltipLabel = isHourly
         ? pointDate.toLocaleString(dateLocale, {
+            timeZone,
             year: "numeric",
             month: "2-digit",
             day: "2-digit",
             hour: "2-digit",
             minute: "2-digit",
+            timeZoneName: "short",
           })
         : pointDate.toLocaleDateString(dateLocale, {
+            timeZone,
             year: "numeric",
             month: "2-digit",
             day: "2-digit",
           });
       const label = isHourly
         ? pointDate.toLocaleString(dateLocale, {
+            timeZone,
             month: "2-digit",
             day: "2-digit",
             hour: "2-digit",
@@ -110,21 +118,24 @@ export function buildUsageTrendChartData(
           })
         : spansMultipleYears
           ? pointDate.toLocaleDateString(dateLocale, {
+              timeZone,
               year: "2-digit",
               month: "2-digit",
               day: "2-digit",
             })
           : pointDate.toLocaleDateString(dateLocale, {
+              timeZone,
               month: "2-digit",
               day: "2-digit",
             });
 
       return {
+        costConverted: stat.costConverted,
         xKey,
         rawDate: stat.date,
         label,
         tooltipLabel,
-        hour: pointDate.getHours(),
+        hour: usageDateParts(pointDate.getTime() / 1000, timeZone).hour,
         inputTokens: stat.totalInputTokens,
         outputTokens: stat.totalOutputTokens,
         cacheCreationTokens: stat.totalCacheCreationTokens,
@@ -183,11 +194,12 @@ export function UsageTrendChart({
   refreshIntervalMs,
 }: UsageTrendChartProps) {
   const { t, i18n } = useTranslation();
-  const { money, moneyTick, rate } = useMoneyFormat();
+  const { costMoney, moneyTick, rate } = useMoneyFormat();
   const [metric, setMetric] = useState<TrendMetric>("tokens");
   const { data: display } = useUsageDisplay();
+  const timeZone = useUsageTimezone();
   const chartType = resolveTrendChartType(display);
-  const { startDate, endDate } = resolveUsageRange(range);
+  const { startDate, endDate } = resolveUsageRange(range, Date.now(), timeZone);
   const { data: trends, isLoading } = useUsageTrends(
     range,
     { appType, providerName, model },
@@ -212,8 +224,9 @@ export function UsageTrendChart({
         dateLocale,
         startDate,
         endDate,
+        timeZone,
       }),
-    [trends, isHourly, dateLocale, startDate, endDate],
+    [trends, isHourly, dateLocale, startDate, endDate, timeZone],
   );
 
   // 单指标：图只画切换选中的那一个指标，单 Y 轴，图例和 tooltip 跟着走。
@@ -224,8 +237,10 @@ export function UsageTrendChart({
         ? t("usage.trend.tokens")
         : t("usage.trend.cost");
 
-  const formatMetric = (value: unknown) =>
-    metric === "cost" ? money(value, 4) : fmtInt(value, dateLocale);
+  const formatMetric = (value: unknown, converted = false) =>
+    metric === "cost"
+      ? costMoney(value, 4, converted)
+      : fmtInt(value, dateLocale);
   const formatYTick = (value: unknown) =>
     metric === "cost"
       ? moneyTick(value)
@@ -253,7 +268,10 @@ export function UsageTrendChart({
           />
           <span className="text-fg-2">{metricLabel}</span>
           <span className="ms-auto ps-3">
-            {formatMetric(point ? point[metric] : payload[0]?.value)}
+            {formatMetric(
+              point ? point[metric] : payload[0]?.value,
+              point?.costConverted,
+            )}
           </span>
         </div>
       </div>
@@ -320,6 +338,7 @@ export function UsageTrendChart({
                 tick={AXIS_TICK}
                 tickMargin={6}
                 minTickGap={12}
+                interval="preserveStartEnd"
                 tickFormatter={(value) =>
                   formatUsageTrendTickLabel(String(value), chartData)
                 }

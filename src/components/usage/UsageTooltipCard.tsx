@@ -8,6 +8,7 @@ interface UsageTooltipCardProps {
   requests: number;
   /** 美元；null 表示没有可计价的数据 */
   cost: number | null;
+  costConverted?: boolean;
 }
 
 /** 热力图格子、趋势柱的悬停卡片：同一时间段的 Token、请求数和费用一起看。 */
@@ -16,9 +17,10 @@ export function UsageTooltipCard({
   tokens,
   requests,
   cost,
+  costConverted,
 }: UsageTooltipCardProps) {
   const { t, i18n } = useTranslation();
-  const { money } = useMoneyFormat();
+  const { costMoney } = useMoneyFormat();
   const language = i18n.resolvedLanguage || i18n.language || "en";
   const rows = [
     {
@@ -31,7 +33,7 @@ export function UsageTooltipCard({
     },
     {
       label: t("usage.trend.cost"),
-      value: cost == null ? "--" : money(cost, 2),
+      value: cost == null ? "--" : costMoney(cost, 2, costConverted),
     },
   ];
 
