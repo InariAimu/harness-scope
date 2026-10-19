@@ -13,6 +13,15 @@ pub fn session_id(lines: &[Value]) -> Option<&str> {
 fn signature(v: &Value) -> String {
     format!("{}|{}", v["timestamp"], v["payload"]["info"])
 }
+fn parent_id(meta: &Value) -> Option<&str> {
+    meta["payload"]["forked_from_id"]
+        .as_str()
+        .or_else(|| meta["payload"]["parent_thread_id"].as_str())
+        .or_else(|| {
+            meta.pointer("/payload/source/subagent/thread_spawn/parent_thread_id")
+                .and_then(Value::as_str)
+        })
+}
 fn is_usage(v: &Value) -> bool {
     v["type"] == "event_msg"
         && v["payload"]["type"] == "token_count"
@@ -36,8 +45,12 @@ impl HarnessAdapter for Codex {
     fn context_events(&self, events: &[Value]) -> Vec<Value> {
         events.iter().filter(|v|is_usage(v)).map(|v|serde_json::json!({"type":"event_msg","timestamp":v["timestamp"],"payload":{"type":"token_count","info":v["payload"]["info"]}})).collect()
     }
-    fn uses_ancestry(&self) -> bool {
-        true
+    fn parent_context(&self, events: &[Value]) -> Option<String> {
+        let meta = events.iter().find(|v| v["type"] == "session_meta")?;
+        parent_id(meta).map(|id| format!("codex:{id}"))
+    }
+    fn read_usage_source(&self, path: &Path) -> Result<(Vec<Value>, String, Vec<String>, bool)> {
+        super::usage_read::read(path, true)
     }
     fn delete_source(&self, path: &Path) -> Result<()> {
         let sibling = if path.to_string_lossy().ends_with(".jsonl.zst") {
@@ -77,13 +90,7 @@ impl HarnessAdapter for Codex {
             anyhow::bail!("{}: missing session_meta.id", path.display())
         };
         let meta = lines.iter().find(|v| v["type"] == "session_meta").unwrap();
-        let parent = meta["payload"]["forked_from_id"]
-            .as_str()
-            .or_else(|| meta["payload"]["parent_thread_id"].as_str())
-            .or_else(|| {
-                meta.pointer("/payload/source/subagent/thread_spawn/parent_thread_id")
-                    .and_then(Value::as_str)
-            });
+        let parent = parent_id(meta);
         let mut inherited = HashSet::new();
         let mut baseline: Option<[u64; 5]> = None;
         if let Some(parent) = parent {

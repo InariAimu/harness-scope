@@ -3,6 +3,7 @@ use crate::{
     migration,
     model::*,
     pricing, query,
+    scan_cache::{Checkpoint, Stamp},
     store::Store,
     sync,
 };
@@ -10,7 +11,7 @@ use anyhow::{Context, Result};
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 use std::{
-    collections::HashSet,
+    collections::{hash_map::Entry, HashSet},
     path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard},
     time::Duration,
@@ -326,9 +327,9 @@ impl Engine {
         let mut report = ScanReport::default();
         let mut inputs = Vec::new();
         let mut paths = HashSet::new();
-        // Keep only usage timelines locally so deleting an old transcript does not
-        // destroy the baseline needed to interpret an existing child session.
-        let mut index: TimelineIndex = self.lock()?.meta("usage_timelines")?.unwrap_or_default();
+        crate::scan_cache::migrate_contexts(&*self.lock()?)?;
+        let mut index = TimelineIndex::new();
+        let mut unavailable = HashSet::new();
         for source in config.sources.iter().filter(|s| s.enabled) {
             let adapter = self.registry.get(&source.harness)?;
             let found = match adapter.discover(Path::new(&source.root)) {
@@ -342,32 +343,106 @@ impl Engine {
                 if !paths.insert(path.clone()) {
                     continue;
                 }
-                match adapter.read_source(&path) {
+                let key = path.to_string_lossy().to_string();
+                let stamp = Stamp::read(&path).ok();
+                let cached: Option<String> = self
+                    .lock()?
+                    .conn
+                    .query_row(
+                        "SELECT payload FROM usage_read_cache WHERE path=?",
+                        [&key],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                let cached = cached.and_then(|v| serde_json::from_str::<Checkpoint>(&v).ok());
+                if let Some(cached) = cached
+                    .as_ref()
+                    .filter(|c| !force && stamp.as_ref().is_some_and(|s| c.matches(s, adapter)))
+                {
+                    inputs.push((
+                        source.harness.clone(),
+                        path,
+                        None,
+                        cached.fingerprint.clone(),
+                        true,
+                        cached.parent.clone(),
+                        stamp,
+                    ));
+                    continue;
+                }
+                if let Some(id) = cached.and_then(|c| c.context_id) {
+                    unavailable.insert(id);
+                }
+                match adapter.read_usage_source(&path) {
                     Ok((lines, fingerprint, errors, complete)) => {
+                        let complete =
+                            complete && stamp.is_some() && Stamp::read(&path).ok() == stamp;
                         if let Some(id) = adapter.context_id(&lines) {
-                            index.insert(id, adapter.context_events(&lines));
+                            if complete {
+                                crate::scan_cache::save_context(
+                                    &*self.lock()?,
+                                    &id,
+                                    &adapter.context_events(&lines),
+                                )?;
+                                unavailable.remove(&id);
+                            } else {
+                                unavailable.insert(id);
+                            }
+                        }
+                        if complete {
+                            let checkpoint = Checkpoint::new(
+                                stamp.as_ref().unwrap().clone(),
+                                adapter,
+                                fingerprint.clone(),
+                                &lines,
+                            );
+                            self.lock()?.conn.execute(
+                                "INSERT INTO usage_read_cache(path,payload) VALUES(?1,?2) ON CONFLICT(path) DO UPDATE SET payload=excluded.payload",
+                                params![key, serde_json::to_string(&checkpoint)?]
+                            )?;
                         }
                         report.errors.extend(errors);
-                        inputs.push((source.harness.clone(), path, lines, fingerprint, complete));
+                        let parent = adapter.parent_context(&lines);
+                        inputs.push((
+                            source.harness.clone(),
+                            path,
+                            Some(lines),
+                            fingerprint,
+                            complete,
+                            parent,
+                            stamp,
+                        ));
                     }
                     Err(e) => report.errors.push(format!("{}: {e}", path.display())),
                 }
             }
         }
-        let ancestry = files::hash(
-            inputs
-                .iter()
-                .map(|(_, _, _, f, _)| f.as_str())
-                .collect::<String>()
-                .as_bytes(),
-        );
-        for (harness, path, lines, fingerprint, read_complete) in inputs {
+        for (harness, path, lines, fingerprint, read_complete, parent, stamp) in inputs {
             report.files_scanned += 1;
             let adapter = self.registry.get(&harness)?;
             let descriptor = adapter.descriptor();
             let key = path.to_string_lossy().to_string();
-            let fingerprint = if adapter.uses_ancestry() {
-                format!("{fingerprint}:{ancestry}")
+            let parent_fingerprint: Option<String> = if let Some(parent) = &parent {
+                if unavailable.contains(parent) {
+                    None
+                } else {
+                    self.lock()?
+                        .conn
+                        .query_row(
+                            "SELECT fingerprint FROM usage_contexts WHERE id=?",
+                            [parent],
+                            |r| r.get(0),
+                        )
+                        .optional()?
+                }
+            } else {
+                None
+            };
+            let fingerprint = if parent.is_some() {
+                format!(
+                    "{fingerprint}:{}",
+                    parent_fingerprint.as_deref().unwrap_or("missing")
+                )
             } else {
                 fingerprint
             };
@@ -388,6 +463,38 @@ impl Engine {
                 continue;
             }
             drop(s);
+            if let Some(parent) = parent.filter(|_| parent_fingerprint.is_some()) {
+                if let Entry::Vacant(entry) = index.entry(parent) {
+                    let payload: String = self.lock()?.conn.query_row(
+                        "SELECT payload FROM usage_contexts WHERE id=?",
+                        [entry.key()],
+                        |r| r.get(0),
+                    )?;
+                    entry.insert(serde_json::from_str(&payload)?);
+                }
+            }
+            let lines = if let Some(lines) = lines {
+                lines
+            } else {
+                match adapter.read_usage_source(&path) {
+                    Ok((lines, _, errors, complete))
+                        if complete && Stamp::read(&path).ok() == stamp =>
+                    {
+                        report.errors.extend(errors);
+                        lines
+                    }
+                    Ok((_, _, errors, _)) => {
+                        report.errors.extend(errors);
+                        report.deferred_files += 1;
+                        continue;
+                    }
+                    Err(e) => {
+                        report.errors.push(format!("{key}: {e}"));
+                        report.deferred_files += 1;
+                        continue;
+                    }
+                }
+            };
             let result = match adapter.parse(&path, &lines, &index) {
                 Ok(r) => r,
                 Err(e) => {
@@ -435,7 +542,6 @@ impl Engine {
             })?;
         }
         let s = self.lock()?;
-        s.set_meta("usage_timelines", &index)?;
         s.set_meta("last_scan_at", &chrono::Utc::now().timestamp_millis())?;
         s.set_meta("last_scan", &report)?;
         Ok(report)

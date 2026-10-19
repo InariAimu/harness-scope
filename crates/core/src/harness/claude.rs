@@ -5,6 +5,9 @@ use serde_json::Value;
 use std::{collections::BTreeMap, path::Path};
 pub struct Claude;
 impl HarnessAdapter for Claude {
+    fn read_usage_source(&self, path: &Path) -> Result<(Vec<Value>, String, Vec<String>, bool)> {
+        super::usage_read::read(path, false)
+    }
     fn descriptor(&self) -> Descriptor {
         Descriptor {
             id: "claude",

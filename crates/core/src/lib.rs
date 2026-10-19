@@ -5,6 +5,7 @@ pub mod model;
 pub mod pricing;
 mod pricing_match;
 pub mod query;
+mod scan_cache;
 mod sessions;
 pub mod store;
 pub mod sync;

@@ -6,6 +6,7 @@ pub mod dsh;
 pub mod files;
 pub mod opencode;
 mod transcript;
+mod usage_read;
 
 use crate::model::{ParsedUsage, Session};
 use anyhow::Result;
@@ -57,6 +58,9 @@ pub trait HarnessAdapter: Send + Sync {
     fn read_source(&self, path: &Path) -> Result<(Vec<Value>, String, Vec<String>, bool)> {
         files::read(path)
     }
+    fn read_usage_source(&self, path: &Path) -> Result<(Vec<Value>, String, Vec<String>, bool)> {
+        self.read_source(path)
+    }
     /// Reader projections are independent of complete, hash-verified usage ingestion.
     fn read_metadata(&self, path: &Path) -> Result<Vec<Session>> {
         let (events, _, _, _) = self.read_source(path)?;
@@ -76,8 +80,8 @@ pub trait HarnessAdapter: Send + Sync {
     fn context_events(&self, _events: &[Value]) -> Vec<Value> {
         Vec::new()
     }
-    fn uses_ancestry(&self) -> bool {
-        false
+    fn parent_context(&self, _events: &[Value]) -> Option<String> {
+        None
     }
     fn delete_source(&self, path: &Path) -> Result<()> {
         anyhow::ensure!(
