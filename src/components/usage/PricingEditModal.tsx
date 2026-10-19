@@ -30,6 +30,7 @@ export function PricingEditModal({
   const [isPickerOpen, setIsPickerOpen] = useState(false);
 
   const [formData, setFormData] = useState({
+    provider: model.provider ?? "",
     modelId: model.modelId,
     displayName: model.displayName,
     inputCost: model.inputCostPerMillion,
@@ -72,6 +73,7 @@ export function PricingEditModal({
         cacheReadCost: formData.cacheReadCost,
         cacheCreationCost: formData.cacheCreationCost,
         currency: formData.currency,
+        provider: formData.provider.trim() || null,
       });
 
       toast.success(
@@ -136,6 +138,26 @@ export function PricingEditModal({
       )}
 
       <form id="pricing-form" onSubmit={handleSubmit} className="space-y-6">
+        <div className="space-y-2">
+          <Label htmlFor="priceProvider">
+            {t("scope.pricing.provider", "供应商 ID（留空为通用价表）")}
+          </Label>
+          <Input
+            id="priceProvider"
+            value={formData.provider}
+            disabled={!isNew}
+            placeholder="deepseek-official / opencode-go / my-provider"
+            onChange={(event) =>
+              setFormData({ ...formData, provider: event.target.value })
+            }
+          />
+          <p className="text-caption text-fg-2">
+            {t(
+              "scope.pricing.providerHint",
+              "与日志中的供应商 ID 一致。同名模型可分别设置价格；未配置的供应商按 models.dev 模型参考价计费。",
+            )}
+          </p>
+        </div>
         <div className="space-y-2">
           <Label htmlFor="priceCurrency">
             {t("scope.pricing.originalCurrency", "官方单价币种")}

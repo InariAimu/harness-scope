@@ -8,6 +8,8 @@ export interface TokenUsage {
 }
 
 export interface RequestLog {
+  nativeProvider?: string | null;
+  billingBasis?: "subscription_usage" | "model_reference" | null;
   costConverted?: boolean;
   costConversion?: {
     currency: string;
@@ -82,6 +84,8 @@ export interface PaginatedLogs {
 }
 
 export interface ModelPricing {
+  provider?: string | null;
+  billingBasis?: "subscription_usage" | null;
   currency?: string;
   pricingRule?: string;
   source?: string;
@@ -116,6 +120,7 @@ export interface ModelsDevSyncState {
 }
 
 export interface UsageSummary {
+  subscriptionUsageCount?: number;
   costConverted?: boolean;
   unpricedCount?: number;
   knownStatusCount?: number;
@@ -205,10 +210,8 @@ export interface LogFilters {
 /**
  * Dashboard 顶栏的全局筛选维度，作用于 Hero / 趋势图 / 三个统计 Tab。
  *
- * - `providerName` 按展示名精确匹配（与 Provider 统计列表同口径，含
- *   "Claude (Session)" 等会话占位名）；
- * - `model` 按「有效计价模型」匹配（pricing_model 优先、回落 model，
- *   与模型统计的分组口径一致）。
+ * - `providerName` 按原始供应商 ID 或会话占位名匹配，翻译标签只用于显示；
+ * - `model` 按日志模型原文匹配，与模型统计的分组口径一致。
  */
 export interface UsageScopeFilters {
   appType?: string;
@@ -227,13 +230,7 @@ export interface ProviderLimitStatus {
 }
 
 export type UsageRangePreset =
-  | "today"
-  | "1d"
-  | "7d"
-  | "14d"
-  | "30d"
-  | "all"
-  | "custom";
+  "today" | "1d" | "7d" | "14d" | "30d" | "all" | "custom";
 
 export interface UsageRangeSelection {
   preset: UsageRangePreset;
@@ -261,13 +258,7 @@ export interface UsageRangeSelection {
  * managed apps elsewhere.
  */
 export type AppType =
-  | "claude"
-  | "codex"
-  | "gemini"
-  | "grokbuild"
-  | "opencode"
-  | "pi"
-  | "mcode";
+  "claude" | "codex" | "gemini" | "grokbuild" | "opencode" | "pi" | "mcode";
 
 export type AppTypeFilter = "all" | AppType;
 

@@ -264,6 +264,7 @@ fn stats_use_weighted_speed_median_filters_and_device_identity() {
         ("missing", 999, 0, 0),
     ] {
         let record = UsageRecord {
+            provider: None,
             device_id: device.clone(),
             id: id.into(),
             harness: "codex".into(),

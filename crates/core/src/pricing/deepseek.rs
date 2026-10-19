@@ -52,6 +52,8 @@ pub fn prices() -> Vec<Price> {
     ]
     .into_iter()
     .map(|(id, name, input, output, hit)| Price {
+        provider: Some("deepseek-official".into()),
+        billing_basis: None,
         model_id: id.into(),
         display_name: name.into(),
         currency: "CNY".into(),
@@ -68,7 +70,13 @@ pub fn prices() -> Vec<Price> {
 }
 
 pub fn install(prices: &mut Vec<Price>) {
-    prices.retain(|p| canonical(&p.model_id).is_none());
+    prices.retain(|p| {
+        canonical(&p.model_id).is_none()
+            || p.provider.is_none() && matches!(p.source.as_str(), "models_dev" | "manual")
+            || p.provider
+                .as_deref()
+                .is_some_and(|id| id != "deepseek-official")
+    });
     prices.extend(self::prices());
 }
 

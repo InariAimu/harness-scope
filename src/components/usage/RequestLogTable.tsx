@@ -436,6 +436,17 @@ export function RequestLogTable({
           title={
             [
               unpriced ? undefined : usdHint(log.totalCostUsd),
+              log.billingBasis === "subscription_usage"
+                ? t(
+                    "scope.pricing.subscriptionHint",
+                    "套餐额度折算，不含月费或实际扣款",
+                  )
+                : log.billingBasis === "model_reference"
+                  ? t(
+                      "scope.pricing.referenceHint",
+                      "models.dev 模型参考价，实际费用以供应商账单为准",
+                    )
+                  : undefined,
               log.costConversion?.unitsPerUsd
                 ? `${log.costConversion.originalAmount} ${log.costConversion.currency} · 1 USD = ${log.costConversion.unitsPerUsd} ${log.costConversion.currency}`
                 : undefined,

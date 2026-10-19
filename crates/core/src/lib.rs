@@ -4,6 +4,7 @@ pub mod migration;
 pub mod model;
 pub mod pricing;
 mod pricing_match;
+pub mod providers;
 pub mod query;
 mod scan_cache;
 mod sessions;

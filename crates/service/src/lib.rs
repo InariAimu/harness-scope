@@ -43,7 +43,9 @@ pub fn server_router(engine: Arc<Engine>, token: String) -> anyhow::Result<Route
     Ok(Router::new()
         .route(
             "/health",
-            get(|| async { Json(json!({"status":"ok","protocolVersion":1})) }),
+            get(|| async {
+                Json(json!({"status":"ok","protocolVersion":2,"supportedProtocolVersions":[1,2]}))
+            }),
         )
         .route("/v1/push", post(push))
         .route("/v1/changes", get(changes))

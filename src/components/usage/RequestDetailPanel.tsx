@@ -220,6 +220,22 @@ function useDetailSections(request: RequestLog) {
     muted: unpriced,
     title: unpriced ? undefined : moneyTitle(request.totalCostUsd, 6),
   });
+  if (request.billingBasis) {
+    cost.push({
+      key: "billing-basis",
+      label: t("scope.pricing.billingBasis", "金额口径"),
+      value:
+        request.billingBasis === "subscription_usage"
+          ? t(
+              "scope.pricing.subscriptionHint",
+              "套餐额度折算，不含月费或实际扣款",
+            )
+          : t(
+              "scope.pricing.referenceHint",
+              "models.dev 模型参考价，实际费用以供应商账单为准",
+            ),
+    });
+  }
   if (request.costConversion) {
     const conversion = request.costConversion;
     cost.push(

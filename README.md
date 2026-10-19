@@ -71,7 +71,7 @@ cargo run --release -p harness-scope-service -- --db data/server.db --bind 127.0
 
 也可使用 Docker Compose：设置 `HARNESS_SCOPE_TOKEN` 后运行 `docker compose up --build -d`。Compose 默认仅向宿主机 loopback 发布 8787，数据存于命名卷。首次交付未实际运行容器；Windows 服务端和 HTTP 协议有自动化测试。
 
-接口：`GET /health`、`POST /v1/push`、`GET /v1/changes?after=0&limit=500`。除健康检查外均需 Bearer token；协议和事务语义见详细计划第 5 节。
+接口：`GET /health`、`POST /v1/push`、`GET /v1/changes?after=0&limit=500`。除健康检查外均需 Bearer token；当前客户端使用协议 v2 保存供应商信息，服务端兼容接收 v1。升级客户端时请同步升级服务器和其他客户端；遇到 v1 服务器会提示升级并保留待同步记录。协议和事务语义见详细计划第 5 节。
 
 ## CC Switch 历史迁移
 

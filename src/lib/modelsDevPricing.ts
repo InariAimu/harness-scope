@@ -222,3 +222,38 @@ export function toModelPricing(entries: ModelsDevEntry[]): ModelPricing[] {
   }
   return Array.from(byModelId.values());
 }
+
+function referenceModelId(model: string): string {
+  const id = normalizeModelsDevModelId(model)
+    .replace(/^(?:openai|anthropic|google|moonshotai?|bedrock|global)\./, "")
+    .replace(/-(?:20\d{2}-\d{2}-\d{2}|\d{8}|\d{4})$/, "")
+    .replace(/-(?:low|medium|high|xhigh|minimal)$/, "");
+  if (
+    /^(?:claude-)?deepseek-(?:flash|v4(?:[.-]1)?-flash)(?:$|-(?:\d{4,8}|vision-exp|low|medium|high|xhigh|thinking)(?:-.*)?$)/.test(
+      id,
+    )
+  )
+    return "deepseek-flash";
+  if (/^deepseek-v4-pro(?:$|-\d{4,8}$)/.test(id)) return "deepseek-v4-pro";
+  return id.startsWith("claude-") ? id.replaceAll(".", "-") : id;
+}
+
+/** Prefer the model maker's reference tariff over an arbitrary reseller's tariff. */
+export function resolveUsageModelReferences(
+  entries: ModelsDevEntry[],
+  models: string[],
+): ModelsDevEntry[] {
+  const result = new Map<string, ModelsDevEntry>();
+  for (const model of models) {
+    const id = referenceModelId(model);
+    const matches = entries.filter(
+      (entry) => referenceModelId(entry.modelId) === id,
+    );
+    const family = COMMON_FAMILY_RULES.find((rule) => rule.matches(id));
+    const selected =
+      matches.find((entry) => family?.providers.has(entry.providerId)) ??
+      matches[0];
+    if (selected) result.set(selected.key, selected);
+  }
+  return [...result.values()];
+}

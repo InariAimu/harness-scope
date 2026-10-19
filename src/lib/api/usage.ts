@@ -78,6 +78,7 @@ export const usageApi = {
     source = "manual",
     sourceKey?: string,
     currency = "USD",
+    provider?: string | null,
   ) =>
     command<number>("save_prices", {
       entries: [
@@ -91,13 +92,15 @@ export const usageApi = {
           source,
           sourceKey,
           currency,
+          provider: provider?.trim() || null,
         },
       ],
     }),
   updateModelPricingBatch: (entries: ModelPricing[]) =>
     command<number>("save_prices", { entries }),
-  deleteModelPricing: (modelId: string) =>
-    command<void>("delete_price", { modelId }),
+  deleteModelPricing: (modelId: string, provider?: string | null) =>
+    command<void>("delete_price", { modelId, provider }),
+  getModelsNeedingPrices: () => command<string[]>("models_needing_prices"),
   getModelsDevSyncConfig: () => command<ModelsDevSyncState>("models_config"),
   saveModelsDevSyncConfig: (config: ModelsDevSyncConfig) =>
     command<ModelsDevSyncState>("save_models_config", { config }),

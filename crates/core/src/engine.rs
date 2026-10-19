@@ -124,6 +124,28 @@ impl Engine {
                 Ok(json!(display))
             }
             "prices" => Ok(json!(self.lock()?.prices()?)),
+            "models_needing_prices" => {
+                let s = self.lock()?;
+                let prices = s.prices()?;
+                let models: std::collections::BTreeSet<_> = s
+                    .local_records()?
+                    .into_iter()
+                    .filter(|r| {
+                        !r.deleted
+                            && r.record_source == "session"
+                            && r.cost.method != "reported"
+                            && (r.cost.amount_usd.is_none()
+                                || pricing::find_for_provider(
+                                    &prices,
+                                    &r.model,
+                                    r.provider.as_deref(),
+                                )
+                                .is_none())
+                    })
+                    .map(|r| r.model)
+                    .collect();
+                Ok(json!(models))
+            }
             "pricing_settings" => Ok(json!(self.lock()?.pricing_settings()?)),
             "save_pricing_settings" => {
                 let patch: PricingSettings = serde_json::from_value(args["patch"].clone())?;
@@ -148,11 +170,17 @@ impl Engine {
             "delete_price" => {
                 let s = self.lock()?;
                 let mut prices = s.prices()?;
+                let provider = args["provider"].as_str().map(crate::providers::pricing_id);
                 anyhow::ensure!(
-                    pricing::deepseek::canonical(args["modelId"].as_str().unwrap_or("")).is_none(),
-                    "Official DeepSeek pricing is managed by the built-in rule"
+                    !(pricing::deepseek::canonical(args["modelId"].as_str().unwrap_or(""))
+                        .is_some()
+                        && matches!(provider, Some("deepseek-official" | "opencode-go"))),
+                    "Built-in provider pricing cannot be deleted"
                 );
-                prices.retain(|p| p.model_id != args["modelId"].as_str().unwrap_or(""));
+                prices.retain(|p| {
+                    p.model_id != args["modelId"].as_str().unwrap_or("")
+                        || p.provider.as_deref() != provider
+                });
                 s.set_meta("prices", &prices)?;
                 Ok(json!(true))
             }
@@ -549,12 +577,13 @@ impl Engine {
                 .unwrap_or(0);
             s.transaction(||{
                 let mut active=HashSet::new();
-                for parsed in result.usage{
+                for mut parsed in result.usage{
                     if parsed.occurred_at<cutoff{continue}
                     active.insert(parsed.id.clone());let old=s.record(&parsed.id)?;
+                    if parsed.provider.is_none() { parsed.provider = old.as_ref().and_then(|r| r.provider.clone()); }
                     let cost=pricing::resolve_with_settings(&parsed,old.as_ref(),&prices,&pricing_settings)?;
                     s.save_timing(&parsed.id, parsed.timing.as_ref())?;
-                    let r=UsageRecord{device_id:device.clone(),id:parsed.id,harness:harness.clone(),parser_version:descriptor.parser_version.into(),session_id:Some(parsed.session_id),native_event_id:Some(parsed.native_event_id),occurred_at:parsed.occurred_at,model:parsed.model,grain:"event".into(),count:1,tokens:parsed.tokens,cost,record_source:"session".into(),revision:1,deleted:false,status_code:None,legacy_date:None,legacy_timezone:None};
+                    let r=UsageRecord{provider:parsed.provider,device_id:device.clone(),id:parsed.id,harness:harness.clone(),parser_version:descriptor.parser_version.into(),session_id:Some(parsed.session_id),native_event_id:Some(parsed.native_event_id),occurred_at:parsed.occurred_at,model:parsed.model,grain:"event".into(),count:1,tokens:parsed.tokens,cost,record_source:"session".into(),revision:1,deleted:false,status_code:None,legacy_date:None,legacy_timezone:None};
                     sync::validate_record(&r)?;
                     if s.upsert(r,&key)?{if old.is_some(){report.updated+=1}else{report.imported+=1}}else{report.skipped+=1}
                 }
@@ -588,14 +617,26 @@ impl Engine {
                 if v.get("fetchedAt").is_none() {
                     v["fetchedAt"] = json!(chrono::Utc::now().timestamp())
                 }
-                let p: Price = serde_json::from_value(v)?;
+                let mut p: Price = serde_json::from_value(v)?;
+                p.provider = p
+                    .provider
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|id| !id.is_empty())
+                    .map(crate::providers::pricing_id)
+                    .map(str::to_owned);
                 pricing::validate(&p)?;
                 anyhow::ensure!(
                     ["models_dev", "manual"].contains(&p.source.as_str()),
                     "Invalid imported price source"
                 );
                 // A flat models.dev import must never replace the official time-of-use tariff.
-                if pricing::deepseek::canonical(&p.model_id).is_some() {
+                if pricing::deepseek::canonical(&p.model_id).is_some()
+                    && matches!(
+                        p.provider.as_deref(),
+                        Some("deepseek-official" | "opencode-go")
+                    )
+                {
                     anyhow::ensure!(
                         p.source == "models_dev",
                         "Official DeepSeek pricing is managed by the built-in rule"
@@ -607,13 +648,15 @@ impl Engine {
                     "Manual/imported prices cannot install a pricing rule"
                 );
                 if p.source == "models_dev"
-                    && prices
-                        .iter()
-                        .any(|old| old.model_id == p.model_id && old.source == "manual")
+                    && prices.iter().any(|old| {
+                        old.model_id == p.model_id
+                            && old.provider == p.provider
+                            && old.source == "manual"
+                    })
                 {
                     continue;
                 }
-                prices.retain(|old| old.model_id != p.model_id);
+                prices.retain(|old| old.model_id != p.model_id || old.provider != p.provider);
                 prices.push(p);
                 saved += 1;
             }
@@ -636,7 +679,9 @@ impl Engine {
                 && model
                     .is_none_or(|m| pricing::deepseek::canonical(&r.model).unwrap_or(&r.model) == m)
         }) {
-            if let Some(price) = pricing::find(&prices, &r.model) {
+            if let Some(price) =
+                pricing::find_for_provider(&prices, &r.model, r.provider.as_deref())
+            {
                 let cost = pricing::estimate_at(&r.tokens, price, r.occurred_at, &settings)?;
                 // Do not erase a known estimate when a rate or historical calendar is missing.
                 if r.cost.amount_usd.is_some() && cost.amount_usd.is_none() {
@@ -794,6 +839,13 @@ impl Engine {
             .timeout(Duration::from_secs(15))
             .redirect(reqwest::redirect::Policy::none())
             .build()?;
+        let health: Value = client
+            .get(format!("{base}/health"))
+            .bearer_auth(&config.server_token)
+            .send()?
+            .error_for_status()?
+            .json()?;
+        anyhow::ensure!(health["protocolVersion"].as_u64().is_some_and(|v| v >= 2), "Sync server must be upgraded to protocol v2 to preserve provider information; pending records have been retained");
         let mut cursor = self.lock()?.meta::<i64>("download_cursor")?.unwrap_or(0);
         let mut first: ChangesResponse = client
             .get(format!("{base}/v1/changes"))
@@ -836,7 +888,7 @@ impl Engine {
                 .post(format!("{base}/v1/push"))
                 .bearer_auth(&config.server_token)
                 .json(&PushRequest {
-                    protocol_version: 1,
+                    protocol_version: 2,
                     device_id: device.clone(),
                     device_name: config.device_name.clone(),
                     records,

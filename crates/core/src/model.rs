@@ -24,6 +24,8 @@ impl Tokens {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Price {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
     pub model_id: String,
     pub display_name: String,
     pub input_cost_per_million: String,
@@ -37,6 +39,8 @@ pub struct Price {
     pub currency: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pricing_rule: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub billing_basis: Option<String>,
 }
 fn usd_currency() -> String {
     "USD".into()
@@ -75,6 +79,8 @@ pub struct PricingContext {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Cost {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub billing_basis: Option<String>,
     pub amount_usd: Option<String>,
     pub method: String,
     pub price_source: String,
@@ -90,6 +96,7 @@ pub struct Cost {
 impl Default for Cost {
     fn default() -> Self {
         Self {
+            billing_basis: None,
             amount_usd: None,
             method: "unknown".into(),
             price_source: "unknown".into(),
@@ -107,6 +114,8 @@ impl Default for Cost {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UsageRecord {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
     pub device_id: String,
     pub id: String,
     pub harness: String,
@@ -129,6 +138,7 @@ pub struct UsageRecord {
 
 #[derive(Debug, Clone)]
 pub struct ParsedUsage {
+    pub provider: Option<String>,
     pub id: String,
     pub session_id: String,
     pub native_event_id: String,

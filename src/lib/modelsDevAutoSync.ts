@@ -3,6 +3,7 @@ import { fetchModelsDev } from "@/lib/modelsDev";
 import {
   flattenModels,
   resolveModelsDevSelection,
+  resolveUsageModelReferences,
   toModelPricing,
 } from "@/lib/modelsDevPricing";
 import type { ModelsDevSyncState } from "@/types/usage";
@@ -22,17 +23,32 @@ export const MODELS_DEV_STARTUP_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
+const referenceAttempts = new Map<string, number>();
 
 export async function syncModelsDevPricing(
   state?: ModelsDevSyncState,
   force = false,
 ): Promise<ModelsDevSyncResult> {
   const initialState = state ?? (await usageApi.getModelsDevSyncConfig());
+  const missingModels = (
+    initialState.config.autoSyncEnabled || force
+      ? await usageApi.getModelsNeedingPrices()
+      : []
+  ).filter(
+    (model) =>
+      force ||
+      Date.now() - (referenceAttempts.get(model) ?? 0) >=
+        MODELS_DEV_STARTUP_SYNC_INTERVAL_MS,
+  );
   const recentlySynced =
     initialState.config.lastSyncAt !== null &&
     Date.now() - initialState.config.lastSyncAt <
       MODELS_DEV_STARTUP_SYNC_INTERVAL_MS;
-  if (!force && (!initialState.config.autoSyncEnabled || recentlySynced)) {
+  if (
+    !force &&
+    (!initialState.config.autoSyncEnabled ||
+      (recentlySynced && missingModels.length === 0))
+  ) {
     return {
       skipped: true,
       selected: 0,
@@ -43,6 +59,7 @@ export async function syncModelsDevPricing(
   }
 
   try {
+    missingModels.forEach((model) => referenceAttempts.set(model, Date.now()));
     const data = await fetchModelsDev();
     const latestState = await usageApi.getModelsDevSyncConfig();
     if (!force && !latestState.config.autoSyncEnabled) {
@@ -54,11 +71,15 @@ export async function syncModelsDevPricing(
         syncedAt: latestState.config.lastSyncAt,
       };
     }
+    const entries = flattenModels(data);
     const selectedEntries = resolveModelsDevSelection(
-      flattenModels(data),
+      entries,
       latestState.config,
     );
-    const pricing = toModelPricing(selectedEntries);
+    const pricing = toModelPricing([
+      ...resolveUsageModelReferences(entries, missingModels),
+      ...selectedEntries,
+    ]);
     const changed = pricing.length
       ? await usageApi.updateModelPricingBatch(pricing)
       : 0;
@@ -85,9 +106,20 @@ export async function syncModelsDevPricing(
 }
 
 let startupSync: Promise<ModelsDevSyncResult> | null = null;
+let lastScan: number | null | undefined;
 
-/** Run once per renderer and at most once per interval across WebView rebuilds. */
-export function syncModelsDevPricingOnStartup(): Promise<ModelsDevSyncResult> {
+/** Check once per completed scan; throttle network sync and unresolved references. */
+export function syncModelsDevPricingOnStartup(
+  scanAt?: number | null,
+): Promise<ModelsDevSyncResult> {
+  if (scanAt !== lastScan) {
+    lastScan = scanAt;
+    startupSync =
+      startupSync?.then(
+        () => syncModelsDevPricing(),
+        () => syncModelsDevPricing(),
+      ) ?? null;
+  }
   startupSync ??= syncModelsDevPricing();
   return startupSync;
 }

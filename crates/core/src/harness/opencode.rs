@@ -124,6 +124,11 @@ fn parse_usage(row: &Value, part_starts: Option<&Vec<i64>>) -> Result<Option<Par
         UsageTiming::estimate(created, end, first, source, "opencode_content_start")
     });
     Ok(Some(ParsedUsage {
+        provider: crate::providers::parse(
+            d["providerID"]
+                .as_str()
+                .or_else(|| d["model"]["providerID"].as_str()),
+        ),
         id: format!("opencode:{session}:{id}"),
         session_id: session.into(),
         native_event_id: id.into(),
@@ -150,7 +155,7 @@ impl HarnessAdapter for OpenCode {
         Descriptor {
             id: "opencode",
             name: "OpenCode",
-            parser_version: "opencode-sqlite-v2-timing",
+            parser_version: "opencode-sqlite-v3-provider",
             default_roots: vec![root.to_string_lossy().into()],
             usage: true,
             transcript: true,

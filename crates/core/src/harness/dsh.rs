@@ -231,6 +231,7 @@ fn parse_call(
         .filter(|t| *t > 0)
         .context("Missing DSH request timestamp")?;
     Ok(Some(ParsedUsage {
+        provider: crate::providers::parse(message["source"]["provider"].as_str()),
         id: format!("dsh:{session}:{id}"),
         session_id: session.into(),
         native_event_id: id.into(),
@@ -247,7 +248,7 @@ impl HarnessAdapter for Dsh {
         Descriptor {
             id: "dsh",
             name: "DeepSeek Harness",
-            parser_version: "dsh-jsonl-v1",
+            parser_version: "dsh-jsonl-v2-provider",
             default_roots: vec![home().join("sessions").to_string_lossy().into()],
             usage: true,
             transcript: true,

@@ -98,11 +98,11 @@ export default function App() {
   }, [data?.config.theme, data?.config.language, i18n]);
   useEffect(() => {
     if (data) {
-      void syncModelsDevPricingOnStartup()
+      void syncModelsDevPricingOnStartup(data.lastScanAt)
         .then(() => client.invalidateQueries({ queryKey: ["usage"] }))
         .catch((e) => toast.error(String(e)));
     }
-  }, [!!data, client]);
+  }, [!!data, data?.lastScanAt, client]);
   const navigate = (next: string) => {
     if (
       hasUnsavedChanges() &&

@@ -29,6 +29,7 @@ fn tokens() -> Tokens {
 }
 fn parsed(model: &str, time: &str) -> ParsedUsage {
     ParsedUsage {
+        provider: Some("deepseek-official".into()),
         id: "pricing-fixture".into(),
         session_id: "session".into(),
         native_event_id: "event".into(),
@@ -41,6 +42,7 @@ fn parsed(model: &str, time: &str) -> ParsedUsage {
 }
 fn record(e: &Engine, p: &ParsedUsage, cost: Cost) -> UsageRecord {
     UsageRecord {
+        provider: p.provider.clone(),
         device_id: e.lock().unwrap().device_id().unwrap(),
         id: p.id.clone(),
         harness: "dsh".into(),

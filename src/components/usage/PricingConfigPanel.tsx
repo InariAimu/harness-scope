@@ -9,6 +9,7 @@ import { PricingEditModal } from "./PricingEditModal";
 import { ModelsDevPickerDialog } from "./ModelsDevPickerDialog";
 import { ModelsDevAutoSyncPanel } from "./ModelsDevAutoSyncPanel";
 import { toast } from "@/lib/toast";
+import { getUsageProviderLabel } from "./providerLabel";
 import {
   PricingSettingsPanel,
   usePricingSettings,
@@ -72,6 +73,7 @@ export function PricingConfigPanel() {
             <tr>
               {[
                 t("usage.model", "模型"),
+                t("usage.provider", "供应商"),
                 t("scope.source", "来源"),
                 t("usage.inputTokens", "输入"),
                 t("usage.outputTokens", "输出"),
@@ -88,15 +90,31 @@ export function PricingConfigPanel() {
           <tbody>
             {query.data
               ?.filter((p) =>
-                `${p.modelId} ${p.displayName}`
+                `${p.modelId} ${p.displayName} ${p.provider ?? ""} ${p.provider ? getUsageProviderLabel(p.provider, t).label : "models.dev"}`
                   .toLowerCase()
                   .includes(search.toLowerCase()),
               )
               .map((p) => (
-                <tr key={p.modelId} className="border-t border-border">
+                <tr
+                  key={`${p.provider ?? ""}/${p.modelId}`}
+                  className="border-t border-border"
+                >
                   <td className="px-3 py-2">
                     <div>{p.displayName}</div>
                     <div className="text-caption text-fg-3">{p.modelId}</div>
+                  </td>
+                  <td
+                    className="px-3 text-caption"
+                    title={p.provider ?? undefined}
+                  >
+                    {p.provider
+                      ? getUsageProviderLabel(p.provider, t).label
+                      : t("scope.pricing.generic", "通用模型参考价")}
+                    {p.billingBasis === "subscription_usage" && (
+                      <div className="text-fg-3">
+                        {t("scope.pricing.subscriptionUsage", "套餐额度折算")}
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 text-caption" title={p.sourceKey}>
                     {p.source || "unknown"}
@@ -115,7 +133,9 @@ export function PricingConfigPanel() {
                             ? `${p.currency} `
                             : "$"}
                         {n}
-                        {p.pricingRule ? ` / ¥${Number(n) * 2}` : ""}
+                        {p.pricingRule
+                          ? ` / ${p.currency === "CNY" ? "¥" : "$"}${Number(n) * 2}`
+                          : ""}
                       </div>
                       {p.currency &&
                         p.currency !== "USD" &&
@@ -149,9 +169,12 @@ export function PricingConfigPanel() {
                         aria-label={`Delete ${p.modelId}`}
                         className="p-1"
                         onClick={() =>
-                          remove.mutate(p.modelId, {
-                            onError: (e) => toast.error(String(e)),
-                          })
+                          remove.mutate(
+                            { modelId: p.modelId, provider: p.provider },
+                            {
+                              onError: (e) => toast.error(String(e)),
+                            },
+                          )
                         }
                       >
                         <Trash2 size={14} />
@@ -175,6 +198,20 @@ export function PricingConfigPanel() {
           rel="noreferrer"
         >
           {t("scope.pricing.officialLink", "官方计价说明")}
+        </a>
+      </p>
+      <p className="text-caption text-fg-2">
+        {t(
+          "scope.pricing.goNote",
+          "OpenCode Go 按 USD 计算套餐额度消耗，不含月费；高峰为 UTC 工作日 01–04、06–10 点，不套用中国节假日。未配置的供应商使用 models.dev 模型参考价，不代表实际账单。",
+        )}{" "}
+        <a
+          className="text-link"
+          href="https://opencode.ai/v2/docs/console/go/"
+          target="_blank"
+          rel="noreferrer"
+        >
+          OpenCode Go
         </a>
       </p>
       {edit && (

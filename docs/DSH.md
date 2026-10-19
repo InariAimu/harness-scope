@@ -50,4 +50,23 @@ App 迁移保留的 v0 和新 v4 文件不会重复计数。v1–v3 中间代文
 
 当前仅统计模型 Token 费用。Search／Fetch 的独立成功次数尚未采集，因此界面明确提示工具费未统计；不根据工具名称、返回条数或 Token 数推算调用费用。官方说明 Harness 内相关调用从北京时间 2026-11-01 00:00 起收费，计费条件见[网页搜索与抓取](https://api-docs.deepseek.com/zh-cn/guides/search/#计费)。
 
+## 原生供应商与 BYOK 计价
+
+DSH 从每条 `assistant/message.data.message.source.provider` 识别供应商；OpenCode 读取 V1 的 `providerID` 或 V2 的 `model.providerID`；Codex 读取 `session_meta.payload.model_provider`，并保留显式的逐轮 `turn_context` 覆盖。日志原始路由 ID 写入可选的 `UsageRecord.provider`，用于请求明细、供应商分组与所有用量筛选。它说明客户端选择的路由，不从模型名或当前配置反推历史上游身份。没有可靠字段、原日志已丢失或迁移汇总记录继续显示会话日志占位名。
+
+价表以 `(provider, modelId)` 区分，同一模型可保存多套手动价格；配置中的供应商 ID 应与日志一致。`deepseek` 为内置 DeepSeek 官方供应商的计价别名，列表仍显示原始 ID 对应标签。已配置供应商优先匹配专属价表；未配置的供应商按模型名称匹配通用 models.dev 参考价，快照记录 `sourceKey`，金额口径为 `model_reference`。模型匹配仍支持命名空间、日期、推理档位以及上述 DeepSeek 名称归一，列表中的原始模型文本不会改变。models.dev 没有可匹配条目时保持未定价。原有供应商未知的非 DeepSeek 记录可继续使用兼容的通用内置／手动价表。
+
+开启 models.dev 自动同步后，会将日志中尚缺价格的模型纳入匹配，而不只导入常用模型；相同未匹配模型在当前渲染进程内六小时最多尝试一次，避免每轮扫描反复请求。手动同步仍可立即重试。关闭自动同步后可用 models.dev 选择器手动导入。导入的通用参考价与官方／Go 专属价表并存。
+
+`opencode-go` 的 DeepSeek 价表独立依据 [OpenCode Go 官方说明](https://opencode.ai/v2/docs/console/go/)，版本 `opencode-go-deepseek-2026-10-19`。单价为 USD／百万 Tokens，按空闲／高峰排列：
+
+| 计价模型 | 输入 | 缓存读取 | 输出 |
+| --- | --- | --- | --- |
+| deepseek-flash | 0.15 / 0.30 | 0.003 / 0.006 | 0.60 / 1.20 |
+| deepseek-v4-pro | 0.66 / 1.32 | 0.022 / 0.044 | 1.98 / 3.96 |
+
+高峰为 UTC 周一至周五 01:00–04:00、06:00–10:00，结束边界不包含在内；官方 Go 页面未列中国节假日豁免，因此不复用 DeepSeek 官方日历或人民币汇率。这里计算的是 `subscription_usage`（套餐额度折算），不分摊 Go／Go Plus 月费，也无法从日志判断余额扣费、剩余额度或具体套餐。其他 Go 模型须另行配置供应商价格，不能套用 DeepSeek 官方价表。历史 Go 估算使用本次核对版本，不能视为历史账单确认金额。
+
+升级解析器版本后，正常扫描会一次性重读可用日志并回填供应商，保持稳定请求身份和 Token 口径；后续扫描继续使用持久化读取缓存。旧模型通用价表错误用于其他供应商的估算会按正确供应商重新选择，原生日志直接报告的费用优先保留。新增字段不需要 SQLite schema 迁移。同步协议升级为 v2，服务端保留 v1 接收能力；旧服务端会被客户端预检拦截，保留待同步队列并提示升级，所有读写这些记录的客户端也应升级，以完整保留供应商元数据。
+
 格式依据为两种本机安装的 `@deepseek-ai/dsh-session`、`dsh-session-persistence-jsonl`、`dsh-session-format-*`、`dsh-session-stats` 和 `dsh-llm` 类型／持久化实现，以及只读历史快照和分别发起的 CLI／App 真实请求日志。Rust 适配器独立实现；仓库仅保留合成样本。上游项目：[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)。

@@ -109,6 +109,7 @@ fn v1_wal_usage_and_tools_are_read_without_mutating_source() {
     assert!(parsed.complete);
     assert_eq!(parsed.usage.len(), 1); // step-finish duplicates the message's counters
     let u = &parsed.usage[0];
+    assert_eq!(u.provider.as_deref(), Some("deepseek"));
     assert_eq!(
         (
             u.tokens.input,
@@ -165,6 +166,15 @@ fn v1_to_v2_keeps_ids_and_deduplicates_migrated_sessions() {
         1
     );
     assert!(records.iter().all(|r| r.cost.method == "reported"));
+    assert_eq!(
+        records
+            .iter()
+            .find(|r| r.id == first.id)
+            .unwrap()
+            .provider
+            .as_deref(),
+        Some("deepseek")
+    );
     assert!(records
         .iter()
         .any(|r| r.cost.amount_usd.as_deref() == Some("0")));

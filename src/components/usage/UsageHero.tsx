@@ -65,6 +65,10 @@ export function aggregateSummaries(items: UsageSummary[]): UsageSummary {
   const cacheableInput = input + cacheCreation + cacheRead;
   return {
     costConverted: items.some((item) => item.costConverted),
+    subscriptionUsageCount: items.reduce(
+      (sum, item) => sum + (item.subscriptionUsageCount ?? 0),
+      0,
+    ),
     totalRequests,
     unpricedCount: items.reduce((sum, s) => sum + (s.unpricedCount ?? 0), 0),
     totalCost: totalCostNum.toFixed(6),
@@ -232,6 +236,17 @@ export function UsageHero({
                 placeholder ?? (totalCost == null ? "--" : money(totalCost, 2))
               }
               title={totalCost == null ? undefined : moneyTitle(totalCost, 6)}
+              help={
+                summary?.subscriptionUsageCount
+                  ? {
+                      title: t("scope.pricing.billingBasis", "金额口径"),
+                      body: t(
+                        "scope.pricing.subscriptionTotalHint",
+                        "包含 OpenCode Go 套餐额度折算，不含套餐月费，不能视为实际扣款合计。",
+                      ),
+                    }
+                  : undefined
+              }
             />
             <MetricCard
               label={t("usage.totalRequests")}

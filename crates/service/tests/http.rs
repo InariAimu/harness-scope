@@ -73,7 +73,15 @@ async fn two_devices_sync_retry_and_server_recreation() {
     ] {
         let root = dir.path().join(name);
         fs::create_dir(&root).unwrap();
-        fs::write(root.join("fixture.jsonl"), fixture).unwrap();
+        fs::write(
+            root.join("fixture.jsonl"),
+            if harness == "codex" {
+                fixture.replace("\"cwd\":", "\"model_provider\":\"openai\",\"cwd\":")
+            } else {
+                fixture.into()
+            },
+        )
+        .unwrap();
         let e = Arc::new(Engine::open(&dir.path().join(format!("{name}.db"))).unwrap());
         let s = e.lock().unwrap();
         let mut c = s.config().unwrap();
@@ -103,6 +111,14 @@ async fn two_devices_sync_retry_and_server_recreation() {
     .unwrap();
     assert_eq!(clients[0].lock().unwrap().records("all").unwrap().len(), 3);
     assert_eq!(clients[0].lock().unwrap().pending_count().unwrap(), 0);
+    assert!(clients[0]
+        .lock()
+        .unwrap()
+        .records("all")
+        .unwrap()
+        .iter()
+        .filter(|r| r.harness == "codex")
+        .all(|r| r.provider.as_deref() == Some("openai")));
     assert_eq!(
         harness_scope_core::sync::changes(&server.lock().unwrap(), 0, 500)
             .unwrap()
@@ -141,5 +157,49 @@ async fn two_devices_sync_retry_and_server_recreation() {
         .execute("usage_query", json!({"kind":"summary","scope":"all"}))
         .unwrap();
     assert_eq!(summary["realTotalTokens"], 410);
+    handle.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_old_server_is_rejected_without_acknowledging_pending_records() {
+    let dir = tempfile::tempdir().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let router = axum::Router::new().route(
+        "/health",
+        axum::routing::get(|| async { axum::Json(json!({"status":"ok","protocolVersion":1})) }),
+    );
+    let handle = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let root = dir.path().join("logs");
+    fs::create_dir(&root).unwrap();
+    fs::write(
+        root.join("fixture.jsonl"),
+        include_str!("../../../tests/fixtures/claude/session.jsonl"),
+    )
+    .unwrap();
+    let e = Arc::new(Engine::open(&dir.path().join("client.db")).unwrap());
+    {
+        let s = e.lock().unwrap();
+        let mut c = s.config().unwrap();
+        c.sources = vec![Source {
+            id: "fixture".into(),
+            harness: "claude".into(),
+            root: root.to_string_lossy().into(),
+            enabled: true,
+        }];
+        c.server_url = format!("http://{address}");
+        c.server_token = TOKEN.into();
+        s.set_meta("config", &c).unwrap();
+    }
+    let client = e.clone();
+    let error = tokio::task::spawn_blocking(move || {
+        client.scan(false).unwrap();
+        client.sync().unwrap_err().to_string()
+    })
+    .await
+    .unwrap();
+    assert!(error.contains("upgraded to protocol v2"));
+    assert_eq!(e.lock().unwrap().pending_count().unwrap(), 1);
+    assert_eq!(e.lock().unwrap().local_records().unwrap().len(), 1);
     handle.abort();
 }

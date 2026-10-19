@@ -6,6 +6,17 @@ use std::str::FromStr;
 
 pub fn validate_record(r: &UsageRecord) -> Result<()> {
     anyhow::ensure!(
+        r.provider.as_deref().is_none_or(crate::providers::valid),
+        "Invalid provider ID"
+    );
+    anyhow::ensure!(
+        r.cost
+            .billing_basis
+            .as_deref()
+            .is_none_or(|v| v == "subscription_usage" || v == "model_reference"),
+        "Invalid cost billing basis"
+    );
+    anyhow::ensure!(
         !r.id.is_empty()
             && r.id.len() <= 512
             && r.device_id.len() <= 128
@@ -93,7 +104,10 @@ pub fn validate_record(r: &UsageRecord) -> Result<()> {
     Ok(())
 }
 pub fn push(store: &Store, request: PushRequest) -> Result<PushResponse> {
-    anyhow::ensure!(request.protocol_version == 1, "Unsupported protocolVersion");
+    anyhow::ensure!(
+        [1, 2].contains(&request.protocol_version),
+        "Unsupported protocolVersion"
+    );
     anyhow::ensure!(
         request.records.len() <= 200 && request.device_name.len() <= 128,
         "Batch too large"

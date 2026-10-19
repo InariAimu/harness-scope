@@ -7,6 +7,7 @@ use rust_decimal::Decimal;
 use std::str::FromStr;
 
 pub mod deepseek;
+pub mod opencode_go;
 pub const CURRENCIES: &[&str] = &["USD", "CNY", "EUR", "JPY", "TWD", "TRY"];
 
 pub fn validate_settings(settings: &PricingSettings) -> Result<()> {
@@ -54,6 +55,7 @@ pub fn builtin() -> Vec<Price> {
     let mut prices = serde_json::from_str(include_str!("../resources/builtin-pricing.json"))
         .expect("vendored prices");
     deepseek::install(&mut prices);
+    opencode_go::install(&mut prices);
     prices
 }
 /// Freeze estimates until usage changes; native reported amounts remain authoritative.
@@ -68,11 +70,17 @@ pub fn resolve_with_settings(
 ) -> Result<Cost> {
     if let Some(amount) = &parsed.reported_cost {
         return Ok(Cost {
+            billing_basis: (parsed.provider.as_deref() == Some("opencode-go"))
+                .then(|| "subscription_usage".into()),
             amount_usd: Some(amount.clone()),
             method: "reported".into(),
             ..Default::default()
         });
     }
+    let applicable = |old: &&UsageRecord| {
+        snapshot_applies(&old.cost, &parsed.model, parsed.provider.as_deref(), prices)
+    };
+    let old = old.filter(applicable);
     if let Some(old) = old {
         if old.tokens == parsed.tokens && old.model == parsed.model && old.cost.amount_usd.is_some()
         {
@@ -96,11 +104,25 @@ pub fn resolve_with_settings(
             );
         }
     }
-    find(prices, &parsed.model)
+    find_for_provider(prices, &parsed.model, parsed.provider.as_deref())
         .map(|price| estimate_at(&parsed.tokens, price, parsed.occurred_at, settings))
         .unwrap_or_else(|| Ok(Cost::default()))
 }
 pub fn validate(price: &Price) -> Result<()> {
+    anyhow::ensure!(
+        price
+            .provider
+            .as_deref()
+            .is_none_or(crate::providers::valid),
+        "Invalid price provider"
+    );
+    anyhow::ensure!(
+        price
+            .billing_basis
+            .as_deref()
+            .is_none_or(|v| v == "subscription_usage"),
+        "Invalid billing basis"
+    );
     anyhow::ensure!(!price.model_id.trim().is_empty(), "Empty pricing model");
     anyhow::ensure!(
         CURRENCIES.contains(&price.currency.as_str()),
@@ -110,8 +132,15 @@ pub fn validate(price: &Price) -> Result<()> {
         price
             .pricing_rule
             .as_deref()
-            .is_none_or(|rule| rule == deepseek::RULE
+            .is_none_or(|rule| (rule == deepseek::RULE
                 && price.currency == "CNY"
+                && price
+                    .provider
+                    .as_deref()
+                    .is_none_or(|id| id == "deepseek-official")
+                || rule == opencode_go::RULE
+                    && price.currency == "USD"
+                    && price.provider.as_deref() == Some("opencode-go"))
                 && deepseek::canonical(&price.model_id) == Some(price.model_id.as_str())),
         "Invalid pricing rule"
     );
@@ -148,19 +177,34 @@ pub fn normalize(model: &str) -> String {
     }
 }
 pub fn find<'a>(prices: &'a [Price], model: &str) -> Option<&'a Price> {
+    find_in(
+        prices
+            .iter()
+            .filter(|p| p.provider.is_none() || p.provider.as_deref() == Some("deepseek-official")),
+        model,
+    )
+}
+fn find_in<'a>(prices: impl Iterator<Item = &'a Price> + Clone, model: &str) -> Option<&'a Price> {
     if let Some(canonical) = deepseek::canonical(model) {
-        return prices.iter().find(|p| p.model_id == canonical);
+        return prices
+            .clone()
+            .find(|p| p.model_id == canonical)
+            .or_else(|| {
+                prices
+                    .clone()
+                    .find(|p| deepseek::canonical(&p.model_id) == Some(canonical))
+            });
     }
     let candidates = crate::pricing_match::model_pricing_candidates(model);
     for c in &candidates {
-        if let Some(p) = prices.iter().find(|p| p.model_id.eq_ignore_ascii_case(c)) {
+        if let Some(p) = prices.clone().find(|p| p.model_id.eq_ignore_ascii_case(c)) {
             return Some(p);
         }
     }
     for c in &candidates {
         if crate::pricing_match::should_try_pricing_prefix_match(c) {
             if let Some(p) = prices
-                .iter()
+                .clone()
                 .filter(|p| p.model_id.to_lowercase().starts_with(&format!("{c}-")))
                 .min_by_key(|p| p.model_id.len())
             {
@@ -169,6 +213,75 @@ pub fn find<'a>(prices: &'a [Price], model: &str) -> Option<&'a Price> {
         }
     }
     None
+}
+pub fn find_for_provider<'a>(
+    prices: &'a [Price],
+    model: &str,
+    provider: Option<&str>,
+) -> Option<&'a Price> {
+    let id = provider.map(crate::providers::pricing_id);
+    if let Some(id) = id {
+        if let Some(price) = find_in(
+            prices
+                .iter()
+                .filter(|p| p.provider.as_deref().map(crate::providers::pricing_id) == Some(id)),
+            model,
+        ) {
+            return Some(price);
+        }
+        if prices
+            .iter()
+            .any(|p| p.provider.as_deref().map(crate::providers::pricing_id) == Some(id))
+        {
+            return None;
+        }
+    }
+    // Unconfigured routes use models.dev model references, never an unrelated provider tariff.
+    if let Some(price) = find_in(
+        prices
+            .iter()
+            .filter(|p| p.source == "models_dev" && p.provider.is_none()),
+        model,
+    ) {
+        return Some(price);
+    }
+    if deepseek::canonical(model).is_some() {
+        return None;
+    }
+    if id.is_none() {
+        return find_in(prices.iter().filter(|p| p.provider.is_none()), model);
+    }
+    None
+}
+fn snapshot_applies(cost: &Cost, model: &str, provider: Option<&str>, prices: &[Price]) -> bool {
+    if cost.method == "reported" {
+        return true;
+    }
+    let Some(snapshot) = &cost.snapshot else {
+        return false;
+    };
+    // Adding route metadata must not discard a historical reference snapshot for
+    // the same standard provider, including usage predating the current tariff.
+    if snapshot.provider.is_none()
+        && snapshot.source == "builtin"
+        && matches!(
+            provider.map(crate::providers::pricing_id),
+            Some("deepseek-official" | "openai" | "anthropic" | "google" | "gemini")
+        )
+    {
+        return true;
+    }
+    let Some(price) = find_for_provider(prices, model, provider) else {
+        return false;
+    };
+    snapshot.provider == price.provider
+        && (price.provider.is_some()
+            || provider.is_none()
+            || matches!(provider, Some("openai" | "anthropic" | "google" | "gemini"))
+            || snapshot.source == "models_dev")
+        || snapshot.provider.is_none()
+            && snapshot.source == "deepseek_official"
+            && price.provider.as_deref() == Some("deepseek-official")
 }
 pub fn estimate(tokens: &Tokens, price: &Price) -> Result<Cost> {
     estimate_converted(tokens, price, None, 0, None)
@@ -181,8 +294,16 @@ pub fn estimate_at(
     settings: &PricingSettings,
 ) -> Result<Cost> {
     let mut selected = price.clone();
-    let context = if price.pricing_rule.as_deref() == Some(deepseek::RULE) {
-        let Some(context) = deepseek::context(timestamp, settings) else {
+    let context = if matches!(
+        price.pricing_rule.as_deref(),
+        Some(deepseek::RULE | opencode_go::RULE)
+    ) {
+        let context = if price.pricing_rule.as_deref() == Some(opencode_go::RULE) {
+            opencode_go::context(timestamp)
+        } else {
+            deepseek::context(timestamp, settings)
+        };
+        let Some(context) = context else {
             return Ok(Cost::default());
         };
         if context.period == "peak" {
@@ -248,6 +369,10 @@ fn estimate_converted(
             .map(|rate| original / rate)
     };
     Ok(Cost {
+        billing_basis: price
+            .billing_basis
+            .clone()
+            .or_else(|| (price.source == "models_dev").then(|| "model_reference".into())),
         amount_usd: amount.map(|v| v.normalize().to_string()),
         method: if amount.is_some() {
             "estimated"

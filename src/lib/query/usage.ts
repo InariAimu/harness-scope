@@ -482,6 +482,7 @@ export function useUpdateModelPricing() {
       source?: string;
       sourceKey?: string;
       currency?: string;
+      provider?: string | null;
     }) =>
       usageApi.updateModelPricing(
         params.modelId,
@@ -493,6 +494,7 @@ export function useUpdateModelPricing() {
         params.source,
         params.sourceKey,
         params.currency,
+        params.provider,
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: usageKeys.all });
@@ -504,7 +506,8 @@ export function useDeleteModelPricing() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (modelId: string) => usageApi.deleteModelPricing(modelId),
+    mutationFn: (price: { modelId: string; provider?: string | null }) =>
+      usageApi.deleteModelPricing(price.modelId, price.provider),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: usageKeys.all });
     },

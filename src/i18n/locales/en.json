@@ -4889,7 +4889,16 @@
       "peak": "Peak",
       "offPeak": "Off-peak",
       "timeBasis": "Pricing time (estimated from log)",
-      "ruleVersion": "Pricing rule version"
+      "ruleVersion": "Pricing rule version",
+      "provider": "Provider ID (blank for a generic tariff)",
+      "providerHint": "Use the provider ID from the log. The same model can have separate provider prices; unconfigured providers use models.dev model references.",
+      "generic": "Generic model reference",
+      "subscriptionUsage": "Plan allowance usage",
+      "billingBasis": "Amount basis",
+      "subscriptionHint": "Plan allowance usage; excludes subscription fees and actual charges",
+      "referenceHint": "models.dev model reference; actual charges depend on the provider bill",
+      "subscriptionTotalHint": "Includes OpenCode Go plan allowance usage. Excludes monthly plan fees and does not represent total actual charges.",
+      "goNote": "OpenCode Go measures USD plan allowance usage, excluding monthly fees. Peak hours are weekdays 01–04 and 06–10 UTC, without Chinese holiday exclusions. Unconfigured providers use models.dev model reference rates, rather than actual bills."
     },
     "nativeSources": "Local session logs",
     "sourceNote": "Read configured local session logs or databases. Transcripts stay on this device; usage and cost provenance can sync to your own server.",
@@ -4907,6 +4916,10 @@
       "opencode_content_start": "Earliest text / reasoning content creation (may follow first chunk)",
       "dsh_step_message": "step/start → assistant/message (excludes subsequent tools)",
       "dsh_stream_delta": "First nonempty text / reasoning / tool-call stream delta"
+    },
+    "provider": {
+      "deepseekOfficial": "DeepSeek Official",
+      "routeHint": "Provider ID in the log: {{id}}. Identifies the configured route, not verified upstream ownership."
     }
   }
 }

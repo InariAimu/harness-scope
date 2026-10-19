@@ -17,6 +17,16 @@ const SESSION_PROVIDER_APPS: Record<string, AppId> = {
   "Pi (Session)": "pi",
 };
 
+const PROVIDER_LABELS: Record<string, string> = {
+  "deepseek-official": "DeepSeek 官方",
+  "deepseek-account": "DeepSeek Account",
+  deepseek: "DeepSeek",
+  "opencode-go": "OpenCode Go",
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  google: "Google",
+};
+
 export interface UsageProviderLabel {
   label: string;
   /** 旁边已经有「应用」列时用的短名：会话日志占位名省掉应用名，其余同 label */
@@ -37,7 +47,21 @@ export function getUsageProviderLabel(
   const app =
     SESSION_PROVIDER_APPS[name] ??
     (name.endsWith(" (Session)") ? name.slice(0, -10) : undefined);
-  if (!app) return { label: name, shortLabel: name };
+  if (!app) {
+    const label =
+      name === "deepseek-official"
+        ? t("scope.provider.deepseekOfficial", "DeepSeek 官方")
+        : (PROVIDER_LABELS[name] ?? name);
+    return {
+      label,
+      shortLabel: label,
+      hint: t("scope.provider.routeHint", {
+        defaultValue:
+          "日志中的供应商 ID：{{id}}；代表配置的路由，不保证上游身份。",
+        id: name,
+      }),
+    };
+  }
   return {
     label: t("usage.sessionProvider.label", { app: APP_DISPLAY_NAME[app] }),
     shortLabel: t("usage.sessionProvider.short"),

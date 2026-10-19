@@ -4890,7 +4890,16 @@
       "offPeak": "空闲",
       "timeBasis": "计价时间（日志时间估算）",
       "ruleVersion": "价格规则版本",
-      "repriced": "已重算 {{count}} 条本机估算费用"
+      "repriced": "已重算 {{count}} 条本机估算费用",
+      "provider": "供应商 ID（留空为通用价表）",
+      "providerHint": "与日志中的供应商 ID 一致。同名模型可分别设置价格；未配置的供应商按 models.dev 模型参考价计费。",
+      "generic": "通用模型参考价",
+      "subscriptionUsage": "套餐额度折算",
+      "billingBasis": "金额口径",
+      "subscriptionHint": "套餐额度折算，不含月费或实际扣款",
+      "referenceHint": "models.dev 模型参考价，实际费用以供应商账单为准",
+      "subscriptionTotalHint": "包含 OpenCode Go 套餐额度折算，不含套餐月费，不能视为实际扣款合计。",
+      "goNote": "OpenCode Go 按 USD 计算套餐额度消耗，不含月费；高峰为 UTC 工作日 01–04、06–10 点，不套用中国节假日。未配置的供应商使用 models.dev 模型参考价，不代表实际账单。"
     },
     "nativeSources": "本机会话日志",
     "sourceNote": "读取已配置的本机会话日志或数据库。会话正文留在本机，用量与费用来源可同步到自己的服务器。",
@@ -4908,6 +4917,10 @@
       "opencode_content_start": "最早 text / reasoning 内容创建时间（可能晚于首个片段）",
       "dsh_step_message": "step/start → assistant/message（不含后续工具执行）",
       "dsh_stream_delta": "首个非空文本／推理／工具调用流片段"
+    },
+    "provider": {
+      "deepseekOfficial": "DeepSeek 官方",
+      "routeHint": "日志中的供应商 ID：{{id}}；代表配置的路由，不保证上游身份。"
     }
   }
 }

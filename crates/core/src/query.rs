@@ -37,10 +37,10 @@ pub fn summary(records: &[UsageRecord]) -> Value {
         }
     }
     let cacheable = t.input + t.cache_read + t.cache_write;
-    json!({"totalRequests":count,"totalCost":cost.normalize().to_string(),"totalInputTokens":t.input,"totalOutputTokens":t.output,"totalCacheReadTokens":t.cache_read,"totalCacheCreationTokens":t.cache_write,"successRate":if known>0{Some(success as f64/known as f64*100.)}else{None},"realTotalTokens":t.total(),"cacheHitRate":if cacheable>0{t.cache_read as f64/cacheable as f64}else{0.},"unpricedCount":unpriced,"knownStatusCount":known,"costConverted":records.iter().any(|r|r.cost.conversion.as_ref().is_some_and(|c|c.units_per_usd.is_some()))})
+    json!({"totalRequests":count,"totalCost":cost.normalize().to_string(),"totalInputTokens":t.input,"totalOutputTokens":t.output,"totalCacheReadTokens":t.cache_read,"totalCacheCreationTokens":t.cache_write,"successRate":if known>0{Some(success as f64/known as f64*100.)}else{None},"realTotalTokens":t.total(),"cacheHitRate":if cacheable>0{t.cache_read as f64/cacheable as f64}else{0.},"unpricedCount":unpriced,"knownStatusCount":known,"subscriptionUsageCount":records.iter().filter(|r|r.cost.billing_basis.as_deref()==Some("subscription_usage")).map(|r|r.count).sum::<u64>(),"costConverted":records.iter().any(|r|r.cost.conversion.as_ref().is_some_and(|c|c.units_per_usd.is_some()))})
 }
-fn provider(harness: &str) -> String {
-    format!("{harness} (Session)")
+fn provider(record: &UsageRecord) -> String {
+    crate::providers::name(record)
 }
 type Timings = BTreeMap<(String, String), UsageTiming>;
 fn timing_for<'a>(r: &UsageRecord, timings: &'a Timings) -> Option<&'a UsageTiming> {
@@ -78,7 +78,7 @@ fn timing_stats(records: &[UsageRecord], timings: &Timings) -> Value {
     json!({"speedOutputTokens":0,"speedGenerationMs":0,"estSpeedOutputTokens":output,"estSpeedDurationMs":duration,"estSpeedSampleCount":speed_samples,"firstTokenMedianMs":null,"estFirstTokenMedianMs":median,"estFirstTokenSampleCount":n,"timingSampleCount":durations.len(),"avgLatencyMs":if durations.is_empty(){None}else{Some(durations.iter().map(|v|*v as f64).sum::<f64>()/durations.len() as f64)}})
 }
 fn log(r: &UsageRecord, timings: &Timings) -> Value {
-    let mut v = json!({"requestId":format!("{}|{}",r.device_id,r.id),"providerId":r.harness,"providerName":provider(&r.harness),"appType":r.harness,"model":r.model,"requestModel":r.model,"pricingModel":r.cost.pricing_model,"costMultiplier":"1","inputTokens":r.tokens.input,"outputTokens":r.tokens.output,"cacheReadTokens":r.tokens.cache_read,"cacheCreationTokens":r.tokens.cache_write,"inputCostUsd":"0","outputCostUsd":"0","cacheReadCostUsd":"0","cacheCreationCostUsd":"0","totalCostUsd":r.cost.amount_usd,"isStreaming":false,"latencyMs":null,"firstTokenMs":null,"durationMs":null,"statusCode":r.status_code,"createdAt":r.occurred_at,"dataSource":"harness_scope","deviceId":r.device_id,"costSource":r.cost.method,"priceSource":r.cost.price_source,"pricingSnapshot":r.cost.snapshot,"recordSource":r.record_source});
+    let mut v = json!({"requestId":format!("{}|{}",r.device_id,r.id),"providerId":provider(r),"providerName":provider(r),"appType":r.harness,"model":r.model,"requestModel":r.model,"pricingModel":r.cost.pricing_model,"costMultiplier":"1","inputTokens":r.tokens.input,"outputTokens":r.tokens.output,"cacheReadTokens":r.tokens.cache_read,"cacheCreationTokens":r.tokens.cache_write,"inputCostUsd":"0","outputCostUsd":"0","cacheReadCostUsd":"0","cacheCreationCostUsd":"0","totalCostUsd":r.cost.amount_usd,"isStreaming":false,"latencyMs":null,"firstTokenMs":null,"durationMs":null,"statusCode":r.status_code,"createdAt":r.occurred_at,"dataSource":"harness_scope","deviceId":r.device_id,"costSource":r.cost.method,"priceSource":r.cost.price_source,"pricingSnapshot":r.cost.snapshot,"recordSource":r.record_source});
     if let Some(t) = timing_for(r, timings) {
         v["latencyMs"] = json!(t.duration_ms);
         v["durationMs"] = json!(t.duration_ms);
@@ -87,6 +87,8 @@ fn log(r: &UsageRecord, timings: &Timings) -> Value {
         v["timingSource"] = json!(t.duration_source);
         v["firstTokenSource"] = json!(t.first_token_source);
     }
+    v["nativeProvider"] = json!(r.provider);
+    v["billingBasis"] = json!(r.cost.billing_basis);
     v["costConverted"] = json!(r
         .cost
         .conversion
@@ -229,7 +231,7 @@ pub fn query(store: &Store, kind: &str, args: &Value) -> Result<Value> {
                 && filter["model"].as_str().is_none_or(|s| r.model == s)
                 && filter["providerName"]
                     .as_str()
-                    .is_none_or(|s| r.harness == s || provider(&r.harness) == s)
+                    .is_none_or(|s| provider(r) == s || r.provider.is_none() && r.harness == s)
                 && filter["statusCode"]
                     .as_u64()
                     .is_none_or(|s| r.status_code == Some(s as u16))
@@ -270,7 +272,7 @@ pub fn query(store: &Store, kind: &str, args: &Value) -> Result<Value> {
         "firstDate"=>Ok(json!(selected.iter().filter_map(|r|timezone.timestamp_opt(r.occurred_at,0).single()).min().map(|d|d.format("%Y-%m-%d").to_string()))),
         "logs"=>{let mut rows:Vec<_>=selected.into_iter().filter(|r|r.grain=="event").collect();rows.sort_by(|a,b|b.occurred_at.cmp(&a.occurred_at).then(a.id.cmp(&b.id)));let total=rows.len();let page=args["page"].as_u64().unwrap_or(0) as usize;let size=args["pageSize"].as_u64().unwrap_or(20).clamp(1,200) as usize;Ok(json!({"data":rows.iter().skip(page.saturating_mul(size)).take(size).map(|r|log(r,&timings)).collect::<Vec<_>>(),"total":total,"page":page,"pageSize":size}))},
         "detail"=>Ok(selected.iter().find(|r|format!("{}|{}",r.device_id,r.id)==args["requestId"].as_str().unwrap_or("")&&args["deviceId"].as_str().is_none_or(|id|r.device_id==id)).map(|r|log(r,&timings)).unwrap_or(Value::Null)),
-        "models"|"providers"=>{let mut groups:BTreeMap<String,Vec<UsageRecord>>=BTreeMap::new();for r in selected{groups.entry(if kind=="models"{r.model.clone()}else{r.harness.clone()}).or_default().push(r)}Ok(json!(groups.into_iter().map(|(key,rs)|{let s=summary(&rs);let mut row=json!({"model":key,"providerId":key,"providerName":provider(&rs[0].harness),"appType":rs[0].harness,"requestCount":s["totalRequests"],"totalTokens":s["realTotalTokens"],"totalCost":s["totalCost"],"costConverted":s["costConverted"],"successRate":s["successRate"],"avgLatencyMs":0,"avgCostPerRequest":if s["totalRequests"].as_u64().unwrap_or(0)>0{(rs.iter().map(amount).sum::<Decimal>()/Decimal::from(s["totalRequests"].as_u64().unwrap())).normalize().to_string()}else{"0".into()}});row.as_object_mut().unwrap().extend(timing_stats(&rs,&timings).as_object().unwrap().clone());row}).collect::<Vec<_>>()))},
+        "models"|"providers"=>{let mut groups:BTreeMap<String,Vec<UsageRecord>>=BTreeMap::new();for r in selected{groups.entry(if kind=="models"{r.model.clone()}else{provider(&r)}).or_default().push(r)}Ok(json!(groups.into_iter().map(|(key,rs)|{let s=summary(&rs);let mut row=json!({"model":key,"providerId":key,"providerName":key,"appType":if rs.iter().all(|r|r.harness==rs[0].harness){rs[0].harness.as_str()}else{"all"},"requestCount":s["totalRequests"],"totalTokens":s["realTotalTokens"],"totalCost":s["totalCost"],"costConverted":s["costConverted"],"successRate":s["successRate"],"avgLatencyMs":0,"avgCostPerRequest":if s["totalRequests"].as_u64().unwrap_or(0)>0{(rs.iter().map(amount).sum::<Decimal>()/Decimal::from(s["totalRequests"].as_u64().unwrap())).normalize().to_string()}else{"0".into()}});row.as_object_mut().unwrap().extend(timing_stats(&rs,&timings).as_object().unwrap().clone());row}).collect::<Vec<_>>()))},
         "trends"=>trends(selected,start,end,timezone),
         "sources"=>{let mut groups:BTreeMap<String,Vec<UsageRecord>>=BTreeMap::new();for r in selected{groups.entry(r.record_source.clone()).or_default().push(r)}Ok(json!(groups.into_iter().map(|(source,rs)|{let s=summary(&rs);json!({"dataSource":source,"requestCount":s["totalRequests"],"totalCostUsd":s["totalCost"],"costConverted":s["costConverted"]})}).collect::<Vec<_>>()))},
         "heatmap"=>Ok(json!(selected.iter().filter_map(|r|timezone.timestamp_opt(r.occurred_at,0).single().map(|d|json!({"date":d.format("%Y-%m-%d").to_string(),"weekday":d.weekday().num_days_from_monday(),"count":r.count}))).collect::<Vec<_>>())),
