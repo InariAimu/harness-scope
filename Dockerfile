@@ -2,6 +2,7 @@ FROM rust:1.91-bookworm AS build
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
+COPY server ./server
 COPY src-tauri ./src-tauri
 COPY tests ./tests
 RUN cargo build --locked --release -p harness-scope-service

@@ -72,6 +72,8 @@ OpenCode 默认读取 `~/.local/share/opencode/opencode.db`，支持 `XDG_DATA_H
 
 ## 自部署同步服务器
 
+服务器代码位于 [`server/`](server/)，Debian 的 systemd、Nginx、备份与 HTTPS 验证步骤见 [服务器部署说明](server/README.md)。
+
 ```powershell
 # 设置一个随机长令牌，至少 24 字符；不要提交到仓库
 $env:HARNESS_SCOPE_TOKEN = '<your-random-token>'
@@ -80,7 +82,7 @@ cargo run --release -p harness-scope-service -- --db data/server.db --bind 127.0
 
 通过 HTTPS 反向代理暴露该服务，再在桌面「设置 → 多设备同步」填写地址和相同令牌。仅允许 loopback 地址使用明文 HTTP。
 
-也可使用 Docker Compose：设置 `HARNESS_SCOPE_TOKEN` 后运行 `docker compose up --build -d`。Compose 默认仅向宿主机 loopback 发布 8787，数据存于命名卷。首次交付未实际运行容器；Windows 服务端和 HTTP 协议有自动化测试。
+也可使用 Docker Compose：设置 `HARNESS_SCOPE_TOKEN` 后运行 `docker compose up --build -d`。Compose 默认仅向宿主机 loopback 发布 8787，数据存于命名卷。容器尚未实际运行；Debian 13 已完成 systemd + Nginx 实机部署及跨机 HTTPS 同步验证，见 [验证记录](docs/VALIDATION.md)。
 
 接口：`GET /health`、`POST /v1/push`、`GET /v1/changes?after=0&limit=500`。除健康检查外均需 Bearer token；当前客户端使用协议 v2 保存供应商信息，服务端兼容接收 v1。升级客户端时请同步升级服务器和其他客户端；遇到 v1 服务器会提示升级并保留待同步记录。协议和事务语义见详细计划第 5 节。
 

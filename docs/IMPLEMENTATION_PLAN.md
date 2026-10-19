@@ -28,7 +28,7 @@ crates/core/src/
   migration.rs                   CC Switch 只读快照迁移
   query.rs                       范围、设备、模型和应用统计
   engine.rs                      本机业务编排与稳定命令接口
-crates/service/                   本机开发 API、自部署同步 API、CLI
+server/                           本机开发 API、自部署同步 API、CLI 及 Debian 部署文件
 tests/fixtures/                   合成且不含真实对话的兼容样本
 docs/                            协议、阶段、验收与新增 harness 指南
 third_party/                     上游许可证、来源及修改记录

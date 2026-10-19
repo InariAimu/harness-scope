@@ -63,12 +63,12 @@ async fn two_devices_sync_retry_and_server_recreation() {
         (
             "a",
             "claude",
-            include_str!("../../../tests/fixtures/claude/session.jsonl"),
+            include_str!("../../tests/fixtures/claude/session.jsonl"),
         ),
         (
             "b",
             "codex",
-            include_str!("../../../tests/fixtures/codex/session.jsonl"),
+            include_str!("../../tests/fixtures/codex/session.jsonl"),
         ),
     ] {
         let root = dir.path().join(name);
@@ -174,7 +174,7 @@ async fn an_old_server_is_rejected_without_acknowledging_pending_records() {
     fs::create_dir(&root).unwrap();
     fs::write(
         root.join("fixture.jsonl"),
-        include_str!("../../../tests/fixtures/claude/session.jsonl"),
+        include_str!("../../tests/fixtures/claude/session.jsonl"),
     )
     .unwrap();
     let e = Arc::new(Engine::open(&dir.path().join("client.db")).unwrap());

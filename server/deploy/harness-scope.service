@@ -1,0 +1,33 @@
+[Unit]
+Description=Harness Scope usage synchronization
+After=network.target
+
+[Service]
+Type=simple
+User=harness-scope
+Group=harness-scope
+WorkingDirectory=/var/lib/harness-scope
+EnvironmentFile=/etc/harness-scope/server.env
+ExecStart=/opt/harness-scope/current/harness-scope-service --db /var/lib/harness-scope/server.db --bind 127.0.0.1:8787
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+StateDirectory=harness-scope
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=384M
+TasksMax=128
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

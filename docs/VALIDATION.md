@@ -314,3 +314,17 @@ Playwright 使用生产数据库的一致性副本（56,908 条记录）且关�
 界面验证覆盖新增无 Key 账号、零月费、日期校验、编辑、空白 Key 保留、路由归属约束、删除、切换账期、失效请求保留缓存、多币种及零余额，以及 1000×667／1500×1000、明暗主题和英文导航。发现并修复受控输入被未保存状态的捕获事件还原的问题；全流程复跑通过。无页面运行时异常；有一次预期的非法日期 HTTP 400。截图与脚本位于忽略目录 `output/playwright/providers/`。
 
 隔离账号已通过删除 API 清空，临时凭据文件数为零，浏览器、临时 HTTP 服务和 Vite 预览均已关闭。实际数据库账号数与凭据文件数仍为零，未自动导入 DSH Key 或测试套餐。最新 Windows 内嵌前端调试构建已启动，窗口响应正常，DPI 96、客户端 1000×667。可从「供应商 → 添加账号」开始配置。
+
+## 2026-10-19 Debian HTTPS 同步服务部署
+
+服务代码从 `crates/service/` 迁至 `server/`，保持 crate 名称和 CLI 参数兼容，更新 workspace、Docker 构建与样本路径。添加 Debian systemd、Nginx、Certbot webroot、SQLite 一致性备份、源码打包和真实客户端同步探测工具。
+
+服务器为 Debian 13.2 x86_64、2 核、约 2 GiB 内存、无 swap。源码位于 `/opt/harness-scope/src/server/`，Rust 1.91.0 隔离安装，单任务 release 构建限制 1300 MiB 内存和 150% CPU；首次构建用时 5 分 30 秒，成功生成 Linux 可执行文件。生产进程以专用无登录用户运行，监听 `127.0.0.1:8787`，由已有 Nginx 提供 `https://hs.amu.moe`，原有两个站点仍返回 200。
+
+Windows 上两份独立设备数据库使用合成 Claude/Codex 日志，经真实客户端引擎连接 Debian HTTPS 服务：3 条记录、410 Tokens，修订后为 417 Tokens，双方待传均为 0。覆盖错误令牌保留 outbox、双向同步、重复上传幂等、供应商字段、修订覆盖、4 页单条增量分页及客户端重启。最初本机递归 DNS 缓存 NXDOMAIN，使用仅转发指定 IP 的临时 CONNECT 中继，TLS 的域名与证书校验保持启用；完成时本机 DNS 已正常，生产端另经直接连接验证。
+
+服务重启后保留 3 条记录、4 次变化和 2 台设备；对运行中的验证库执行 SQLite Backup API，快照 `integrity_check` 通过。验证库归档至 `/opt/harness-scope/validation/`，生产切回独立空库并轮换令牌，原测试令牌返回 401，新令牌返回 200，生产记录和设备数均为 0。
+
+HTTPS 边界检查：健康检查 200、缺失或错误令牌 401、本机命令 API 路径 404、超过 5 MiB 的请求体 413。证书有效至 2027-01-17，Certbot 续期演练通过。主服务、每日备份计时器和 Certbot 计时器均已启用；生产库在线备份及完整性检查通过，保留最近 14 份本机快照，异机备份尚未配置。
+
+`cargo test -p harness-scope-core -p harness-scope-service --locked` 共 102 项通过；`cargo fmt --all --check`、服务 crate 的全目标 Clippy（warnings 作为错误）、Python 编译和部署脚本 Bash 语法检查通过。详细结果位于已忽略的 `output/deploy/`，令牌不写入报告或版本库。未改动真实桌面数据库或上传个人会话；Docker 与其他桌面平台不计入本次验证。

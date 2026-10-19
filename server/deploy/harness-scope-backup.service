@@ -1,0 +1,16 @@
+[Unit]
+Description=Consistent Harness Scope SQLite backup
+After=harness-scope.service
+
+[Service]
+Type=oneshot
+User=harness-scope
+Group=harness-scope
+ExecStart=/usr/bin/python3 /opt/harness-scope/current/backup.py
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadOnlyPaths=/var/lib/harness-scope
+ReadWritePaths=/var/backups/harness-scope
