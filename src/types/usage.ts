@@ -355,6 +355,46 @@ export function isUnpricedUsage(log: UsageCostLog): boolean {
   return log.totalCostUsd == null && hasUsageTokens(log);
 }
 
+// Test the decimal text directly: a tiny paid amount must not underflow to zero.
+function isExactZero(value: unknown): boolean {
+  return (
+    value === 0 ||
+    (typeof value === "string" && /^0+(?:\.0+)?$/.test(value.trim()))
+  );
+}
+
+/** Free needs model/rate evidence; reference prices retain their billing-basis hint. */
+export function isFreeUsage(log: RequestLog): boolean {
+  if (!hasUsageTokens(log) || !isExactZero(log.totalCostUsd))
+    return false;
+
+  if (log.costSource === "reported") {
+    return (
+      log.billingBasis !== "model_reference" &&
+      ["opencode", "opencode-go"].includes(log.nativeProvider ?? "") &&
+      log.model.replace(/^opencode(?:-go)?\//, "").endsWith("-free")
+    );
+  }
+
+  const snapshot = log.pricingSnapshot;
+  if (
+    log.costSource !== "estimated" ||
+    !snapshot ||
+    typeof snapshot !== "object"
+  )
+    return false;
+  const price = snapshot as Record<string, unknown>;
+  return (
+    !price.pricingRule &&
+    [
+      price.inputCostPerMillion,
+      price.outputCostPerMillion,
+      price.cacheReadCostPerMillion,
+      price.cacheCreationCostPerMillion,
+    ].every(isExactZero)
+  );
+}
+
 export interface StatsFilters {
   timeRange: UsageRangePreset;
   providerId?: string;

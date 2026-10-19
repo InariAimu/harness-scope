@@ -42,6 +42,7 @@ import {
 } from "@/types/usage";
 import {
   usageKeys,
+  prefetchHarnessUsage,
   useModelStats,
   useProviderStats,
   useSessionUsageLastSync,
@@ -147,6 +148,7 @@ function MenuMeta({ children }: { children: React.ReactNode }) {
 }
 
 interface UsageDashboardProps {
+  backgroundCollection?: boolean;
   deviceControls?: ReactNode;
   refreshIntervalMs?: number;
   onRefreshIntervalChange?: (next: number) => Promise<boolean> | boolean | void;
@@ -166,6 +168,7 @@ interface UsageDashboardProps {
  * 用量统计全局页（v7 S6）：页头 → 筛选行 → 指标 → 趋势图 → 子页签（请求日志 / 供应商 / 模型 / 定价）。
  */
 export function UsageDashboard({
+  backgroundCollection = false,
   deviceControls,
   refreshIntervalMs: savedRefreshIntervalMs,
   onRefreshIntervalChange,
@@ -208,6 +211,7 @@ export function UsageDashboard({
     refetchInterval: false,
   });
   const { syncSessionUsage } = useUsageAutoRefresh({
+    backgroundCollection,
     refreshIntervalMs,
     sessionAutoSyncEnabled,
     paused: rebuildingCodex || !settingsReady,
@@ -366,12 +370,12 @@ export function UsageDashboard({
     refetch,
   );
   // 有没有任何用量（不分时间范围）：一条都没有时显示空状态
-  const { data: allTimeSummary } = useQuery({
-    queryKey: [...usageKeys.all, "all-time-summary"],
-    queryFn: () => usageApi.getUsageSummary(),
+  const { data: hasUsage } = useQuery({
+    queryKey: usageKeys.hasRecords(),
+    queryFn: () => usageApi.hasUsage(),
     refetchInterval: refetch.refetchInterval,
   });
-  const isEmpty = allTimeSummary != null && allTimeSummary.totalRequests === 0;
+  const isEmpty = hasUsage === false;
 
   const providerOptions = useMemo(() => {
     const counts = new Map<string, number>();
@@ -533,6 +537,26 @@ export function UsageDashboard({
           aria-pressed={appType === "all"}
           className={chipClass(appType === "all")}
           onClick={() => changeAppType("all")}
+          onPointerEnter={() => {
+            if (appType !== "all")
+              void prefetchHarnessUsage(
+                queryClient,
+                range,
+                "all",
+                timeZone,
+                statusCode,
+              );
+          }}
+          onFocus={() => {
+            if (appType !== "all")
+              void prefetchHarnessUsage(
+                queryClient,
+                range,
+                "all",
+                timeZone,
+                statusCode,
+              );
+          }}
         >
           {t("usage.appFilter.all")}
         </button>
@@ -549,6 +573,26 @@ export function UsageDashboard({
                   "w-[30px] justify-center px-0",
                 )}
                 onClick={() => changeAppType(app as AppTypeFilter)}
+                onPointerEnter={() => {
+                  if (appType !== app)
+                    void prefetchHarnessUsage(
+                      queryClient,
+                      range,
+                      app,
+                      timeZone,
+                      statusCode,
+                    );
+                }}
+                onFocus={() => {
+                  if (appType !== app)
+                    void prefetchHarnessUsage(
+                      queryClient,
+                      range,
+                      app,
+                      timeZone,
+                      statusCode,
+                    );
+                }}
               >
                 <AppGlyph
                   app={app}

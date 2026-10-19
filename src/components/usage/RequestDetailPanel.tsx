@@ -14,6 +14,7 @@ import {
 import { useRequestDetail } from "@/lib/query/usage";
 import {
   getFreshInputTokens,
+  isFreeUsage,
   isUnpricedUsage,
   type RequestLog,
 } from "@/types/usage";
@@ -91,6 +92,7 @@ function useDetailSections(request: RequestLog) {
   const freshInput = getFreshInputTokens(request);
   const isCacheInclusive = request.inputTokens !== freshInput;
   const unpriced = isUnpricedUsage(request);
+  const free = isFreeUsage(request);
   const multiplier = parseFiniteNumber(request.costMultiplier);
   const isProxy = !request.dataSource || request.dataSource === "proxy";
   const tps = formatOutputTokensPerSecond(request);
@@ -215,10 +217,27 @@ function useDetailSections(request: RequestLog) {
       multiplier != null && multiplier !== 1
         ? `${t("usage.detail.total")} (${t("usage.withMultiplier")})`
         : t("usage.detail.total"),
-    value: unpriced ? t("usage.unpriced") : usd(request.totalCostUsd),
+    value: unpriced
+      ? t("usage.unpriced")
+      : free
+        ? t("usage.free")
+        : usd(request.totalCostUsd),
     strong: !unpriced,
     muted: unpriced,
-    title: unpriced ? undefined : moneyTitle(request.totalCostUsd, 6),
+    title: unpriced
+      ? undefined
+      : [
+          free
+            ? t(
+                request.billingBasis === "model_reference"
+                  ? "usage.freeReferenceHint"
+                  : "usage.freeHint",
+              )
+            : undefined,
+          moneyTitle(request.totalCostUsd, 6),
+        ]
+          .filter(Boolean)
+          .join(" · "),
   });
   if (request.billingBasis) {
     cost.push({

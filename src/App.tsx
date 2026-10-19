@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -46,6 +46,7 @@ export interface Config {
   modelsDevSync: unknown;
 }
 export interface Snapshot {
+  usageVersion: number;
   deviceId: string;
   config: Config;
   tokenConfigured: boolean;
@@ -78,12 +79,23 @@ export default function App() {
   const state = useQuery({
     queryKey: ["snapshot"],
     queryFn: () => command<Snapshot>("snapshot"),
-    refetchInterval: 10000,
+    refetchInterval: 5000,
   });
   const [page, setPage] = useState("usage");
   const [collapsed, setCollapsed] = useState(false);
   const [device, setDevice] = useState("local");
   const data = state.data;
+  const usageVersion = useRef<number | undefined>();
+  useEffect(() => {
+    if (!data) return;
+    if (
+      usageVersion.current !== undefined &&
+      usageVersion.current !== data.usageVersion
+    ) {
+      void client.invalidateQueries({ queryKey: ["usage"] });
+    }
+    usageVersion.current = data.usageVersion;
+  }, [data?.usageVersion, client]);
   useEffect(() => {
     if (!data) return;
     const c = data.config;
@@ -99,7 +111,12 @@ export default function App() {
   useEffect(() => {
     if (data) {
       void syncModelsDevPricingOnStartup(data.lastScanAt)
-        .then(() => client.invalidateQueries({ queryKey: ["usage"] }))
+        .then((result) => {
+          if (result.changed > 0)
+            void client.invalidateQueries({ queryKey: ["usage", "pricing"] });
+          if (result.usageChanged > 0)
+            void client.invalidateQueries({ queryKey: ["snapshot"] });
+        })
         .catch((e) => toast.error(String(e)));
     }
   }, [!!data, data?.lastScanAt, client]);
@@ -216,8 +233,26 @@ export default function App() {
             <>
               {page === "usage" && (
                 <UsageDashboard
+                  backgroundCollection
                   key={device}
-                  refreshIntervalMs={60000}
+                  refreshIntervalMs={data.config.scanIntervalSeconds * 1000}
+                  onRefreshIntervalChange={async (next) => {
+                    try {
+                      await command("save_config", {
+                        config: {
+                          ...data.config,
+                          scanIntervalSeconds: next / 1000,
+                        },
+                      });
+                      await client.invalidateQueries({
+                        queryKey: ["snapshot"],
+                      });
+                      return true;
+                    } catch (error) {
+                      toast.error(String(error));
+                      return false;
+                    }
+                  }}
                   deviceControls={
                     <div className="scope-devicebar">
                       <label

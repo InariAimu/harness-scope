@@ -8,6 +8,18 @@ pub struct Store {
     pub conn: Connection,
 }
 impl Store {
+    pub(crate) fn reader(path: &Path) -> Result<Self> {
+        let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        conn.busy_timeout(Duration::from_secs(5))?;
+        Ok(Self { conn })
+    }
+    pub fn usage_version(&self) -> Result<i64> {
+        Ok(self
+            .conn
+            .query_row("SELECT version FROM usage_state WHERE id=1", [], |r| {
+                r.get(0)
+            })?)
+    }
     pub fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?
@@ -17,10 +29,20 @@ impl Store {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         anyhow::ensure!(
-            version <= 1,
+            version <= 2,
             "Database schema is newer than this application"
         );
-        conn.execute_batch(include_str!("schema.sql"))?;
+        conn.execute_batch("BEGIN IMMEDIATE")?;
+        let migration = (|| -> Result<()> {
+            conn.execute_batch(include_str!("schema.sql"))?;
+            crate::query_store::install(&conn, version)?;
+            Ok(())
+        })();
+        if let Err(error) = migration {
+            conn.execute_batch("ROLLBACK")?;
+            return Err(error);
+        }
+        conn.execute_batch("COMMIT")?;
         let store = Self { conn };
         if store.meta::<String>("device_id")?.is_none() {
             store.set_meta("device_id", &uuid::Uuid::new_v4().to_string())?
@@ -97,7 +119,7 @@ impl Store {
     pub fn save_timing(&self, id: &str, timing: Option<&UsageTiming>) -> Result<()> {
         let device = self.device_id()?;
         if let Some(timing) = timing {
-            self.conn.execute("INSERT INTO record_timings(device_id,id,payload) VALUES(?1,?2,?3) ON CONFLICT(device_id,id) DO UPDATE SET payload=excluded.payload", params![device,id,serde_json::to_string(timing)?])?;
+            self.conn.execute("INSERT INTO record_timings(device_id,id,payload) VALUES(?1,?2,?3) ON CONFLICT(device_id,id) DO UPDATE SET payload=excluded.payload WHERE record_timings.payload<>excluded.payload", params![device,id,serde_json::to_string(timing)?])?;
         } else {
             self.conn.execute(
                 "DELETE FROM record_timings WHERE device_id=?1 AND id=?2",

@@ -1,10 +1,12 @@
 import {
   keepPreviousData,
+  type QueryClient,
   useQuery,
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
 import { usageApi } from "@/lib/api/usage";
+import { getScope } from "@/lib/client";
 import { resolveUsageRange } from "@/lib/usageRange";
 import { useUsageTimezone } from "./usageTimezone";
 import type {
@@ -14,6 +16,57 @@ import type {
 } from "@/types/usage";
 
 const DEFAULT_REFETCH_INTERVAL_MS = 30000;
+const USAGE_STALE_TIME_MS = 30000;
+
+/** Warm only the harness the user points to; reuse exactly the visible query keys. */
+export function prefetchHarnessUsage(
+  client: QueryClient,
+  range: UsageRangeSelection,
+  appType: string,
+  timeZone: string,
+  statusCode?: number,
+) {
+  const effective = normalizeScopeFilters({ appType });
+  const bounds = resolveUsageRange(range, Date.now(), timeZone);
+  return Promise.all([
+    client.prefetchQuery({
+      queryKey: [
+        ...usageKeys.trends(
+          range.preset,
+          range.customStartDate,
+          range.customEndDate,
+          effective,
+          range.liveEndTime,
+        ),
+        timeZone,
+      ],
+      queryFn: () =>
+        usageApi.getUsageTrends(
+          bounds.startDate,
+          bounds.endDate,
+          effective.appType,
+        ),
+      staleTime: USAGE_STALE_TIME_MS,
+    }),
+    client.prefetchQuery({
+      queryKey: [
+        ...usageKeys.logs(
+          { ...range, appType: effective.appType, statusCode },
+          0,
+          20,
+        ),
+        timeZone,
+      ],
+      queryFn: () =>
+        usageApi.getRequestLogs(
+          { ...bounds, appType: effective.appType, statusCode },
+          0,
+          20,
+        ),
+      staleTime: USAGE_STALE_TIME_MS,
+    }),
+  ]);
+}
 
 type UsageQueryOptions = {
   enabled?: boolean;
@@ -43,6 +96,7 @@ type RequestLogsKey = {
 // Query keys
 export const usageKeys = {
   all: ["usage"] as const,
+  hasRecords: () => ["usage", "has-records", getScope()] as const,
   summary: (
     preset: UsageRangeSelection["preset"],
     customStartDate: number | undefined,
@@ -60,6 +114,7 @@ export const usageKeys = {
       filters?.appType ?? null,
       filters?.providerName ?? null,
       filters?.model ?? null,
+      getScope(),
     ] as const,
   summaryByApp: (
     preset: UsageRangeSelection["preset"],
@@ -77,6 +132,7 @@ export const usageKeys = {
       liveEndTime ?? false,
       filters?.providerName ?? null,
       filters?.model ?? null,
+      getScope(),
     ] as const,
   trends: (
     preset: UsageRangeSelection["preset"],
@@ -95,6 +151,7 @@ export const usageKeys = {
       filters?.appType ?? null,
       filters?.providerName ?? null,
       filters?.model ?? null,
+      getScope(),
     ] as const,
   firstDate: (filters?: UsageScopeFilters) =>
     [
@@ -103,6 +160,7 @@ export const usageKeys = {
       filters?.appType ?? null,
       filters?.providerName ?? null,
       filters?.model ?? null,
+      getScope(),
     ] as const,
   providerStats: (
     preset: UsageRangeSelection["preset"],
@@ -121,6 +179,7 @@ export const usageKeys = {
       filters?.appType ?? null,
       filters?.providerName ?? null,
       filters?.model ?? null,
+      getScope(),
     ] as const,
   modelStats: (
     preset: UsageRangeSelection["preset"],
@@ -139,6 +198,7 @@ export const usageKeys = {
       filters?.appType ?? null,
       filters?.providerName ?? null,
       filters?.model ?? null,
+      getScope(),
     ] as const,
   logs: (key: RequestLogsKey, page: number, pageSize: number) =>
     [
@@ -154,6 +214,7 @@ export const usageKeys = {
       key.statusCode ?? -1,
       page,
       pageSize,
+      getScope(),
     ] as const,
   detail: (requestId: string) =>
     [...usageKeys.all, "detail", requestId] as const,
@@ -210,6 +271,7 @@ export function useUsageSummary(
         effective.model,
       );
     },
+    staleTime: USAGE_STALE_TIME_MS,
     placeholderData: keepPreviousData,
     refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS,
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
@@ -246,6 +308,7 @@ export function useUsageSummaryByApp(
         filters?.model,
       );
     },
+    staleTime: USAGE_STALE_TIME_MS,
     placeholderData: keepPreviousData,
     refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS,
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
@@ -285,6 +348,7 @@ export function useUsageTrends(
       );
     },
     enabled: options?.enabled ?? true,
+    staleTime: USAGE_STALE_TIME_MS,
     placeholderData: keepPreviousData,
     refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS,
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
@@ -306,6 +370,7 @@ export function useUsageFirstDate(
         effective.providerName,
         effective.model,
       ),
+    staleTime: USAGE_STALE_TIME_MS,
     placeholderData: keepPreviousData,
     refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS,
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
@@ -344,6 +409,7 @@ export function useProviderStats(
         effective.model,
       );
     },
+    staleTime: USAGE_STALE_TIME_MS,
     placeholderData: keepPreviousData,
     refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS,
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
@@ -382,6 +448,7 @@ export function useModelStats(
         effective.model,
       );
     },
+    staleTime: USAGE_STALE_TIME_MS,
     placeholderData: keepPreviousData,
     refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS,
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
@@ -416,6 +483,7 @@ export function useRequestLogs({
       };
       return usageApi.getRequestLogs(effectiveFilters, page, pageSize);
     },
+    staleTime: USAGE_STALE_TIME_MS,
     placeholderData: keepPreviousData,
     refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS, // 每30秒自动刷新
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,

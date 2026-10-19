@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use std::{
     collections::{hash_map::Entry, HashSet},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, Condvar, Mutex, MutexGuard},
     time::Duration,
 };
 
@@ -24,6 +24,8 @@ pub struct Engine {
     sync_lock: Mutex<()>,
     database_path: PathBuf,
     reader: crate::sessions::ReaderCache,
+    query_reader: Mutex<Store>,
+    background_wake: Arc<(Mutex<u64>, Condvar)>,
 }
 impl Engine {
     pub fn open(path: &Path) -> Result<Self> {
@@ -44,6 +46,8 @@ impl Engine {
             store.set_meta("config", &config)?
         }
         Ok(Self {
+            query_reader: Mutex::new(Store::reader(path)?),
+            background_wake: Arc::new((Mutex::new(0), Condvar::new())),
             store: Mutex::new(store),
             registry,
             scan_lock: Mutex::new(()),
@@ -57,23 +61,28 @@ impl Engine {
             .lock()
             .map_err(|_| anyhow::anyhow!("Database lock poisoned"))
     }
+    fn read_lock(&self) -> Result<MutexGuard<'_, Store>> {
+        self.query_reader
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Query lock poisoned"))
+    }
     pub fn execute(&self, name: &str, args: Value) -> Result<Value> {
         match name {
             "snapshot" => {
-                let s = self.lock()?;
+                let s = self.read_lock()?;
                 let mut config = serde_json::to_value(s.config()?)?;
                 let token = !s.config()?.server_token.is_empty();
                 config["serverToken"] = json!("");
                 Ok(
-                    json!({"deviceId":s.device_id()?,"config":config,"tokenConfigured":token,"harnesses":self.registry.descriptors(),"pending":s.pending_count()?,"devices":s.meta::<Vec<Value>>("devices")?.unwrap_or_default(),"lastScanAt":s.meta::<i64>("last_scan_at")?,"lastScan":s.meta::<ScanReport>("last_scan")?,"lastSyncAt":s.meta::<i64>("last_sync_at")?,"lastSyncError":s.meta::<Option<String>>("last_sync_error")?.flatten(),"migrations":s.meta::<Vec<Value>>("migration_manifests")?.unwrap_or_default()}),
+                    json!({"deviceId":s.device_id()?,"config":config,"usageVersion":s.usage_version()?,"tokenConfigured":token,"harnesses":self.registry.descriptors(),"pending":s.pending_count()?,"devices":s.meta::<Vec<Value>>("devices")?.unwrap_or_default(),"lastScanAt":s.meta::<i64>("last_scan_at")?,"lastScan":s.meta::<ScanReport>("last_scan")?,"lastSyncAt":s.meta::<i64>("last_sync_at")?,"lastSyncError":s.meta::<Option<String>>("last_sync_error")?.flatten(),"migrations":s.meta::<Vec<Value>>("migration_manifests")?.unwrap_or_default()}),
                 )
             }
             "save_config" => {
                 let mut c: Config = serde_json::from_value(args["config"].clone())?;
                 c.timezone.parse::<chrono_tz::Tz>()?;
                 anyhow::ensure!(
-                    c.scan_interval_seconds >= 10 && c.scan_interval_seconds <= 86400,
-                    "Scan interval must be 10–86400 seconds"
+                    c.scan_interval_seconds >= 5 && c.scan_interval_seconds <= 86400,
+                    "Scan interval must be 5–86400 seconds"
                 );
                 anyhow::ensure!(c.device_name.len() <= 128, "Device name too long");
                 let mut ids = HashSet::new();
@@ -87,6 +96,15 @@ impl Engine {
                 }
                 let s = self.lock()?;
                 let old = s.config()?;
+                let collection_changed = old.scan_interval_seconds != c.scan_interval_seconds
+                    || old
+                        .sources
+                        .iter()
+                        .map(|s| (&s.id, &s.harness, &s.root, s.enabled))
+                        .ne(c
+                            .sources
+                            .iter()
+                            .map(|s| (&s.id, &s.harness, &s.root, s.enabled)));
                 if c.server_token.is_empty() && !args["clearToken"].as_bool().unwrap_or(false) {
                     c.server_token = old.server_token
                 }
@@ -99,18 +117,30 @@ impl Engine {
                     })?
                 }
                 s.set_meta("config", &c)?;
+                if collection_changed {
+                    let (epoch, wake) = &*self.background_wake;
+                    if let Ok(mut epoch) = epoch.lock() {
+                        *epoch = epoch.wrapping_add(1);
+                        wake.notify_all();
+                    }
+                }
                 Ok(json!(true))
             }
             "scan" => Ok(serde_json::to_value(self.scan(false)?)?),
             "rescan" => Ok(serde_json::to_value(self.scan(true)?)?),
-            "usage_query" => query::query(
-                &*self.lock()?,
-                args["kind"].as_str().context("Missing query kind")?,
-                &args,
-            ),
-            "last_scan" => Ok(json!(self.lock()?.meta::<i64>("last_scan_at")?)),
+            "usage_query" => {
+                let s = self.read_lock()?;
+                s.transaction(|| {
+                    query::query(
+                        &s,
+                        args["kind"].as_str().context("Missing query kind")?,
+                        &args,
+                    )
+                })
+            }
+            "last_scan" => Ok(json!(self.read_lock()?.meta::<i64>("last_scan_at")?)),
             "usage_display" => Ok(json!(self
-                .lock()?
+                .read_lock()?
                 .meta::<UsageDisplaySettings>("usage_display")?
                 .unwrap_or_default())),
             "save_usage_display" => {
@@ -123,30 +153,32 @@ impl Engine {
                 s.set_meta("usage_display", &display)?;
                 Ok(json!(display))
             }
-            "prices" => Ok(json!(self.lock()?.prices()?)),
+            "prices" => Ok(json!(self.read_lock()?.prices()?)),
             "models_needing_prices" => {
-                let s = self.lock()?;
+                let s = self.read_lock()?;
                 let prices = s.prices()?;
-                let models: std::collections::BTreeSet<_> = s
-                    .local_records()?
+                let mut stmt=s.conn.prepare_cached("SELECT model,provider,MAX(amount_usd IS NULL) FROM usage_index WHERE origin='local' AND deleted=0 AND record_source='session' AND cost_method<>'reported' GROUP BY model,provider")?;
+                let rows = stmt
+                    .query_map([], |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, Option<String>>(1)?,
+                            r.get::<_, bool>(2)?,
+                        ))
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
+                let models: std::collections::BTreeSet<_> = rows
                     .into_iter()
-                    .filter(|r| {
-                        !r.deleted
-                            && r.record_source == "session"
-                            && r.cost.method != "reported"
-                            && (r.cost.amount_usd.is_none()
-                                || pricing::find_for_provider(
-                                    &prices,
-                                    &r.model,
-                                    r.provider.as_deref(),
-                                )
-                                .is_none())
+                    .filter(|(model, provider, unknown)| {
+                        *unknown
+                            || pricing::find_for_provider(&prices, model, provider.as_deref())
+                                .is_none()
                     })
-                    .map(|r| r.model)
+                    .map(|(model, _, _)| model)
                     .collect();
                 Ok(json!(models))
             }
-            "pricing_settings" => Ok(json!(self.lock()?.pricing_settings()?)),
+            "pricing_settings" => Ok(json!(self.read_lock()?.pricing_settings()?)),
             "save_pricing_settings" => {
                 let patch: PricingSettings = serde_json::from_value(args["patch"].clone())?;
                 pricing::validate_settings(&patch)?;
@@ -166,7 +198,8 @@ impl Engine {
                 let s = self.lock()?;
                 s.transaction(|| Ok(json!(Self::reprice(&s, true, args["model"].as_str())?)))
             }
-            "save_prices" => self.save_prices(args),
+            "save_prices" => self.save_prices(args, false),
+            "save_prices_detailed" => self.save_prices(args, true),
             "delete_price" => {
                 let s = self.lock()?;
                 let mut prices = s.prices()?;
@@ -185,7 +218,7 @@ impl Engine {
                 Ok(json!(true))
             }
             "models_config" => {
-                let s = self.lock()?;
+                let s = self.read_lock()?;
                 Ok(
                     json!({"config":s.config()?.models_dev_sync,"configPath":self.database_path.canonicalize()?.to_string_lossy()}),
                 )
@@ -600,7 +633,7 @@ impl Engine {
         s.set_meta("last_scan", &report)?;
         Ok(report)
     }
-    fn save_prices(&self, args: Value) -> Result<Value> {
+    fn save_prices(&self, args: Value, detailed: bool) -> Result<Value> {
         let entries = args["entries"].as_array().context("Missing prices")?;
         let s = self.lock()?;
         s.transaction(|| {
@@ -661,8 +694,12 @@ impl Engine {
                 saved += 1;
             }
             s.set_meta("prices", &prices)?;
-            Self::reprice(&s, false, None)?;
-            Ok(json!(saved))
+            let usage_changed = Self::reprice(&s, false, None)?;
+            Ok(if detailed {
+                json!({"saved":saved,"usageChanged":usage_changed})
+            } else {
+                json!(saved)
+            })
         })
     }
     /// Local session estimates only. Reported amounts, migrations and remote facts are immutable here.
@@ -940,7 +977,12 @@ impl Engine {
     }
     pub fn start_background(self: &Arc<Self>) {
         let weak = Arc::downgrade(self);
+        let wake = self.background_wake.clone();
         std::thread::spawn(move || loop {
+            let generation = match wake.0.lock() {
+                Ok(v) => *v,
+                Err(_) => break,
+            };
             let Some(engine) = weak.upgrade() else { break };
             let interval = engine
                 .lock()
@@ -956,7 +998,12 @@ impl Engine {
                 let _ = engine.sync();
             }
             drop(engine);
-            std::thread::sleep(Duration::from_secs(interval));
+            let Ok(epoch) = wake.0.lock() else { break };
+            let _ = wake
+                .1
+                .wait_timeout_while(epoch, Duration::from_secs(interval), |epoch| {
+                    *epoch == generation
+                });
         });
     }
 }

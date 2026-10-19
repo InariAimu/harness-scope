@@ -13,6 +13,7 @@ export interface ModelsDevSyncResult {
   selected: number;
   imported: number;
   changed: number;
+  usageChanged: number;
   syncedAt: number | null;
 }
 
@@ -54,6 +55,7 @@ export async function syncModelsDevPricing(
       selected: 0,
       imported: 0,
       changed: 0,
+      usageChanged: 0,
       syncedAt: initialState.config.lastSyncAt,
     };
   }
@@ -68,6 +70,7 @@ export async function syncModelsDevPricing(
         selected: 0,
         imported: 0,
         changed: 0,
+        usageChanged: 0,
         syncedAt: latestState.config.lastSyncAt,
       };
     }
@@ -80,16 +83,17 @@ export async function syncModelsDevPricing(
       ...resolveUsageModelReferences(entries, missingModels),
       ...selectedEntries,
     ]);
-    const changed = pricing.length
-      ? await usageApi.updateModelPricingBatch(pricing)
-      : 0;
+    const result = pricing.length
+      ? await usageApi.updateModelPricingBatchDetailed(pricing)
+      : { saved: 0, usageChanged: 0 };
     const syncedAt = Date.now();
     await usageApi.recordModelsDevSyncResult(syncedAt, null);
     return {
       skipped: false,
       selected: selectedEntries.length,
       imported: pricing.length,
-      changed,
+      changed: result.saved,
+      usageChanged: result.usageChanged,
       syncedAt,
     };
   } catch (error) {

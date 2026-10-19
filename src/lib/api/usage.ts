@@ -24,6 +24,7 @@ const filters = (
   model?: string,
 ) => ({ startDate, endDate, appType, providerName, model });
 export const usageApi = {
+  hasUsage: () => query<boolean>("hasUsage"),
   getUsageSummary: (...args: Parameters<typeof filters>) =>
     query<UsageSummary>("summary", filters(...args)),
   getUsageSummaryByApp: (
@@ -98,6 +99,10 @@ export const usageApi = {
     }),
   updateModelPricingBatch: (entries: ModelPricing[]) =>
     command<number>("save_prices", { entries }),
+  updateModelPricingBatchDetailed: (entries: ModelPricing[]) =>
+    command<{ saved: number; usageChanged: number }>("save_prices_detailed", {
+      entries,
+    }),
   deleteModelPricing: (modelId: string, provider?: string | null) =>
     command<void>("delete_price", { modelId, provider }),
   getModelsNeedingPrices: () => command<string[]>("models_needing_prices"),

@@ -6,6 +6,7 @@ pub mod pricing;
 mod pricing_match;
 pub mod providers;
 pub mod query;
+mod query_store;
 mod scan_cache;
 mod sessions;
 pub mod store;

@@ -11,4 +11,15 @@ CREATE TABLE IF NOT EXISTS migration_sources(id TEXT PRIMARY KEY,cutover INTEGER
 CREATE TABLE IF NOT EXISTS server_records(device_id TEXT NOT NULL,id TEXT NOT NULL,revision INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(device_id,id));
 CREATE TABLE IF NOT EXISTS server_changes(seq INTEGER PRIMARY KEY AUTOINCREMENT,device_id TEXT NOT NULL,id TEXT NOT NULL,payload TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY,name TEXT NOT NULL);
-PRAGMA user_version=1;
+CREATE TABLE IF NOT EXISTS usage_index(origin TEXT NOT NULL,device_id TEXT NOT NULL,id TEXT NOT NULL,harness TEXT NOT NULL,provider TEXT,model TEXT NOT NULL,occurred_at INTEGER NOT NULL,grain TEXT NOT NULL,request_count INTEGER NOT NULL,input_tokens INTEGER NOT NULL,output_tokens INTEGER NOT NULL,cache_read INTEGER NOT NULL,cache_write INTEGER NOT NULL,amount_usd TEXT,status_code INTEGER,record_source TEXT NOT NULL,legacy_date TEXT,legacy_timezone TEXT,cost_converted INTEGER NOT NULL,billing_basis TEXT,session_id TEXT,cost_method TEXT NOT NULL,deleted INTEGER NOT NULL,PRIMARY KEY(origin,device_id,id));
+CREATE INDEX IF NOT EXISTS usage_time ON usage_index(occurred_at DESC,id) WHERE deleted=0;
+CREATE INDEX IF NOT EXISTS usage_local_time ON usage_index(origin,occurred_at DESC,id) WHERE deleted=0;
+CREATE INDEX IF NOT EXISTS usage_app_time ON usage_index(harness,occurred_at DESC,id) WHERE deleted=0;
+CREATE INDEX IF NOT EXISTS usage_provider_time ON usage_index(provider,occurred_at DESC,id) WHERE deleted=0;
+CREATE INDEX IF NOT EXISTS usage_model_time ON usage_index(model,occurred_at DESC,id) WHERE deleted=0;
+CREATE INDEX IF NOT EXISTS usage_session ON usage_index(session_id,harness,occurred_at) WHERE deleted=0;
+CREATE INDEX IF NOT EXISTS usage_request ON usage_index((device_id||'|'||id)) WHERE deleted=0;
+CREATE INDEX IF NOT EXISTS usage_price_candidates ON usage_index(model,provider,amount_usd) WHERE origin='local' AND deleted=0 AND record_source='session' AND cost_method<>'reported';
+CREATE TABLE IF NOT EXISTS usage_state(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL);
+INSERT OR IGNORE INTO usage_state VALUES(1,0);
+PRAGMA user_version=2;

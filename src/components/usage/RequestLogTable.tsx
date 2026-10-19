@@ -8,6 +8,7 @@ import type { AppId } from "@/lib/api";
 import {
   CACHE_INCLUSIVE_APP_TYPES,
   getFreshInputTokens,
+  isFreeUsage,
   isUnpricedUsage,
   type LogFilters,
   type RequestLog,
@@ -249,6 +250,7 @@ export function RequestLogTable({
 
   const renderRow = (log: RequestLog) => {
     const unpriced = isUnpricedUsage(log);
+    const free = isFreeUsage(log);
     const freshInput = getFreshInputTokens(log);
     const isCacheInclusive = log.inputTokens !== freshInput;
     const time = formatLogTime(log.createdAt, now);
@@ -435,6 +437,13 @@ export function RequestLogTable({
           )}
           title={
             [
+              free
+                ? t(
+                    log.billingBasis === "model_reference"
+                      ? "usage.freeReferenceHint"
+                      : "usage.freeHint",
+                  )
+                : undefined,
               unpriced ? undefined : usdHint(log.totalCostUsd),
               log.billingBasis === "subscription_usage"
                 ? t(
@@ -460,7 +469,9 @@ export function RequestLogTable({
         >
           {unpriced
             ? t("usage.unpriced")
-            : costMoney(log.totalCostUsd, 4, log.costConverted)}
+            : free
+              ? t("usage.free")
+              : costMoney(log.totalCostUsd, 4, log.costConverted)}
         </td>
       ),
       speed: (

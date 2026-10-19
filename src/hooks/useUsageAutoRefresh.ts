@@ -10,16 +10,16 @@ interface UsageAutoRefreshOptions {
   paused?: boolean;
   /** 时间范围随「现在」移动（今天、最近 24 小时等） */
   rollingRange?: boolean;
+  backgroundCollection?: boolean;
 }
 
 /** 随时间移动的范围多久重算一次：跨过午夜、滚动窗口移出旧记录都靠它 */
 const ROLLING_RANGE_REFRESH_MS = 60_000;
 
 /**
- * 用量页打开期间按所选间隔扫描会话日志：打开即扫一次，之后每隔一段扫一次，
- * 窗口隐藏时停、重新显示时立刻补扫。后台只有 10 分钟一次的兜底扫描。
- * 导入新用量后后端会发 `usage-log-recorded`，统计由 useUsageEventBridge 刷新；
- * 这里每轮只刷新「上次同步」时间，没有新数据时不重读整页。
+ * backgroundCollection 时由后端统一扫描，避免页面启动和后台重复采集。
+ * 独立嵌入时保留前端定时扫描；手动同步仍可随时触发。
+ * 原生页面通过 snapshot 的 usageVersion 刷新实际变化的数据。
  * 范围随时间移动时另有每分钟一次的重查，否则没有新用量时跨过午夜「今天」还停在昨天。
  */
 export function useUsageAutoRefresh({
@@ -27,6 +27,7 @@ export function useUsageAutoRefresh({
   sessionAutoSyncEnabled,
   paused = false,
   rollingRange = false,
+  backgroundCollection = false,
 }: UsageAutoRefreshOptions) {
   const queryClient = useQueryClient();
   const pendingSync = useRef<Promise<SessionSyncResult> | null>(null);
@@ -42,7 +43,13 @@ export function useUsageAutoRefresh({
   }, []);
 
   useEffect(() => {
-    if (!sessionAutoSyncEnabled || refreshIntervalMs <= 0 || paused) return;
+    if (
+      backgroundCollection ||
+      !sessionAutoSyncEnabled ||
+      refreshIntervalMs <= 0 ||
+      paused
+    )
+      return;
     let disposed = false;
 
     const scan = async () => {
@@ -82,6 +89,7 @@ export function useUsageAutoRefresh({
     refreshIntervalMs,
     sessionAutoSyncEnabled,
     syncSessionUsage,
+    backgroundCollection,
   ]);
 
   useEffect(() => {
