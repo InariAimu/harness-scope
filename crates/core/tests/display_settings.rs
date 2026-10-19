@@ -17,6 +17,9 @@ fn old_database_defaults_and_display_preferences_survive_restart() {
         &e,
         json!({"currency":"CNY","exchangeRates":{"CNY":7.25},"sidebarTodayItems":["cost","requests"],"requestLogColumns":{"statusCode":true,"app":false}}),
     );
+    // Upgrading an existing display-settings record adds only the new preference.
+    let upgraded = save(&e, json!({"trendChartType":"area"}));
+    assert_eq!(upgraded["currency"], "CNY");
     drop(e);
     let e = Engine::open(&path).unwrap();
     let value = e.execute("usage_display", json!({})).unwrap();
@@ -24,6 +27,11 @@ fn old_database_defaults_and_display_preferences_survive_restart() {
     assert_eq!(value["exchangeRates"]["CNY"], 7.25);
     assert_eq!(value["sidebarTodayItems"], json!(["cost", "requests"]));
     assert_eq!(value["requestLogColumns"]["app"], false);
+    assert_eq!(value["trendChartType"], "area");
+    assert_eq!(
+        save(&e, json!({"trendChartType":"bar"}))["trendChartType"],
+        "bar"
+    );
 }
 
 #[test]
@@ -35,6 +43,7 @@ fn patches_preserve_other_fields_rates_and_allow_explicit_resets() {
         json!({"currency":"CNY","exchangeRates":{"CNY":7.25},"sidebarTodayItems":["tokens"]}),
     );
     save(&e, json!({"exchangeRates":{"EUR":0.9}}));
+    save(&e, json!({"trendChartType":"area"}));
     let value = save(&e, json!({"requestLogColumns":{"app":false}}));
     assert_eq!(value["currency"], "CNY");
     assert_eq!(value["exchangeRates"], json!({"CNY":7.25,"EUR":0.9}));
@@ -42,6 +51,7 @@ fn patches_preserve_other_fields_rates_and_allow_explicit_resets() {
     assert_eq!(value["sidebarTodayItems"], json!([]));
     assert_eq!(value["requestLogColumns"], json!({}));
     assert_eq!(value["exchangeRates"]["CNY"], 7.25);
+    assert_eq!(value["trendChartType"], "area");
 }
 
 #[test]
@@ -58,6 +68,9 @@ fn invalid_patches_are_rejected_atomically() {
         json!({"sidebarTodayItems":["tokens","tokens"]}),
         json!({"requestLogColumns":{"time":false}}),
         json!({"serverToken":"private"}),
+        json!({"currency":"CNY","trendChartType":"line"}),
+        json!({"trendChartType":""}),
+        json!({"trendChartType":42}),
     ] {
         assert!(e
             .execute("save_usage_display", json!({"patch":patch}))
@@ -99,7 +112,7 @@ fn presentation_changes_do_not_reprice_revise_or_requeue_usage() {
     };
     save(
         &e,
-        json!({"currency":"JPY","exchangeRates":{"JPY":158},"sidebarTodayItems":["tokens","requests"],"requestLogColumns":{"cost":false}}),
+        json!({"currency":"JPY","exchangeRates":{"JPY":158},"sidebarTodayItems":["tokens","requests"],"requestLogColumns":{"cost":false},"trendChartType":"area"}),
     );
     let s = e.lock().unwrap();
     assert_eq!(records, s.local_records().unwrap());

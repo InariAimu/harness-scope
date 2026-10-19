@@ -5,12 +5,22 @@ import {
   isValidExchangeRate,
   resolveMoneyDisplay,
   resolveSidebarToday,
+  resolveTrendChartType,
   USD_DISPLAY,
 } from "./format";
 import {
   resolveRequestLogColumns,
   setRequestLogColumn,
 } from "./requestLogColumns";
+
+it("uses bars for existing settings and unrecognized chart styles", () => {
+  expect(resolveTrendChartType(undefined)).toBe("bar");
+  expect(resolveTrendChartType({ currency: "CNY" })).toBe("bar");
+  expect(resolveTrendChartType({ trendChartType: "area" })).toBe("area");
+  expect(resolveTrendChartType({ trendChartType: "bar" })).toBe("bar");
+  expect(resolveTrendChartType({ trendChartType: "line" })).toBe("bar");
+  expect(resolveTrendChartType({ trendChartType: "" })).toBe("bar");
+});
 
 it("converts USD for display with a per-currency rate and safe defaults", () => {
   expect(resolveMoneyDisplay(undefined)).toEqual(USD_DISPLAY);

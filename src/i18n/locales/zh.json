@@ -2162,7 +2162,12 @@
       },
       "sidebarTodayLimit": "最多选 {{count}} 项",
       "logColumns": "请求日志的列",
-      "logColumnsSummary": "{{shown}} / {{total}} 列"
+      "logColumnsSummary": "{{shown}} / {{total}} 列",
+      "trendChartType": "趋势图样式",
+      "trendChartTypes": {
+        "bar": "柱形图",
+        "area": "曲线面积图"
+      }
     },
     "logColumns": {
       "reset": "恢复默认",

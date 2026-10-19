@@ -2161,7 +2161,12 @@
       },
       "sidebarTodayLimit": "Pick up to {{count}}",
       "logColumns": "Request log columns",
-      "logColumnsSummary": "{{shown}} of {{total}} columns"
+      "logColumnsSummary": "{{shown}} of {{total}} columns",
+      "trendChartType": "Trend chart",
+      "trendChartTypes": {
+        "bar": "Bar",
+        "area": "Area"
+      }
     },
     "logColumns": {
       "reset": "Reset to default",

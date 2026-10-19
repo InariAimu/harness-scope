@@ -223,4 +223,5 @@ export interface UsageDisplaySettings {
   exchangeRates?: Record<string, number>;
   sidebarTodayItems?: string[];
   requestLogColumns?: Record<string, boolean>;
+  trendChartType?: string;
 }

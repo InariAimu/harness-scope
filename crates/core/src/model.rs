@@ -151,6 +151,8 @@ pub struct UsageDisplaySettings {
     pub sidebar_today_items: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_log_columns: Option<std::collections::BTreeMap<String, bool>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trend_chart_type: Option<String>,
 }
 impl UsageDisplaySettings {
     pub fn apply(&mut self, patch: Self) -> anyhow::Result<()> {
@@ -194,6 +196,13 @@ impl UsageDisplaySettings {
                 "The request time column must stay visible"
             );
             self.request_log_columns = Some(columns);
+        }
+        if let Some(chart_type) = patch.trend_chart_type {
+            anyhow::ensure!(
+                ["bar", "area"].contains(&chart_type.as_str()),
+                "Unsupported trend chart type"
+            );
+            self.trend_chart_type = Some(chart_type);
         }
         Ok(())
     }

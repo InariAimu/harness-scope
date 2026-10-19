@@ -2,6 +2,8 @@ import { useMoneyFormat } from "@/hooks/useMoneyFormat";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -12,8 +14,14 @@ import {
 } from "recharts";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useUsageTrends } from "@/lib/query/usage";
+import { useUsageDisplay } from "@/lib/query/usageDisplay";
 import { Loader2 } from "lucide-react";
-import { fmtInt, getLocaleFromLanguage, parseFiniteNumber } from "./format";
+import {
+  fmtInt,
+  getLocaleFromLanguage,
+  parseFiniteNumber,
+  resolveTrendChartType,
+} from "./format";
 import { resolveUsageRange } from "@/lib/usageRange";
 import type { UsageRangeSelection } from "@/types/usage";
 
@@ -177,6 +185,8 @@ export function UsageTrendChart({
   const { t, i18n } = useTranslation();
   const { money, moneyTick, rate } = useMoneyFormat();
   const [metric, setMetric] = useState<TrendMetric>("tokens");
+  const { data: display } = useUsageDisplay();
+  const chartType = resolveTrendChartType(display);
   const { startDate, endDate } = resolveUsageRange(range);
   const { data: trends, isLoading } = useUsageTrends(
     range,
@@ -220,6 +230,14 @@ export function UsageTrendChart({
     metric === "cost"
       ? moneyTick(value)
       : formatUsageTrendTokenTickLabel(value, tokenTickFormatter);
+
+  const Chart = chartType === "bar" ? BarChart : AreaChart;
+  // 成本先换算成显示币种再画，Y 轴才会按这个币种挑整齐的刻度。
+  const dataKey =
+    metric === "cost"
+      ? (point: UsageTrendChartPoint) =>
+          point.cost == null ? null : point.cost * rate
+      : metric;
 
   const renderTooltip = ({ active, payload }: any) => {
     if (!active || !payload || payload.length === 0) return null;
@@ -285,7 +303,7 @@ export function UsageTrendChart({
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart
+            <Chart
               data={chartData}
               margin={{ top: 6, right: 0, left: 0, bottom: 0 }}
             >
@@ -317,22 +335,36 @@ export function UsageTrendChart({
               />
               <Tooltip
                 content={renderTooltip}
-                cursor={{ fill: "var(--bg-subtle)" }}
-              />
-              <Bar
-                dataKey={
-                  metric === "cost"
-                    ? (point: UsageTrendChartPoint) =>
-                        point.cost == null ? null : point.cost * rate
-                    : metric
+                cursor={
+                  chartType === "bar"
+                    ? { fill: "var(--bg-subtle)" }
+                    : { stroke: "var(--text-3)", strokeDasharray: "3 3" }
                 }
-                name={metricLabel}
-                fill="var(--chart-1)"
-                radius={[3, 3, 0, 0]}
-                maxBarSize={36}
-                isAnimationActive={false}
               />
-            </BarChart>
+              {chartType === "bar" ? (
+                <Bar
+                  dataKey={dataKey}
+                  name={metricLabel}
+                  fill="var(--chart-1)"
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={36}
+                  isAnimationActive={false}
+                />
+              ) : (
+                <Area
+                  type="monotone"
+                  dataKey={dataKey}
+                  name={metricLabel}
+                  stroke="var(--chart-1)"
+                  strokeWidth={2}
+                  fill="var(--chart-1)"
+                  fillOpacity={0.16}
+                  dot={chartData.length === 1 ? { r: 3 } : false}
+                  activeDot={{ r: 4 }}
+                  isAnimationActive={false}
+                />
+              )}
+            </Chart>
           </ResponsiveContainer>
         )}
       </div>
