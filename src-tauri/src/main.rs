@@ -26,8 +26,8 @@ fn main() {
             #[cfg(target_os = "windows")]
             if let Some(window) = app.get_webview_window("main") {
                 window.set_decorations(false)?;
-                // Config dimensions are logical; request physical client pixels at local DPI.
-                window.set_size(tauri::PhysicalSize::new(1500, 1000))?;
+                // Preserve the layout viewport across DPI scales (1500x1000 at 150%).
+                window.set_size(tauri::LogicalSize::new(1000.0, 667.0))?;
                 window.center()?;
             }
             let root = app.path().app_data_dir()?;
