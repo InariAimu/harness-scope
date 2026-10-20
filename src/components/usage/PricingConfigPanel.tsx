@@ -22,6 +22,26 @@ const empty: ModelPricing = {
   cacheReadCostPerMillion: "0",
   cacheCreationCostPerMillion: "0",
 };
+function units(price: ModelPricing) {
+  const tier = price.goTariff?.model.tiers[0];
+  const keys = ["input", "output", "cacheRead", "cacheWrite"] as const;
+  const old = [
+    price.inputCostPerMillion,
+    price.outputCostPerMillion,
+    price.cacheReadCostPerMillion,
+    price.cacheCreationCostPerMillion,
+  ];
+  return keys.map((key, i) => ({
+    low: tier ? tier.prices[key] : old[i],
+    high: tier
+      ? tier.peakPrices
+        ? tier.peakPrices[key]
+        : undefined
+      : price.pricingRule
+        ? String(Number(old[i]) * 2)
+        : undefined,
+  }));
+}
 export function PricingConfigPanel() {
   const { t } = useTranslation();
   const query = useModelPricing();
@@ -102,6 +122,14 @@ export function PricingConfigPanel() {
                   <td className="px-3 py-2">
                     <div>{p.displayName}</div>
                     <div className="text-caption text-fg-3">{p.modelId}</div>
+                    {p.goTariff && (
+                      <div className="text-caption text-fg-3">
+                        {p.goTariff.catalogVersion}
+                        {p.goTariff.model.tiers.length > 1
+                          ? ` · ${t("scope.pricing.contextTiers", "多档上下文，以下为首档")}`
+                          : ""}
+                      </div>
+                    )}
                   </td>
                   <td
                     className="px-3 text-caption"
@@ -119,25 +147,23 @@ export function PricingConfigPanel() {
                   <td className="px-3 text-caption" title={p.sourceKey}>
                     {p.source || "unknown"}
                   </td>
-                  {[
-                    p.inputCostPerMillion,
-                    p.outputCostPerMillion,
-                    p.cacheReadCostPerMillion,
-                    p.cacheCreationCostPerMillion,
-                  ].map((n, i) => (
+                  {units(p).map(({ low: n, high }, i) => (
                     <td key={i} className="px-3 tabular-nums">
                       <div>
-                        {p.currency === "CNY"
-                          ? "¥"
-                          : p.currency && p.currency !== "USD"
-                            ? `${p.currency} `
-                            : "$"}
-                        {n}
-                        {p.pricingRule
-                          ? ` / ${p.currency === "CNY" ? "¥" : "$"}${Number(n) * 2}`
+                        {n === null
+                          ? ""
+                          : p.currency === "CNY"
+                            ? "¥"
+                            : p.currency && p.currency !== "USD"
+                              ? `${p.currency} `
+                              : "$"}
+                        {n ?? "—"}
+                        {high !== undefined
+                          ? ` / ${high === null ? "—" : `${p.currency === "CNY" ? "¥" : "$"}${high}`}`
                           : ""}
                       </div>
-                      {p.currency &&
+                      {n !== null &&
+                        p.currency &&
                         p.currency !== "USD" &&
                         Number(settings.data?.exchangeRates[p.currency]) >
                           0 && (
@@ -147,15 +173,15 @@ export function PricingConfigPanel() {
                               Number(n) /
                               Number(settings.data?.exchangeRates[p.currency])
                             ).toFixed(6)}
-                            {p.pricingRule
-                              ? ` / $${((Number(n) * 2) / Number(settings.data?.exchangeRates[p.currency])).toFixed(6)}`
+                            {high !== undefined && high !== null
+                              ? ` / $${(Number(high) / Number(settings.data?.exchangeRates[p.currency])).toFixed(6)}`
                               : ""}
                           </div>
                         )}
                     </td>
                   ))}
                   <td className="px-3">
-                    {!p.pricingRule && (
+                    {!p.pricingRule && !p.goTariff && (
                       <button
                         aria-label={`Edit ${p.modelId}`}
                         className="p-1"
@@ -164,7 +190,7 @@ export function PricingConfigPanel() {
                         <Pencil size={14} />
                       </button>
                     )}
-                    {!p.pricingRule && (
+                    {!p.pricingRule && !p.goTariff && (
                       <button
                         aria-label={`Delete ${p.modelId}`}
                         className="p-1"

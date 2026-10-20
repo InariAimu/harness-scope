@@ -47,5 +47,9 @@ export function accountError(message: string, zh: boolean) {
   if (message.includes("Renewal date"))
     return "下次续费日期须晚于本期开始日期。";
   if (message.includes("timed out")) return "供应商暂时无法连接，请稍后刷新。";
+  if (message.includes("Refresh interval"))
+    return "刷新间隔须为 0（关闭）或 15–86400 秒。";
+  if (message.toLowerCase().includes("credential"))
+    return "无法读取本机凭据，请重新保存 API Key。";
   return message;
 }

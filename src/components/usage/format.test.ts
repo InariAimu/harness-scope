@@ -4,6 +4,7 @@ import {
   getEstimatedTokensPerSecond,
   getOutputTokensPerSecond,
 } from "./format";
+import type { SessionSpeedEstimate } from "@/types/usage";
 
 it("calculates proxy generation speed after the first token", () => {
   expect(
@@ -88,4 +89,98 @@ it("labels the whole session window as an estimate and applies its sample thresh
       firstTokenMs: 1000,
     }),
   ).toBeNull();
+});
+
+it("uses the DSH output window and admits valid short replies without changing routed measurements", () => {
+  const estimatedSpeed: SessionSpeedEstimate = {
+    basis: "decode",
+    durationMs: 2482,
+    eligible: true,
+    minOutputTokens: 100,
+    minDurationMs: 100,
+  };
+  const row = {
+    dataSource: "harness_scope",
+    outputTokens: 488,
+    latencyMs: 6846,
+    firstTokenMs: 4364,
+    estimatedSpeed,
+  };
+  expect(getEstimatedTokensPerSecond(row)).toBeCloseTo(196.6156, 3);
+  expect(getOutputTokensPerSecond(row)).toBeNull();
+  expect(
+    getEstimatedTokensPerSecond({
+      ...row,
+      outputTokens: 122,
+      estimatedSpeed: { ...estimatedSpeed, durationMs: 494 },
+    }),
+  ).toBeCloseTo(246.9636, 3);
+  expect(
+    getEstimatedTokensPerSecond({
+      ...row,
+      outputTokens: 100,
+      estimatedSpeed: { ...estimatedSpeed, durationMs: 100 },
+    }),
+  ).toBe(1000);
+});
+
+it("never substitutes total latency for an excluded or invalid output window", () => {
+  const row = {
+    dataSource: "harness_scope",
+    outputTokens: 488,
+    latencyMs: 6846,
+    estimatedSpeed: {
+      basis: "decode" as const,
+      durationMs: 29,
+      eligible: false,
+      minOutputTokens: 100,
+      minDurationMs: 100,
+    },
+  };
+  expect(getEstimatedTokensPerSecond(row)).toBeNull();
+  expect(
+    getEstimatedTokensPerSecond({
+      ...row,
+      estimatedSpeed: { ...row.estimatedSpeed, eligible: true, durationMs: 0 },
+    }),
+  ).toBeNull();
+  expect(
+    getEstimatedTokensPerSecond({
+      ...row,
+      estimatedSpeed: { ...row.estimatedSpeed, eligible: true, durationMs: 99 },
+    }),
+  ).toBeNull();
+  expect(
+    getEstimatedTokensPerSecond({
+      ...row,
+      outputTokens: 99,
+      estimatedSpeed: {
+        ...row.estimatedSpeed,
+        eligible: true,
+        durationMs: 1000,
+      },
+    }),
+  ).toBeNull();
+});
+
+it("keeps explicit and legacy end-to-end estimates on the same basis", () => {
+  const row = {
+    dataSource: "harness_scope",
+    outputTokens: 400,
+    latencyMs: 3000,
+    firstTokenMs: 1000,
+  };
+  expect(getEstimatedTokensPerSecond(row)).toBeCloseTo(133.3333, 3);
+  expect(
+    getEstimatedTokensPerSecond({
+      ...row,
+      estimatedSpeed: {
+        basis: "end_to_end",
+        durationMs: 3000,
+        eligible: true,
+        minOutputTokens: 200,
+        minDurationMs: 1000,
+      },
+    }),
+  ).toBeCloseTo(133.3333, 3);
 });

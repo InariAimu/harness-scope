@@ -326,9 +326,19 @@ function useDetailSections(request: RequestLog) {
               key: "speed",
               label: t("usage.speed"),
               value:
-                request.outputTokens < SPEED_ESTIMATE_MIN_OUTPUT_TOKENS
-                  ? t("usage.detail.speedEstimateTooFew")
-                  : "—",
+                request.outputTokens <
+                (request.estimatedSpeed?.minOutputTokens ??
+                  SPEED_ESTIMATE_MIN_OUTPUT_TOKENS)
+                  ? t("usage.detail.speedEstimateTooFew", {
+                      count:
+                        request.estimatedSpeed?.minOutputTokens ??
+                        SPEED_ESTIMATE_MIN_OUTPUT_TOKENS,
+                    })
+                  : request.estimatedSpeed && !request.estimatedSpeed.eligible
+                    ? t("usage.detail.speedWindowTooShort", {
+                        ms: request.estimatedSpeed.minDurationMs,
+                      })
+                    : "—",
               muted: true,
             },
         {
@@ -338,6 +348,17 @@ function useDetailSections(request: RequestLog) {
           title: `${fmtInt(latency, locale)} ms`,
         },
       ];
+      if (estimatedTps != null) {
+        performance.push({
+          key: "speed-basis",
+          label: t("usage.speedBasis"),
+          value: t(
+            request.estimatedSpeed?.basis === "decode"
+              ? "usage.decodeSpeedBasis"
+              : "usage.endToEndSpeedBasis",
+          ),
+        });
+      }
       // 首字也是按时间戳推出来的；第一块不是思考、或 Codex 一开头就调工具时推不出来
       if (firstToken != null) {
         performance.splice(1, 0, {

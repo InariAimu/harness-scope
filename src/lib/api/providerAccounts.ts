@@ -14,6 +14,8 @@ export const providerAccountsApi = {
   remove: (id: string) => command<boolean>("provider_account_delete", { id }),
   refresh: (id: string) =>
     command<ProviderAccountView>("provider_account_refresh", { id }),
+  activity: (id: string, lease: string, active: boolean) =>
+    command<boolean>("provider_account_activity", { id, lease, active }),
   usage: (id: string, range: string) =>
     command<AccountUsage>("provider_account_usage", { id, range }),
 };

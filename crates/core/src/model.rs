@@ -25,6 +25,8 @@ impl Tokens {
 #[serde(rename_all = "camelCase")]
 pub struct Price {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub go_tariff: Option<crate::pricing::go_catalog::Tariff>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
     pub model_id: String,
     pub display_name: String,

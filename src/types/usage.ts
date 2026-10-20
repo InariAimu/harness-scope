@@ -1,4 +1,5 @@
 // 使用统计相关类型定义
+import type { GoTariff } from "./goCatalog";
 
 export interface TokenUsage {
   inputTokens: number;
@@ -55,6 +56,8 @@ export interface RequestLog {
   timingMethod?: "estimated";
   timingSource?: string;
   firstTokenSource?: string | null;
+  /** Query-time speed policy; absent on older local services. */
+  estimatedSpeed?: SessionSpeedEstimate;
   statusCode: number | null;
   errorMessage?: string;
   createdAt: number;
@@ -68,6 +71,14 @@ export interface SessionSyncResult {
   suspectedDuplicates: number;
   deferredFiles: number;
   errors: string[];
+}
+
+export interface SessionSpeedEstimate {
+  basis: "decode" | "end_to_end";
+  durationMs: number | null;
+  eligible: boolean;
+  minOutputTokens: number;
+  minDurationMs: number;
 }
 
 export interface DataSourceSummary {
@@ -84,6 +95,7 @@ export interface PaginatedLogs {
 }
 
 export interface ModelPricing {
+  goTariff?: GoTariff;
   provider?: string | null;
   billingBasis?: "subscription_usage" | null;
   currency?: string;
@@ -169,10 +181,15 @@ export interface ProviderStats {
   speedOutputTokens?: number;
   /** 速度分母：同一批请求的（耗时 − 首字）之和，毫秒 */
   speedGenerationMs?: number;
-  /** 估算速度分子：会话日志导入、有估算耗时、输出 ≥ 200 token 的请求的输出之和 */
+  /** 输出阶段估算，独立于含等待的端到端样本，不能混合相加。 */
+  estDecodeSpeedOutputTokens?: number;
+  estDecodeSpeedGenerationMs?: number;
+  estDecodeSpeedSampleCount?: number;
+  /** 端到端估算分子：输出 ≥ 200 token、总耗时 ≥ 1s 的回退样本 */
   estSpeedOutputTokens?: number;
   /** 估算速度分母：同一批请求的估算耗时（含首字等待）之和，毫秒 */
   estSpeedDurationMs?: number;
+  estSpeedSampleCount?: number;
   /** 首字时间中位数（毫秒）：经路由服务、成功的流式明细请求；没有时为 null */
   firstTokenMedianMs?: number | null;
   /** 估算首字中位数（毫秒）：会话日志导入、按时间戳推出了首字的请求；没有精确值时才显示，带 ≈ */
@@ -188,11 +205,15 @@ export interface ModelStats {
   totalCost: string;
   avgCostPerRequest: string;
   successRate: number | null;
-  /** 速度分子分母，口径同 ProviderStats 的四个速度字段 */
+  /** 速度分子分母与样本数，口径同 ProviderStats */
   speedOutputTokens?: number;
   speedGenerationMs?: number;
+  estDecodeSpeedOutputTokens?: number;
+  estDecodeSpeedGenerationMs?: number;
+  estDecodeSpeedSampleCount?: number;
   estSpeedOutputTokens?: number;
   estSpeedDurationMs?: number;
+  estSpeedSampleCount?: number;
   /** 首字时间中位数，口径同 ProviderStats 的那两个字段 */
   firstTokenMedianMs?: number | null;
   estFirstTokenMedianMs?: number | null;
@@ -365,8 +386,7 @@ function isExactZero(value: unknown): boolean {
 
 /** Free needs model/rate evidence; reference prices retain their billing-basis hint. */
 export function isFreeUsage(log: RequestLog): boolean {
-  if (!hasUsageTokens(log) || !isExactZero(log.totalCostUsd))
-    return false;
+  if (!hasUsageTokens(log) || !isExactZero(log.totalCostUsd)) return false;
 
   if (log.costSource === "reported") {
     return (

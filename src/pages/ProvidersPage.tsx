@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   Wallet,
@@ -23,6 +23,7 @@ import {
   getLocaleFromLanguage,
 } from "@/components/usage/format";
 import { useMoneyFormat } from "@/hooks/useMoneyFormat";
+import { useProviderActivity } from "@/hooks/useProviderActivity";
 import { providerAccountsApi as api } from "@/lib/api/providerAccounts";
 import {
   ACCOUNT_PROVIDER_NAMES,
@@ -32,6 +33,7 @@ import {
   routeKey,
 } from "@/lib/providerAccounts";
 import { ProviderAccountEditor } from "./ProviderAccountEditor";
+import { GoUsagePanel } from "@/components/providers/GoUsagePanel";
 import { cn } from "@/lib/utils";
 
 function QuotaCard({
@@ -122,6 +124,7 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
     queryKey: ["provider-accounts"],
     queryFn: api.list,
     staleTime: 30_000,
+    refetchInterval: 2_000,
   });
   const accounts = list.data ?? [];
   const visible = accounts.filter(
@@ -129,6 +132,7 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
   );
   const selected = visible.find((v) => v.account.id === id) ?? visible[0];
   const account = selected?.account;
+  useProviderActivity(account?.id);
   const updateView = (view: ProviderAccountView) =>
     client.setQueryData<ProviderAccountView[]>(
       ["provider-accounts"],
@@ -137,19 +141,13 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
           v.account.id === view.account.id ? view : v,
         ),
     );
-  const remote = useQuery({
-    queryKey: ["provider-account-refresh", account?.id],
-    queryFn: async () => {
-      const view = await api.refresh(account!.id);
-      updateView(view);
-      return view;
-    },
-    enabled: !!account && !!selected?.keyConfigured,
-    staleTime: 60_000,
-    refetchInterval: 60_000,
-    retry: false,
-    refetchOnWindowFocus: false,
+  const remote = useMutation({
+    mutationFn: api.refresh,
+    onSuccess: updateView,
   });
+  const refreshing =
+    !!selected?.refreshing ||
+    (remote.isPending && remote.variables === account?.id);
   const effectiveRange =
     range === "subscription" && !account?.subscription.periodStart
       ? "month"
@@ -176,7 +174,16 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
     });
   const data = selected?.snapshot?.data;
   const sub = account?.subscription;
-  const error = remote.error ? String(remote.error) : selected?.error;
+  const error =
+    remote.error && remote.variables === account?.id
+      ? String(remote.error)
+      : selected?.error;
+  const monthlyReset =
+    data?.kind === "quota"
+      ? data.windows.find((v) => v.id === "monthly")?.resetsAt
+      : undefined;
+  const intervalText = (seconds: number) =>
+    seconds === 0 ? l("关闭", "Off") : `${seconds}${l(" 秒", "s")}`;
   return (
     <>
       <AppPageHeader
@@ -186,12 +193,12 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
           <>
             <Button
               variant="neutral"
-              disabled={!selected?.keyConfigured || remote.isFetching}
-              onClick={() => void remote.refetch()}
+              disabled={!selected?.keyConfigured || refreshing}
+              onClick={() => account && remote.mutate(account.id)}
             >
               <RefreshCw
                 size={14}
-                className={remote.isFetching ? "animate-spin" : ""}
+                className={refreshing ? "animate-spin" : ""}
               />
               {l("刷新", "Refresh")}
             </Button>
@@ -275,7 +282,10 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
             <h2 className="text-section">
               {accounts.length
                 ? l("此供应商暂无账号", "No accounts for this provider")
-                : l("添加你的第一个供应商账号", "Add your first provider account")}
+                : l(
+                    "添加你的第一个供应商账号",
+                    "Add your first provider account",
+                  )}
             </h2>
             <p className="max-w-md text-body text-fg-2">
               {l(
@@ -305,9 +315,20 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
                   ? `${l("上次成功", "Last success")} ${date(selected.snapshot.fetchedAt)}`
                   : l("尚未查询", "Not fetched yet")}
               </span>
-              {remote.isFetching && (
+              {refreshing && (
                 <span>{l("正在查询官方数据…", "Fetching provider data…")}</span>
               )}
+              <span
+                title={l(
+                  "窗口有焦点且停留在此账号时使用前台间隔；其他情况使用后台间隔。",
+                  "The foreground interval applies while this account page has focus; otherwise the background interval applies.",
+                )}
+              >
+                {l("自动刷新", "Auto refresh")}: {l("前台", "Foreground")}{" "}
+                {intervalText(account!.refresh.foregroundSeconds)} ·{" "}
+                {l("后台", "Background")}{" "}
+                {intervalText(account!.refresh.backgroundSeconds)}
+              </span>
             </div>
             {error && (
               <div
@@ -442,7 +463,33 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
                   </div>
                 ))}
               </dl>
+              {account!.provider === "opencode-go" && (
+                <div className="mt-3 border-t border-border pt-3 space-y-1 text-caption text-fg-3">
+                  {monthlyReset !== undefined && (
+                    <p>
+                      {l("官方月额度重置", "Provider monthly quota resets")}:{" "}
+                      <span className="tabular-nums text-fg-2">
+                        {date(monthlyReset)}
+                      </span>
+                    </p>
+                  )}
+                  <p>
+                    {l(
+                      "套餐、月费和续费日期保留手动填写；官方额度重置时间不代表续费时间。",
+                      "Plan, monthly fee and renewal date remain manually entered. A quota reset is not a billing renewal.",
+                    )}
+                  </p>
+                </div>
+              )}
             </section>
+            {account!.provider === "opencode-go" && (
+              <GoUsagePanel
+                key={account!.id}
+                view={selected}
+                zh={zh}
+                locale={locale}
+              />
+            )}
             <section className="scope-card !p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="font-semibold">
@@ -642,9 +689,6 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
             setEditing(undefined);
             void client.invalidateQueries({
               queryKey: ["usage", "provider-account", view.account.id],
-            });
-            void client.invalidateQueries({
-              queryKey: ["provider-account-refresh", view.account.id],
             });
           }}
         />

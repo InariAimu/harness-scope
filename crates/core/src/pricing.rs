@@ -7,6 +7,7 @@ use rust_decimal::Decimal;
 use std::str::FromStr;
 
 pub mod deepseek;
+pub mod go_catalog;
 pub mod opencode_go;
 pub const CURRENCIES: &[&str] = &["USD", "CNY", "EUR", "JPY", "TWD", "TRY"];
 
@@ -93,6 +94,16 @@ pub fn resolve_with_settings(
     {
         if old.is_some_and(|r| r.cost.amount_usd.is_some()) {
             let cost = &old.unwrap().cost;
+            if price.go_tariff.is_some() {
+                return estimate_at(
+                    &parsed.tokens,
+                    price,
+                    cost.context
+                        .as_ref()
+                        .map_or(parsed.occurred_at, |c| c.timestamp),
+                    settings,
+                );
+            }
             return estimate_converted(
                 &parsed.tokens,
                 price,
@@ -109,6 +120,17 @@ pub fn resolve_with_settings(
         .unwrap_or_else(|| Ok(Cost::default()))
 }
 pub fn validate(price: &Price) -> Result<()> {
+    if let Some(tariff) = &price.go_tariff {
+        anyhow::ensure!(
+            price.provider.as_deref() == Some("opencode-go")
+                && price.currency == "USD"
+                && price.source == "opencode_go"
+                && price.model_id == tariff.model.id
+                && price.pricing_rule.is_none(),
+            "Invalid Go tariff owner"
+        );
+        go_catalog::validate_tariff(tariff)?;
+    }
     anyhow::ensure!(
         price
             .provider
@@ -197,7 +219,12 @@ fn find_in<'a>(prices: impl Iterator<Item = &'a Price> + Clone, model: &str) -> 
     }
     let candidates = crate::pricing_match::model_pricing_candidates(model);
     for c in &candidates {
-        if let Some(p) = prices.clone().find(|p| p.model_id.eq_ignore_ascii_case(c)) {
+        if let Some(p) = prices.clone().find(|p| {
+            p.model_id.eq_ignore_ascii_case(c)
+                || p.go_tariff
+                    .as_ref()
+                    .is_some_and(|t| t.model.aliases.iter().any(|a| a.eq_ignore_ascii_case(c)))
+        }) {
             return Some(p);
         }
     }
@@ -293,6 +320,12 @@ pub fn estimate_at(
     timestamp: i64,
     settings: &PricingSettings,
 ) -> Result<Cost> {
+    if price.go_tariff.is_some() {
+        let Some((selected, context)) = go_catalog::selected(price, tokens, timestamp)? else {
+            return Ok(Cost::default());
+        };
+        return estimate_converted(tokens, &selected, None, 0, context);
+    }
     let mut selected = price.clone();
     let context = if matches!(
         price.pricing_rule.as_deref(),
@@ -335,6 +368,15 @@ pub fn estimate_at(
 
 pub fn components(tokens: &Tokens, price: &Price) -> Result<[Decimal; 4]> {
     validate(price)?;
+    if let Some(tariff) = &price.go_tariff {
+        return go_catalog::rates_cost(
+            tokens,
+            tariff
+                .selected_rates
+                .as_ref()
+                .unwrap_or(&tariff.model.tiers[0].prices),
+        );
+    }
     let unit = |s: &str| Decimal::from_str(s);
     let cache = Decimal::from(tokens.cache_write.saturating_sub(tokens.cache_write1h))
         + Decimal::from(tokens.cache_write1h) * Decimal::new(16, 1);
@@ -387,8 +429,10 @@ fn estimate_converted(
         conversion,
         context,
         rule_version: price
-            .pricing_rule
-            .clone()
+            .go_tariff
+            .as_ref()
+            .map(|t| format!("{}:{}", go_catalog::RULE, t.catalog_version))
+            .or_else(|| price.pricing_rule.clone())
             .unwrap_or_else(|| "flat-price-v2".into()),
     })
 }

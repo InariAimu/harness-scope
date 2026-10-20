@@ -13,5 +13,6 @@ mod scan_cache;
 mod sessions;
 pub mod store;
 pub mod sync;
+mod timing;
 
 pub use engine::Engine;

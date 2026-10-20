@@ -334,3 +334,140 @@ fn stats_use_weighted_speed_median_filters_and_device_identity() {
     assert_eq!(local["timingMethod"], "estimated");
     assert_eq!(local["firstTokenMs"], 100);
 }
+
+#[test]
+fn dsh_decode_speed_is_consistent_in_details_and_mixed_harness_statistics() {
+    let tmp = tempfile::tempdir().unwrap();
+    let s = Store::open(&tmp.path().join("scope.db")).unwrap();
+    let device = s.device_id().unwrap();
+    for (id, harness, output, duration, first, first_source) in [
+        ("a", "dsh", 488, 6846, Some(4364), "dsh_stream_delta"),
+        ("b", "dsh", 122, 10284, Some(9790), "dsh_stream_delta"),
+        ("boundary", "dsh", 100, 1000, Some(900), "dsh_stream_delta"),
+        ("burst", "dsh", 300, 6000, Some(5950), "dsh_stream_delta"),
+        ("tiny", "dsh", 99, 6000, Some(1000), "dsh_stream_delta"),
+        ("missing", "dsh", 300, 4000, None, "dsh_stream_delta"),
+        ("untrusted", "dsh", 300, 6000, Some(1000), "unknown"),
+        (
+            "codex",
+            "codex",
+            300,
+            8000,
+            Some(2000),
+            "codex_item_started_at_ms",
+        ),
+        (
+            "opencode",
+            "opencode",
+            500,
+            6000,
+            Some(1000),
+            "opencode_content_start",
+        ),
+        ("claude", "claude", 300, 0, None, "unknown"),
+    ] {
+        let record = UsageRecord {
+            provider: None,
+            device_id: device.clone(),
+            id: id.into(),
+            harness: harness.into(),
+            parser_version: "test".into(),
+            session_id: Some("s".into()),
+            native_event_id: Some(id.into()),
+            occurred_at: BASE / 1000,
+            model: "mixed-model".into(),
+            grain: "event".into(),
+            count: 1,
+            tokens: Tokens {
+                output,
+                ..Default::default()
+            },
+            cost: Cost::default(),
+            record_source: "session".into(),
+            revision: 1,
+            deleted: false,
+            status_code: None,
+            legacy_date: None,
+            legacy_timezone: None,
+        };
+        s.upsert(record.clone(), "fixture").unwrap();
+        if duration > 0 {
+            s.save_timing(
+                id,
+                UsageTiming::estimate(
+                    BASE,
+                    BASE + duration,
+                    first.map(|v| BASE + v),
+                    if harness == "dsh" {
+                        "dsh_step_message"
+                    } else {
+                        "test"
+                    },
+                    first_source,
+                )
+                .as_ref(),
+            )
+            .unwrap();
+        }
+        if id == "a" {
+            let mut remote = record;
+            remote.device_id = "remote".into();
+            s.conn
+                .execute(
+                    "INSERT INTO remote_records VALUES(?1,?2,?3,?4)",
+                    rusqlite::params![
+                        remote.device_id,
+                        remote.id,
+                        1,
+                        serde_json::to_string(&remote).unwrap()
+                    ],
+                )
+                .unwrap();
+        }
+    }
+    let before = s.records("all").unwrap();
+    let before_pending = s.pending().unwrap();
+    let before_version = s.usage_version().unwrap();
+    let before_timings = s.timings().unwrap();
+    for (id, duration, eligible) in [
+        ("a", 2482, true),
+        ("b", 494, true),
+        ("boundary", 100, true),
+        ("burst", 50, false),
+        ("tiny", 5000, false),
+    ] {
+        let detail =
+            query::query(&s, "detail", &json!({"requestId":format!("{device}|{id}")})).unwrap();
+        assert_eq!(detail["estimatedSpeed"]["basis"], "decode");
+        assert_eq!(detail["estimatedSpeed"]["durationMs"], duration);
+        assert_eq!(detail["estimatedSpeed"]["eligible"], eligible);
+        assert_eq!(detail["estimatedSpeed"]["minOutputTokens"], 100);
+    }
+    for id in ["missing", "untrusted", "codex", "opencode"] {
+        let detail =
+            query::query(&s, "detail", &json!({"requestId":format!("{device}|{id}")})).unwrap();
+        assert_eq!(detail["estimatedSpeed"]["basis"], "end_to_end");
+        assert_eq!(detail["estimatedSpeed"]["eligible"], true);
+    }
+    for request in ["remote|a".to_string(), format!("{device}|claude")] {
+        let detail =
+            query::query(&s, "detail", &json!({"scope":"all","requestId":request})).unwrap();
+        assert!(detail["estimatedSpeed"].is_null());
+    }
+    let stats = query::query(&s, "models", &json!({"scope":"all"})).unwrap();
+    assert_eq!(stats[0]["estDecodeSpeedOutputTokens"], 710);
+    assert_eq!(stats[0]["estDecodeSpeedGenerationMs"], 3076);
+    assert_eq!(stats[0]["estDecodeSpeedSampleCount"], 3);
+    assert_eq!(stats[0]["estSpeedOutputTokens"], 1400);
+    assert_eq!(stats[0]["estSpeedDurationMs"], 24000);
+    assert_eq!(stats[0]["estSpeedSampleCount"], 4);
+    let stats = query::query(&s, "providers", &json!({"filters":{"appType":"dsh"}})).unwrap();
+    assert_eq!(stats[0]["estDecodeSpeedOutputTokens"], 710);
+    assert_eq!(stats[0]["estDecodeSpeedGenerationMs"], 3076);
+    assert_eq!(stats[0]["estSpeedOutputTokens"], 600);
+    assert_eq!(stats[0]["estSpeedDurationMs"], 10000);
+    assert_eq!(before, s.records("all").unwrap());
+    assert_eq!(before_pending, s.pending().unwrap());
+    assert_eq!(before_version, s.usage_version().unwrap());
+    assert_eq!(before_timings, s.timings().unwrap());
+}

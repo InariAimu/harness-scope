@@ -74,6 +74,7 @@ export function ProviderAccountEditor({
             periodStart: null,
             renewalDate: null,
           },
+          refresh: { foregroundSeconds: 60, backgroundSeconds: 300 },
         },
   );
   const routes = useQuery({
@@ -305,6 +306,52 @@ export function ProviderAccountEditor({
                     />
                   </Field>
                 </div>
+              </section>
+              <section className="border-t border-border pt-4 space-y-3">
+                <h3 className="font-semibold text-fg-1">
+                  {l("余额／额度自动刷新", "Automatic balance / quota refresh")}
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {(
+                    [
+                      [
+                        "foregroundSeconds",
+                        l("前台间隔（秒）", "Foreground interval (seconds)"),
+                      ],
+                      [
+                        "backgroundSeconds",
+                        l("后台间隔（秒）", "Background interval (seconds)"),
+                      ],
+                    ] as const
+                  ).map(([field, label]) => (
+                    <Field key={field} label={label}>
+                      <Input
+                        aria-label={label}
+                        type="number"
+                        required
+                        min={0}
+                        max={86400}
+                        step={1}
+                        value={form.refresh[field]}
+                        onChange={(e) =>
+                          setForm((v) => ({
+                            ...v,
+                            refresh: {
+                              ...v.refresh,
+                              [field]: Number(e.target.value),
+                            },
+                          }))
+                        }
+                      />
+                    </Field>
+                  ))}
+                </div>
+                <p className="text-caption text-fg-3">
+                  {l(
+                    "0 关闭自动刷新；其余为 15–86400 秒。前台指当前供应商页有焦点；切换页面、窗口失焦或最小化后用后台间隔。关闭应用后停止。手动刷新始终可用。",
+                    "Use 0 to disable, or 15–86400 seconds. Foreground means the selected provider page has focus. Other pages, unfocused or minimized windows use the background interval. Refresh stops when the app closes. Manual refresh is always available.",
+                  )}
+                </p>
               </section>
               <section className="border-t border-border pt-4 space-y-2">
                 <h3 className="font-semibold text-fg-1">

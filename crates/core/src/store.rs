@@ -77,7 +77,7 @@ impl Store {
     pub fn prices(&self) -> Result<Vec<Price>> {
         let mut prices = self.meta("prices")?.unwrap_or_else(crate::pricing::builtin);
         crate::pricing::deepseek::install(&mut prices);
-        crate::pricing::opencode_go::install(&mut prices);
+        crate::pricing::go_catalog::install(&mut prices, &crate::pricing::go_catalog::load(self)?);
         Ok(prices)
     }
     pub fn pricing_settings(&self) -> Result<PricingSettings> {

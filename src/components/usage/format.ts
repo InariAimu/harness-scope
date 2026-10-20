@@ -1,4 +1,5 @@
 import type { UsageDisplaySettings } from "@/types";
+import type { SessionSpeedEstimate } from "@/types/usage";
 export function parseFiniteNumber(value: unknown): number | null {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : null;
@@ -224,6 +225,7 @@ interface OutputTokensPerSecondInput {
   latencyMs: unknown;
   firstTokenMs?: unknown;
   dataSource?: unknown;
+  estimatedSpeed?: SessionSpeedEstimate;
 }
 
 /**
@@ -276,8 +278,7 @@ export function getOutputTokensPerSecond(
 }
 
 /**
- * 估算速度的输出门槛。会话日志导入的请求没有首字计时，耗时是按日志时间戳估的、
- * 含首字等待；输出越少首字占比越大、算出来越偏低，所以门槛比精确口径高。
+ * 端到端回退估算门槛。输出阶段估算由后端根据原始计时来源选择，门槛随 DTO 返回。
  */
 export const SPEED_ESTIMATE_MIN_OUTPUT_TOKENS = 200;
 
@@ -294,13 +295,27 @@ export function isSessionLogRequest(log: { dataSource?: unknown }): boolean {
 }
 
 /**
- * 这条请求能不能估速度（和后端 `speed_estimate_eligible_sql` 同口径）：会话日志导入、
- * 输出不少于 200 token、估算耗时不短于 1 秒。推出了首字的也照样按整段耗时算。
+ * 后端决定计时口径及样本资格；旧服务没有策略 DTO 时保留端到端估算。
  */
 export function isSpeedEstimateEligible(
   log: OutputTokensPerSecondInput,
 ): boolean {
   const outputTokens = parseFiniteNumber(log.outputTokens);
+  if (log.estimatedSpeed) {
+    const speed = log.estimatedSpeed;
+    const duration = parseFiniteNumber(speed.durationMs);
+    return (
+      isSessionLogRequest(log) &&
+      ["decode", "end_to_end"].includes(speed.basis) &&
+      speed.eligible === true &&
+      outputTokens != null &&
+      outputTokens > 0 &&
+      outputTokens >= speed.minOutputTokens &&
+      duration != null &&
+      duration > 0 &&
+      duration >= speed.minDurationMs
+    );
+  }
   const latencyMs = parseFiniteNumber(log.latencyMs);
   return (
     isSessionLogRequest(log) &&
@@ -311,14 +326,16 @@ export function isSpeedEstimateEligible(
   );
 }
 
-/** 单条估算速度（tok/s）= 输出 token ÷ (估算耗时 / 1000)，含首字等待；不满足条件返回 null。 */
+/** 输出阶段与端到端估算使用各自的有效窗口，始终保留 ≈。 */
 export function getEstimatedTokensPerSecond(
   log: OutputTokensPerSecondInput,
 ): number | null {
   if (!isSpeedEstimateEligible(log)) return null;
   const outputTokens = parseFiniteNumber(log.outputTokens) as number;
-  const latencyMs = parseFiniteNumber(log.latencyMs) as number;
-  const tps = outputTokens / (latencyMs / 1000);
+  const durationMs = parseFiniteNumber(
+    log.estimatedSpeed ? log.estimatedSpeed.durationMs : log.latencyMs,
+  ) as number;
+  const tps = outputTokens / (durationMs / 1000);
   return Number.isFinite(tps) && tps > 0 ? tps : null;
 }
 

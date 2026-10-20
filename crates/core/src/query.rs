@@ -92,6 +92,9 @@ fn timing_stats(records: &[Row]) -> Value {
     let mut output = 0u64;
     let mut duration = 0i64;
     let mut speed_samples = 0u64;
+    let mut decode_output = 0u64;
+    let mut decode_duration = 0i64;
+    let mut decode_samples = 0u64;
     let mut durations = Vec::new();
     let mut firsts = Vec::new();
     for r in records {
@@ -101,10 +104,18 @@ fn timing_stats(records: &[Row]) -> Value {
             .filter(|_| r.grain == "event" && r.record_source == "session")
         {
             durations.push(t.duration_ms);
-            if r.tokens.output >= 200 && t.duration_ms >= 1000 {
-                output = output.saturating_add(r.tokens.output);
-                duration = duration.saturating_add(t.duration_ms);
-                speed_samples += 1;
+            let speed = crate::timing::speed_estimate(&r.harness, t, r.tokens.output);
+            if speed.eligible {
+                let ms = speed.duration_ms.expect("eligible speed duration");
+                if speed.basis == crate::timing::SpeedBasis::Decode {
+                    decode_output = decode_output.saturating_add(r.tokens.output);
+                    decode_duration = decode_duration.saturating_add(ms);
+                    decode_samples += 1;
+                } else {
+                    output = output.saturating_add(r.tokens.output);
+                    duration = duration.saturating_add(ms);
+                    speed_samples += 1;
+                }
             }
             if let Some(first) = t.first_token_ms {
                 firsts.push(first);
@@ -118,7 +129,7 @@ fn timing_stats(records: &[Row]) -> Value {
     } else {
         Some((firsts[(n - 1) / 2] as f64 + firsts[n / 2] as f64) / 2.)
     };
-    json!({"speedOutputTokens":0,"speedGenerationMs":0,"estSpeedOutputTokens":output,"estSpeedDurationMs":duration,"estSpeedSampleCount":speed_samples,"firstTokenMedianMs":null,"estFirstTokenMedianMs":median,"estFirstTokenSampleCount":n,"timingSampleCount":durations.len(),"avgLatencyMs":if durations.is_empty(){None}else{Some(durations.iter().map(|v|*v as f64).sum::<f64>()/durations.len() as f64)}})
+    json!({"speedOutputTokens":0,"speedGenerationMs":0,"estDecodeSpeedOutputTokens":decode_output,"estDecodeSpeedGenerationMs":decode_duration,"estDecodeSpeedSampleCount":decode_samples,"estSpeedOutputTokens":output,"estSpeedDurationMs":duration,"estSpeedSampleCount":speed_samples,"firstTokenMedianMs":null,"estFirstTokenMedianMs":median,"estFirstTokenSampleCount":n,"timingSampleCount":durations.len(),"avgLatencyMs":if durations.is_empty(){None}else{Some(durations.iter().map(|v|*v as f64).sum::<f64>()/durations.len() as f64)}})
 }
 fn log(r: &UsageRecord, timing: Option<&UsageTiming>) -> Value {
     let mut v = json!({"requestId":format!("{}|{}",r.device_id,r.id),"providerId":provider(r),"providerName":provider(r),"appType":r.harness,"model":r.model,"requestModel":r.model,"pricingModel":r.cost.pricing_model,"costMultiplier":"1","inputTokens":r.tokens.input,"outputTokens":r.tokens.output,"cacheReadTokens":r.tokens.cache_read,"cacheCreationTokens":r.tokens.cache_write,"inputCostUsd":"0","outputCostUsd":"0","cacheReadCostUsd":"0","cacheCreationCostUsd":"0","totalCostUsd":r.cost.amount_usd,"isStreaming":false,"latencyMs":null,"firstTokenMs":null,"durationMs":null,"statusCode":r.status_code,"createdAt":r.occurred_at,"dataSource":"harness_scope","deviceId":r.device_id,"costSource":r.cost.method,"priceSource":r.cost.price_source,"pricingSnapshot":r.cost.snapshot,"recordSource":r.record_source});
@@ -129,6 +140,11 @@ fn log(r: &UsageRecord, timing: Option<&UsageTiming>) -> Value {
         v["timingMethod"] = json!("estimated");
         v["timingSource"] = json!(t.duration_source);
         v["firstTokenSource"] = json!(t.first_token_source);
+        v["estimatedSpeed"] = json!(crate::timing::speed_estimate(
+            &r.harness,
+            t,
+            r.tokens.output
+        ));
     }
     v["nativeProvider"] = json!(r.provider);
     v["billingBasis"] = json!(r.cost.billing_basis);

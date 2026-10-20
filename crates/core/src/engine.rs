@@ -26,7 +26,8 @@ pub struct Engine {
     reader: crate::sessions::ReaderCache,
     query_reader: Mutex<Store>,
     background_wake: Arc<(Mutex<u64>, Condvar)>,
-    account_vault: crate::account_credentials::Vault,
+    pub(crate) account_vault: crate::account_credentials::Vault,
+    pub(crate) account_polling: Arc<crate::accounts::Polling>,
 }
 impl Engine {
     pub fn open(path: &Path) -> Result<Self> {
@@ -48,6 +49,7 @@ impl Engine {
         }
         Ok(Self {
             account_vault: crate::account_credentials::Vault::new(path),
+            account_polling: Default::default(),
             query_reader: Mutex::new(Store::reader(path)?),
             background_wake: Arc::new((Mutex::new(0), Condvar::new())),
             store: Mutex::new(store),
@@ -75,6 +77,9 @@ impl Engine {
             | "provider_account_save"
             | "provider_account_delete"
             | "provider_account_refresh"
+            | "provider_account_activity"
+            | "go_usage_estimate"
+            | "go_simulate"
             | "provider_account_usage" => {
                 crate::accounts::execute(self, &self.account_vault, name, args)
             }
@@ -164,6 +169,15 @@ impl Engine {
                 Ok(json!(display))
             }
             "prices" => Ok(json!(self.read_lock()?.prices()?)),
+            "go_catalog" => pricing::go_catalog::info(
+                &*self.read_lock()?,
+                &self.database_path.with_extension("opencode-go.json"),
+            ),
+            "save_go_catalog" => pricing::go_catalog::save(
+                &*self.lock()?,
+                &self.database_path.with_extension("opencode-go.json"),
+                args,
+            ),
             "models_needing_prices" => {
                 let s = self.read_lock()?;
                 let prices = s.prices()?;
@@ -214,6 +228,15 @@ impl Engine {
                 let s = self.lock()?;
                 let mut prices = s.prices()?;
                 let provider = args["provider"].as_str().map(crate::providers::pricing_id);
+                anyhow::ensure!(
+                    provider != Some("opencode-go")
+                        || pricing::go_catalog::find(
+                            &pricing::go_catalog::load(&s)?,
+                            args["modelId"].as_str().unwrap_or("")
+                        )
+                        .is_none(),
+                    "OpenCode Go pricing is managed by local Go rules"
+                );
                 anyhow::ensure!(
                     !(pricing::deepseek::canonical(args["modelId"].as_str().unwrap_or(""))
                         .is_some()
@@ -661,6 +684,10 @@ impl Engine {
                     v["fetchedAt"] = json!(chrono::Utc::now().timestamp())
                 }
                 let mut p: Price = serde_json::from_value(v)?;
+                anyhow::ensure!(
+                    p.go_tariff.is_none(),
+                    "Go catalog snapshots cannot be imported as flat prices"
+                );
                 p.provider = p
                     .provider
                     .as_deref()
@@ -669,6 +696,16 @@ impl Engine {
                     .map(crate::providers::pricing_id)
                     .map(str::to_owned);
                 pricing::validate(&p)?;
+                if p.provider.as_deref() == Some("opencode-go")
+                    && pricing::go_catalog::find(&pricing::go_catalog::load(&s)?, &p.model_id)
+                        .is_some()
+                {
+                    anyhow::ensure!(
+                        p.source == "models_dev",
+                        "OpenCode Go pricing is managed by local Go rules"
+                    );
+                    continue;
+                }
                 anyhow::ensure!(
                     ["models_dev", "manual"].contains(&p.source.as_str()),
                     "Invalid imported price source"
@@ -986,6 +1023,7 @@ impl Engine {
         Ok(json!({"uploaded":uploaded,"downloaded":downloaded}))
     }
     pub fn start_background(self: &Arc<Self>) {
+        crate::accounts::start_background(self);
         let weak = Arc::downgrade(self);
         let wake = self.background_wake.clone();
         std::thread::spawn(move || loop {

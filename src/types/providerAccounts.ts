@@ -18,6 +18,11 @@ export interface ProviderAccount {
   name: string;
   links: AccountLink[];
   subscription: AccountSubscription;
+  refresh: RefreshPolicy;
+}
+export interface RefreshPolicy {
+  foregroundSeconds: number;
+  backgroundSeconds: number;
 }
 export interface QuotaWindow {
   id: "rolling" | "weekly" | "monthly";
@@ -43,6 +48,7 @@ export interface ProviderAccountView {
   snapshot: { fetchedAt: number; data: ProviderData } | null;
   lastAttemptAt: number | null;
   error: string | null;
+  refreshing: boolean;
 }
 export interface AccountSave {
   id?: string;
@@ -52,6 +58,7 @@ export interface AccountSave {
   subscription: AccountSubscription;
   apiKey?: string;
   clearApiKey?: boolean;
+  refresh: RefreshPolicy;
 }
 export interface AccountRoute extends AccountLink {
   records: number;

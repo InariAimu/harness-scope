@@ -14,6 +14,10 @@ export interface SpeedTotals {
   speedGenerationMs?: number;
   estSpeedOutputTokens?: number;
   estSpeedDurationMs?: number;
+  estSpeedSampleCount?: number;
+  estDecodeSpeedOutputTokens?: number;
+  estDecodeSpeedGenerationMs?: number;
+  estDecodeSpeedSampleCount?: number;
   firstTokenMedianMs?: number | null;
   estFirstTokenMedianMs?: number | null;
 }
@@ -26,16 +30,28 @@ export function getStatsSpeed(stat: SpeedTotals): string | null {
 }
 
 /**
- * 会话日志导入的请求的汇总估算速度：Σ输出 ÷ Σ估算耗时（含首字等待）。
- * 没有精确速度时才拿它顶上，显示时前面带 ≈。
+ * 优先使用输出阶段样本；无有效输出阶段样本时才显示端到端估算。两组不相加。
  */
 export function getStatsEstimatedSpeed(stat: SpeedTotals): string | null {
   return formatTokensPerSecond(
     getAggregateTokensPerSecond(
-      stat.estSpeedOutputTokens,
-      stat.estSpeedDurationMs,
-    ),
+      stat.estDecodeSpeedOutputTokens,
+      stat.estDecodeSpeedGenerationMs,
+    ) ??
+      getAggregateTokensPerSecond(
+        stat.estSpeedOutputTokens,
+        stat.estSpeedDurationMs,
+      ),
   );
+}
+
+export function getStatsEstimatedSpeedBasis(stat: SpeedTotals) {
+  return getAggregateTokensPerSecond(
+    stat.estDecodeSpeedOutputTokens,
+    stat.estDecodeSpeedGenerationMs,
+  ) != null
+    ? "decode"
+    : "end_to_end";
 }
 
 /** 「成功率」「速度」「首字」三列的表头，供应商和模型统计共用。 */
@@ -70,10 +86,18 @@ export function PerformanceCells({
 }: {
   stat: SpeedTotals & { successRate: number | null };
 }) {
+  const { t } = useTranslation();
   const exactSpeed = getStatsSpeed(stat);
   const estimatedSpeed =
     exactSpeed == null ? getStatsEstimatedSpeed(stat) : null;
   const speed = exactSpeed ?? estimatedSpeed;
+  const basis = getStatsEstimatedSpeedBasis(stat);
+  const speedTip =
+    estimatedSpeed == null
+      ? undefined
+      : basis === "decode"
+        ? `${t("usage.decodeSpeedBasis")} · ${t("usage.speedSampleCount", { count: stat.estDecodeSpeedSampleCount ?? 0 })}${stat.estSpeedSampleCount ? ` · ${t("usage.speedFallbackExcluded", { count: stat.estSpeedSampleCount })}` : ""}`
+        : t("usage.endToEndSpeedBasis");
   const exactFirstToken = formatFirstTokenSeconds(stat.firstTokenMedianMs);
   const estimatedFirstToken =
     exactFirstToken == null
@@ -87,7 +111,10 @@ export function PerformanceCells({
           ? "—"
           : `${stat.successRate.toFixed(stat.successRate >= 99.95 ? 0 : 1)}%`}
       </td>
-      <td className={cn(usageTable.td, speed == null && usageTable.muted)}>
+      <td
+        className={cn(usageTable.td, speed == null && usageTable.muted)}
+        title={speedTip}
+      >
         {speed == null ? (
           "—"
         ) : (
@@ -97,6 +124,9 @@ export function PerformanceCells({
             <span className="ms-0.5 text-badge font-normal text-fg-3">
               tok/s
             </span>
+            {estimatedSpeed != null && basis === "end_to_end" && (
+              <span className="ms-1 text-badge text-fg-3">E2E</span>
+            )}
           </>
         )}
       </td>

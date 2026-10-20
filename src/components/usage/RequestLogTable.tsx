@@ -258,7 +258,7 @@ export function RequestLogTable({
     const providerLabel = getUsageProviderLabel(log.providerName, t);
     const provider = providerLabel.shortLabel;
     const exactTps = formatOutputTokensPerSecond(log);
-    // 会话日志导入的请求没有首字计时，速度是按日志时间戳估的，前面带 ≈
+    // 流片段与端到端两种日志估算都保留 ≈，口径由后端计时来源决定。
     const estimatedTps =
       exactTps == null ? formatEstimatedTokensPerSecond(log) : null;
     const tps = exactTps ?? estimatedTps;
@@ -286,6 +286,20 @@ export function RequestLogTable({
             : estimatedTps != null
               ? t("usage.estimatedTimingTip", timing)
               : undefined;
+    const speedBasis = log.estimatedSpeed?.basis ?? "end_to_end";
+    const speedTip =
+      estimatedTps == null
+        ? timingTip
+        : [
+            timingTip,
+            t(
+              speedBasis === "decode"
+                ? "usage.decodeSpeedBasis"
+                : "usage.endToEndSpeedBasis",
+            ),
+          ]
+            .filter(Boolean)
+            .join(" · ");
     const multiplier = parseFiniteNumber(log.costMultiplier);
     const modelTitle =
       log.requestModel && log.requestModel !== log.model
@@ -477,7 +491,7 @@ export function RequestLogTable({
       speed: (
         <td
           className={cn(usageTable.td, tps == null && usageTable.muted)}
-          title={timingTip}
+          title={speedTip}
         >
           {tps == null ? (
             "—"
@@ -488,6 +502,9 @@ export function RequestLogTable({
               <span className="ms-0.5 text-badge font-normal text-fg-3">
                 tok/s
               </span>
+              {estimatedTps != null && speedBasis === "end_to_end" && (
+                <span className="ms-1 text-badge text-fg-3">E2E</span>
+              )}
             </>
           )}
         </td>

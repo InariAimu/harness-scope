@@ -13,6 +13,24 @@ use std::{
 };
 
 const META: &str = "provider_accounts_v1";
+mod go_usage;
+mod polling;
+pub(crate) use polling::Polling;
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+pub struct RefreshPolicy {
+    pub foreground_seconds: u64,
+    pub background_seconds: u64,
+}
+impl Default for RefreshPolicy {
+    fn default() -> Self {
+        Self {
+            foreground_seconds: 60,
+            background_seconds: 300,
+        }
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Link {
@@ -52,6 +70,8 @@ pub struct Account {
     pub name: String,
     pub links: Vec<Link>,
     pub subscription: Subscription,
+    #[serde(default)]
+    pub refresh: RefreshPolicy,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -66,6 +86,8 @@ struct Save {
     api_key: Option<String>,
     #[serde(default)]
     clear_api_key: bool,
+    #[serde(default)]
+    refresh: RefreshPolicy,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -81,8 +103,8 @@ struct Stored {
 fn load(store: &Store) -> Result<Vec<Stored>> {
     Ok(store.meta(META)?.unwrap_or_default())
 }
-fn view(item: &Stored, vault: &Vault) -> Value {
-    json!({"account":item.account,"keyConfigured":vault.exists(&item.account.id),"snapshot":item.snapshot,"lastAttemptAt":item.last_attempt_at,"error":item.error})
+fn view(engine: &Engine, item: &Stored, vault: &Vault) -> Value {
+    json!({"account":item.account,"keyConfigured":vault.exists(&item.account.id),"snapshot":item.snapshot,"lastAttemptAt":item.last_attempt_at,"error":item.error,"refreshing":engine.account_polling.is_refreshing(&item.account.id)})
 }
 fn id(args: &Value) -> Result<&str> {
     let id = args["id"].as_str().context("Missing provider account ID")?;
@@ -90,6 +112,15 @@ fn id(args: &Value) -> Result<&str> {
     Ok(id)
 }
 fn validate(input: &Save) -> Result<()> {
+    for interval in [
+        input.refresh.foreground_seconds,
+        input.refresh.background_seconds,
+    ] {
+        anyhow::ensure!(
+            interval == 0 || (15..=86400).contains(&interval),
+            "Refresh interval must be 0 or 15–86400 seconds"
+        );
+    }
     anyhow::ensure!(
         ["deepseek", "opencode-go"].contains(&input.provider.as_str()),
         "Unsupported provider"
@@ -148,7 +179,7 @@ pub(crate) fn execute(engine: &Engine, vault: &Vault, name: &str, args: Value) -
     match name {
         "provider_accounts" => Ok(json!(load(&*engine.read_lock()?)?
             .iter()
-            .map(|a| view(a, vault))
+            .map(|a| view(engine, a, vault))
             .collect::<Vec<_>>())),
         "provider_account_routes" => {
             let store = engine.read_lock()?;
@@ -174,7 +205,10 @@ pub(crate) fn execute(engine: &Engine, vault: &Vault, name: &str, args: Value) -
             }
             Ok(json!(true))
         }
-        "provider_account_refresh" => refresh_with(engine, vault, id(&args)?, fetch),
+        "provider_account_refresh" => polling::refresh_managed(engine, vault, id(&args)?, fetch),
+        "provider_account_activity" => polling::activity(engine, &args),
+        "go_usage_estimate" => go_usage::estimate(engine, &args),
+        "go_simulate" => go_usage::simulate(engine, &args),
         "provider_account_usage" => local_usage(
             engine,
             id(&args)?,
@@ -231,6 +265,7 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
                 name: String::new(),
                 links: vec![],
                 subscription: Subscription::default(),
+                refresh: RefreshPolicy::default(),
             },
             revision: String::new(),
             snapshot: None,
@@ -244,6 +279,7 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
         name: input.name,
         links: input.links,
         subscription: input.subscription,
+        refresh: input.refresh,
     };
     item.revision = uuid::Uuid::new_v4().to_string();
     if new_key.is_some() || input.clear_api_key || provider_changed {
@@ -266,7 +302,7 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
         vault.restore(&account_id, old_key.as_deref())?;
         return Err(error);
     }
-    Ok(view(&item, vault))
+    Ok(view(engine, &item, vault))
 }
 fn refresh_with(
     engine: &Engine,
@@ -281,7 +317,7 @@ fn refresh_with(
             .iter_mut()
             .find(|a| a.account.id == id)
             .context("Provider account no longer exists")?;
-        let key = vault.read(id)?;
+        let key = vault.read(id);
         let request = uuid::Uuid::new_v4().to_string();
         item.request_id = Some(request.clone());
         item.last_attempt_at = Some(Utc::now().timestamp());
@@ -290,7 +326,9 @@ fn refresh_with(
         (captured, key, request)
     };
     // Both DB mutexes are released during DNS, HTTP, response decoding and validation.
-    let response = fetch(&captured.account.provider, &key);
+    // Credential failures must also record an attempt, so a moved/corrupt vault cannot
+    // spin the automatic scheduler or silently hide the error from the account page.
+    let response = key.and_then(|key| fetch(&captured.account.provider, &key));
     let store = engine.lock()?;
     let mut items = load(&store)?;
     let item = items
@@ -305,11 +343,11 @@ fn refresh_with(
             }
             Err(error) => item.error = Some(error.to_string()),
         }
-        let result = view(item, vault);
+        let result = view(engine, item, vault);
         store.set_meta(META, &items)?;
         Ok(result)
     } else {
-        Ok(view(item, vault))
+        Ok(view(engine, item, vault))
     }
 }
 fn fetch(provider: &str, key: &str) -> Result<Value> {
@@ -468,3 +506,7 @@ fn local_usage(engine: &Engine, id: &str, range: &str) -> Result<Value> {
 
 #[cfg(test)]
 mod tests;
+
+pub(crate) fn start_background(engine: &std::sync::Arc<Engine>) {
+    polling::start_background(engine);
+}

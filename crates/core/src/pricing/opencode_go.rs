@@ -22,6 +22,7 @@ pub fn install(prices: &mut Vec<Price>) {
         ]
         .into_iter()
         .map(|(id, name, input, output, cache)| Price {
+            go_tariff: None,
             provider: Some("opencode-go".into()),
             model_id: id.into(),
             display_name: name.into(),

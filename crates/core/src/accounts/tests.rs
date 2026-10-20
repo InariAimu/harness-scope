@@ -447,3 +447,316 @@ fn http_authentication_is_backend_only_and_errors_never_echo_provider_bodies() {
         .contains("too large"));
     task.join().unwrap();
 }
+
+#[test]
+fn legacy_accounts_gain_refresh_defaults_without_replacing_manual_subscription_fields() {
+    let (_directory, engine, vault) = setup();
+    let view = create(&engine, "opencode-go");
+    let id = view["account"]["id"].as_str().unwrap();
+    let subscription = json!({"planName":"Go Plus","monthlyFee":"10","currency":"USD","periodStart":"2026-09-28","renewalDate":"2026-10-28"});
+    let mut patch = edit(&view);
+    patch["subscription"] = subscription.clone();
+    engine.execute("provider_account_save", patch).unwrap();
+    {
+        let store = engine.lock().unwrap();
+        let mut legacy: Value = store.meta(META).unwrap().unwrap();
+        legacy[0]["account"]
+            .as_object_mut()
+            .unwrap()
+            .remove("refresh");
+        store.set_meta(META, &legacy).unwrap();
+    }
+    let refreshed = polling::refresh_managed(&engine, &vault, id, |provider, _| {
+        let mut raw = quota();
+        raw["usage"]["monthly"]["resetsAt"] = json!("2026-10-29T11:37:00Z");
+        raw["subscription"] = json!({"planName":"Do not trust undocumented fields","monthlyFee":"999","renewalDate":"2026-12-01"});
+        parse_response(provider, raw)
+    }).unwrap();
+    assert_eq!(
+        refreshed["account"]["refresh"],
+        json!({"foregroundSeconds":60,"backgroundSeconds":300})
+    );
+    assert_eq!(refreshed["account"]["subscription"], subscription);
+    assert!(refreshed["snapshot"]["data"].get("subscription").is_none());
+    assert_eq!(refreshed["refreshing"], false);
+}
+
+#[test]
+fn refresh_policy_validates_atomically_supports_disabling_and_keeps_usage_unchanged() {
+    let (_directory, engine, _vault) = setup();
+    let initial = create(&engine, "opencode-go");
+    let version = engine.lock().unwrap().usage_version().unwrap();
+    for invalid in [json!(1), json!(14), json!(86401), json!(-1), json!(15.5)] {
+        let mut patch = edit(&initial);
+        patch["refresh"]["foregroundSeconds"] = invalid;
+        assert!(engine.execute("provider_account_save", patch).is_err());
+        assert_eq!(
+            engine.execute("provider_accounts", json!({})).unwrap()[0],
+            initial
+        );
+    }
+    let mut patch = edit(&initial);
+    patch["refresh"] = json!({"foregroundSeconds":0,"backgroundSeconds":0});
+    engine.execute("provider_account_save", patch).unwrap();
+    assert!(polling::due_at(
+        &engine,
+        &engine.account_vault,
+        i64::MAX,
+        std::time::Instant::now()
+    )
+    .unwrap()
+    .is_empty());
+    let id = initial["account"]["id"].as_str().unwrap();
+    let manual = polling::refresh_managed(&engine, &engine.account_vault, id, |provider, _| {
+        parse_response(provider, quota())
+    })
+    .unwrap();
+    assert!(manual["snapshot"].is_object());
+    assert_eq!(engine.lock().unwrap().usage_version().unwrap(), version);
+    assert!(engine.lock().unwrap().pending().unwrap().is_empty());
+}
+
+#[test]
+fn foreground_leases_expire_and_old_page_cleanup_does_not_deactivate_new_page() {
+    use std::time::Instant;
+    let (_directory, engine, vault) = setup();
+    let go = create(&engine, "opencode-go");
+    let ds = create(&engine, "deepseek");
+    {
+        let store = engine.lock().unwrap();
+        let mut items = load(&store).unwrap();
+        for item in &mut items {
+            item.last_attempt_at = Some(1000);
+        }
+        store.set_meta(META, &items).unwrap();
+    }
+    let id = go["account"]["id"].as_str().unwrap();
+    let first = uuid::Uuid::new_v4().to_string();
+    let second = uuid::Uuid::new_v4().to_string();
+    for lease in [&first, &second] {
+        engine
+            .execute(
+                "provider_account_activity",
+                json!({"id":id,"lease":lease,"active":true}),
+            )
+            .unwrap();
+    }
+    engine
+        .execute(
+            "provider_account_activity",
+            json!({"id":id,"lease":first,"active":false}),
+        )
+        .unwrap();
+    let clock = Instant::now();
+    assert!(polling::due_at(&engine, &vault, 1059, clock)
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        polling::due_at(&engine, &vault, 1060, clock).unwrap(),
+        vec![id]
+    );
+    assert!(
+        polling::due_at(&engine, &vault, 1060, clock + Duration::from_secs(46))
+            .unwrap()
+            .is_empty()
+    );
+    let due = polling::due_at(&engine, &vault, 1300, clock + Duration::from_secs(46)).unwrap();
+    assert_eq!(due.len(), 2);
+    assert!(due.contains(&ds["account"]["id"].as_str().unwrap().to_owned()));
+}
+
+#[test]
+fn shared_refresh_guard_deduplicates_manual_and_scheduled_requests_and_releases_on_failure() {
+    let (_directory, engine, vault) = setup();
+    let initial = create(&engine, "opencode-go");
+    let id = initial["account"]["id"].as_str().unwrap();
+    let result = polling::refresh_managed(&engine, &vault, id, |_, _| {
+        assert!(polling::due_at(
+            &engine,
+            &vault,
+            Utc::now().timestamp(),
+            std::time::Instant::now()
+        )
+        .unwrap()
+        .is_empty());
+        let overlap = polling::refresh_managed(&engine, &vault, id, |_, _| {
+            panic!("Duplicate network request")
+        })
+        .unwrap();
+        assert_eq!(overlap["refreshing"], true);
+        assert_eq!(
+            engine.execute("provider_accounts", json!({})).unwrap()[0]["refreshing"],
+            true
+        );
+        anyhow::bail!("simulated transient failure")
+    })
+    .unwrap();
+    assert_eq!(result["refreshing"], false);
+    let next = polling::refresh_managed(&engine, &vault, id, |provider, _| {
+        parse_response(provider, quota())
+    })
+    .unwrap();
+    assert!(next["error"].is_null());
+}
+
+#[test]
+fn background_tick_fetches_without_ui_and_observes_cooldown_and_error_backoff() {
+    let (_directory, engine, vault) = setup();
+    let view = create(&engine, "opencode-go");
+    let id = view["account"]["id"].as_str().unwrap().to_owned();
+    let engine = std::sync::Arc::new(engine);
+    assert_eq!(
+        polling::tick(&engine, |p, _| parse_response(p, quota())).unwrap(),
+        1
+    );
+    assert_eq!(
+        polling::tick(&engine, |_, _| panic!("duplicate tick")).unwrap(),
+        0
+    );
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        let list = engine.execute("provider_accounts", json!({})).unwrap();
+        if list[0]["refreshing"] == false && list[0]["snapshot"].is_object() {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert_eq!(
+        polling::tick(&engine, |_, _| panic!("cooldown ignored")).unwrap(),
+        0
+    );
+    {
+        let store = engine.lock().unwrap();
+        let mut items = load(&store).unwrap();
+        items[0].account.refresh = RefreshPolicy {
+            foreground_seconds: 15,
+            background_seconds: 15,
+        };
+        items[0].last_attempt_at = Some(1000);
+        items[0].error = Some("Provider rate limit reached (429)".into());
+        store.set_meta(META, &items).unwrap();
+    }
+    assert!(
+        polling::due_at(&engine, &vault, 1015, std::time::Instant::now())
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        polling::due_at(&engine, &vault, 1060, std::time::Instant::now()).unwrap(),
+        vec![id]
+    );
+}
+
+#[test]
+fn unreadable_credentials_preserve_cache_report_failure_and_back_off() {
+    let (_directory, engine, vault) = setup();
+    let initial = create(&engine, "opencode-go");
+    let id = initial["account"]["id"].as_str().unwrap();
+    let mut patch = edit(&initial);
+    patch["refresh"] = json!({"foregroundSeconds":15,"backgroundSeconds":15});
+    engine.execute("provider_account_save", patch).unwrap();
+    let cached =
+        polling::refresh_managed(&engine, &vault, id, |p, _| parse_response(p, quota())).unwrap();
+    vault.restore(id, Some(&[255])).unwrap();
+    let failed = polling::refresh_managed(&engine, &vault, id, |_, _| {
+        panic!("Unreadable credential sent upstream")
+    })
+    .unwrap();
+    assert!(failed["error"].is_string());
+    assert_eq!(failed["snapshot"], cached["snapshot"]);
+    assert_eq!(failed["refreshing"], false);
+    let attempt = failed["lastAttemptAt"].as_i64().unwrap();
+    assert!(
+        polling::due_at(&engine, &vault, attempt + 15, std::time::Instant::now())
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        polling::due_at(&engine, &vault, attempt + 60, std::time::Instant::now()).unwrap(),
+        vec![id]
+    );
+}
+
+#[test]
+fn go_estimates_sum_model_normalized_allowances_without_repricing_facts() {
+    let (_directory, engine, _vault) = setup();
+    let view = create(&engine, "opencode-go");
+    let id = view["account"]["id"].as_str().unwrap();
+    let mut patch = edit(&view);
+    patch["links"] = json!([{"harness":"dsh","provider":"opencode-go"}]);
+    engine.execute("provider_account_save", patch).unwrap();
+    let info = engine.execute("go_catalog", json!({})).unwrap();
+    let mut catalog = crate::pricing::go_catalog::defaults();
+    for (id, limit) in [("deepseek-flash", "10"), ("deepseek-v4-pro", "100")] {
+        let m = catalog.models.iter_mut().find(|m| m.id == id).unwrap();
+        m.tiers[0].prices.input = "1".into();
+        m.tiers[0].peak_prices.as_mut().unwrap().input = "1".into();
+        m.tiers[0].monthly_limits.go = Some(limit.into());
+        m.tiers[0].monthly_limits.go_plus = Some(
+            (rust_decimal::Decimal::from_str(limit).unwrap() * rust_decimal::Decimal::TWO)
+                .to_string(),
+        );
+    }
+    engine.execute("save_go_catalog",json!({"catalog":catalog,"expectedRevision":info["revision"],"expectedFileRevision":null})).unwrap();
+    let now = Utc::now().timestamp();
+    {
+        let store = engine.lock().unwrap();
+        let device = store.device_id().unwrap();
+        for (key, model, provider) in [
+            ("flash", "opencode/DeepSeek-V4.1-Flash-high", "opencode-go"),
+            ("pro", "deepseek-v4-pro", "opencode-go"),
+            ("free", "beam-free", "opencode-go"),
+            ("unknown", "missing-model", "opencode-go"),
+            ("write", "deepseek-flash", "opencode-go"),
+            ("unlinked", "deepseek-v4-pro", "other-route"),
+        ] {
+            let mut fact = record(&device, key, "dsh", provider, Some("999"));
+            fact.model = model.into();
+            fact.occurred_at = now - 1;
+            fact.tokens = Tokens {
+                input: 1_000_000,
+                ..Default::default()
+            };
+            if key == "write" {
+                fact.tokens.cache_write = 1;
+            }
+            store.upsert(fact, "fixture").unwrap();
+        }
+        let mut items = load(&store).unwrap();
+        items[0].snapshot = Some(
+            json!({"fetchedAt":now,"data":{"kind":"quota","windows":[{"id":"rolling","resetsAt":now+300,"status":"ok","usedPercent":5},{"id":"weekly","resetsAt":now+300,"status":"ok","usedPercent":5},{"id":"monthly","resetsAt":now+300,"status":"ok","usedPercent":5}]}}),
+        );
+        store.set_meta(META, &items).unwrap();
+    }
+    let before = engine.lock().unwrap().local_records().unwrap();
+    let version = engine.lock().unwrap().usage_version().unwrap();
+    let pending = engine.lock().unwrap().pending().unwrap();
+    let usage = engine
+        .execute("go_usage_estimate", json!({"id":id,"plan":"go"}))
+        .unwrap();
+    for (i, percent) in [(0, "55"), (1, "22"), (2, "11")] {
+        let w = &usage["windows"][i];
+        assert_eq!(w["total"]["percent"], percent);
+        assert_eq!(w["total"]["requests"], 5);
+        assert_eq!(w["total"]["unmatchedRequests"], 2);
+        assert_eq!(w["total"]["costUsd"], "2");
+        assert_eq!(w["basis"], "provider_window");
+    }
+    assert!(usage["windows"][2]["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|v| v["model"] == "opencode/DeepSeek-V4.1-Flash-high"
+            && v["pricingModel"] == "deepseek-flash"));
+    let plus = engine
+        .execute("go_usage_estimate", json!({"id":id,"plan":"goPlus"}))
+        .unwrap();
+    assert_eq!(plus["windows"][2]["total"]["percent"], "5.5");
+    let simulated=engine.execute("go_simulate",json!({"model":"deepseek-v4.1-flash","plan":"go","requests":2,"tokens":{"input":1_000_000,"output":0,"cacheRead":0,"cacheWrite":0},"period":"peak"})).unwrap();
+    assert_eq!(simulated["percent"]["monthly"], "20");
+    assert_eq!(simulated["percent"]["rolling"], "100");
+    assert_eq!(engine.lock().unwrap().local_records().unwrap(), before);
+    assert_eq!(engine.lock().unwrap().usage_version().unwrap(), version);
+    assert_eq!(engine.lock().unwrap().pending().unwrap(), pending);
+}
