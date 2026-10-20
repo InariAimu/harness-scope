@@ -107,10 +107,10 @@ body,
   );
 }
 /* Keep a translucent surface above the adjustable veil. */
-[data-interface-skin="deepseek"] .scope-main :is(.scope-card, .bg-surface) {
+[data-interface-skin="deepseek"] .scope-main :is(.scope-card, .bg-surface, table) {
   background-color: color-mix(in srgb, var(--bg-card) 40%, transparent);
 }
-[data-interface-skin="deepseek"] .scope-main :is(table, pre, .cm-editor) {
+[data-interface-skin="deepseek"] .scope-main :is(pre, .cm-editor) {
   background-color: var(--bg-card);
 }
 @media (max-width: 900px) {
