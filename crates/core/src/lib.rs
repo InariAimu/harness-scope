@@ -14,5 +14,6 @@ mod sessions;
 pub mod store;
 pub mod sync;
 mod timing;
+mod upgrade;
 
 pub use engine::Engine;

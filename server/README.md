@@ -85,6 +85,16 @@ cargo run --locked -p harness-scope-service --example sync_probe -- --url https:
 
 ## 备份与恢复
 
+### v4 升级及空间回收
+
+数据库和同步协议均为 v4。先部署服务器，再升级每台客户端；v4 计时来自来源设备，服务器无法凭 Token 数反推历史耗时。客户端首次启动自动补传已有计时，保留用量和冻结费用。
+
+变更表只保存每条记录最新的 `(seq, device_id, id)`，关联当前记录生成下载页，不再保存每次修订的完整 JSON。旧游标仍可追赶最新修订，新设备从零下载全部当前记录和删除墓碑，不需重置设备身份或重新上传全部事实。只有实际接受的新修订才推进序号，重试和低修订记录不产生日志。墓碑及每条记录的最新位置不能按日期直接删除。
+
+首次升级先通过 SQLite backup 生成一致性快照，在独立副本运行新二进制 `--db COPY --compact`，再以 `python3 server/deploy/audit_v4.py BEFORE COPY` 验证身份、用量、费用、源路径及序号。正式切换时暂停服务和备份计时器，重新生成最终快照，运行 `--db /var/lib/harness-scope/server.db --compact` 并审计，成功后启动新版本。`--compact` 执行迁移、VACUUM 和 WAL 截断后退出，不启动监听，只能在该数据库的服务停止时执行。失败时保留原快照与旧二进制；回滚需恢复对应版本的数据快照。
+
+上传使用 gzip，下载按 Accept-Encoding 协商 gzip，仍接收未压缩请求。5 MiB 请求上限作用于解压后内容；Nginx 保留传输体限制并透传编码。
+
 `harness-scope-backup.timer` 每天运行一次，随机延迟至多 30 分钟，保留最近 14 份快照。使用 Python `sqlite3.Connection.backup`，验证 `quick_check` 后才发布备份文件。手动验证：
 
 ```bash
@@ -92,7 +102,7 @@ systemctl start harness-scope-backup.service
 journalctl -u harness-scope-backup.service -n 10 --no-pager
 ```
 
-目前备份只在本服务器，异机备份需要另行配置目的地。恢复旧快照前应停止主服务和备份任务，完整保留原数据库及 WAL/SHM 文件；恢复完成后更新 `meta.server_instance_id` 为 JSON 字符串编码的新 UUID，再启动服务，促使所有设备重建镜像并重新上传本机记录。只有仍持有原始本机数据的设备上线后，才能补齐其记录。当前变化日志没有裁剪机制。
+目前备份只在本服务器，异机备份需要另行配置目的地。恢复旧快照前应停止主服务和备份任务，完整保留原数据库及 WAL/SHM 文件；恢复完成后更新 `meta.server_instance_id` 为 JSON 字符串编码的新 UUID，再启动服务，促使所有设备重建镜像并重新上传本机记录。只有仍持有原始本机数据的设备上线后，才能补齐其记录。历史变更在 v4 中自动合并为每条记录的最新位置。
 
 ## 日常检查
 

@@ -13,11 +13,22 @@ struct Args {
     token: Option<String>,
     #[arg(long)]
     local: bool,
+    /// Migrate and reclaim obsolete SQLite pages while the service is stopped, then exit.
+    #[arg(long)]
+    compact: bool,
 }
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let engine = Arc::new(Engine::open(&args.db)?);
+    if args.compact {
+        engine
+            .lock()?
+            .conn
+            .execute_batch("VACUUM; PRAGMA wal_checkpoint(TRUNCATE);")?;
+        println!("Database migration and compaction complete");
+        return Ok(());
+    }
     let router = if args.local {
         let address: std::net::SocketAddr = args.bind.parse()?;
         anyhow::ensure!(

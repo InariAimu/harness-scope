@@ -4,7 +4,44 @@ use rusqlite::{params, OptionalExtension};
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
+pub(crate) fn gzip_json(value: &impl serde::Serialize) -> Result<Vec<u8>> {
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    serde_json::to_writer(&mut encoder, value)?;
+    Ok(encoder.finish()?)
+}
+
 pub fn validate_record(r: &UsageRecord) -> Result<()> {
+    if let Some(t) = &r.timing {
+        let sources: (&[&str], &str) = match r.harness.as_str() {
+            "codex" => (
+                &[
+                    "codex_token_usage_record",
+                    "codex_model_output_before_tool",
+                    "codex_token_count",
+                ],
+                "codex_item_started_at_ms",
+            ),
+            "opencode" => (
+                &["opencode_time_streamed", "opencode_time_completed"],
+                "opencode_content_start",
+            ),
+            "dsh" => (&["dsh_step_message"], "dsh_stream_delta"),
+            _ => anyhow::bail!("Unsupported timing harness"),
+        };
+        anyhow::ensure!(
+            r.grain == "event"
+                && r.record_source == "session"
+                && (100..=3_600_000).contains(&t.duration_ms)
+                && t.first_token_ms
+                    .is_none_or(|v| (0..=t.duration_ms).contains(&v))
+                && sources.0.contains(&t.duration_source.as_str())
+                && t.first_token_ms.is_some() == t.first_token_source.is_some()
+                && t.first_token_source
+                    .as_deref()
+                    .is_none_or(|v| v == sources.1),
+            "Invalid timing metadata"
+        );
+    }
     if let Some(m) = &r.request_metadata {
         anyhow::ensure!(
             r.harness == "codex"
@@ -125,7 +162,7 @@ pub fn validate_record(r: &UsageRecord) -> Result<()> {
 }
 pub fn push(store: &Store, request: PushRequest) -> Result<PushResponse> {
     anyhow::ensure!(
-        [1, 2, 3].contains(&request.protocol_version),
+        [1, 2, 3, 4].contains(&request.protocol_version),
         "Unsupported protocolVersion"
     );
     anyhow::ensure!(
@@ -139,6 +176,10 @@ pub fn push(store: &Store, request: PushRequest) -> Result<PushResponse> {
         );
         validate_record(r)?;
         anyhow::ensure!(
+            request.protocol_version >= 4 || r.timing.is_none(),
+            "Timing requires protocol v4"
+        );
+        anyhow::ensure!(
             request.protocol_version >= 3 || r.request_metadata.is_none(),
             "Request metadata requires protocol v3"
         );
@@ -149,12 +190,13 @@ pub fn push(store: &Store, request: PushRequest) -> Result<PushResponse> {
         for r in request.records{
             let previous:Option<String>=store.conn.query_row("SELECT payload FROM server_records WHERE device_id=?1 AND id=?2",params![r.device_id,r.id],|row|row.get(0)).optional()?;
             let old:Option<UsageRecord>=previous.map(|s|serde_json::from_str(&s)).transpose()?;
+            anyhow::ensure!(request.protocol_version >= 4 || old.as_ref().is_none_or(|r|r.timing.is_none()), "Upgrade client to protocol v4 before editing records with timing");
             anyhow::ensure!(request.protocol_version >= 3 || old.as_ref().is_none_or(|r|r.request_metadata.is_none()), "Upgrade client to protocol v3 before editing records with request metadata");
             if let Some(old)=&old{if old.revision==r.revision{anyhow::ensure!(*old==r,"Revision conflict for {}",r.id)}}
             if old.as_ref().is_none_or(|old|r.revision>old.revision){
                 let payload=serde_json::to_string(&r)?;
                 store.conn.execute("INSERT INTO server_records(device_id,id,revision,payload) VALUES(?1,?2,?3,?4) ON CONFLICT(device_id,id) DO UPDATE SET revision=excluded.revision,payload=excluded.payload",params![r.device_id,r.id,r.revision,payload])?;
-                store.conn.execute("INSERT INTO server_changes(device_id,id,payload) VALUES(?1,?2,?3)",params![r.device_id,r.id,payload])?;
+                store.conn.execute("INSERT OR REPLACE INTO server_changes(device_id,id) VALUES(?1,?2)",params![r.device_id,r.id])?;
             }
             accepted.push(Ack{id:r.id,revision:r.revision});
         }
@@ -168,7 +210,7 @@ pub fn changes(store: &Store, after: i64, limit: usize) -> Result<ChangesRespons
     );
     let mut stmt = store
         .conn
-        .prepare("SELECT seq,payload FROM server_changes WHERE seq>?1 ORDER BY seq LIMIT ?2")?;
+        .prepare("SELECT c.seq,r.payload FROM server_changes c JOIN server_records r ON r.device_id=c.device_id AND r.id=c.id WHERE c.seq>?1 ORDER BY c.seq LIMIT ?2")?;
     let rows = stmt
         .query_map(params![after, limit + 1], |r| {
             Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
@@ -208,7 +250,8 @@ pub fn apply_changes(store: &Store, response: &ChangesResponse) -> Result<()> {
         for change in &response.changes{
             let r=&change.record;validate_record(r)?;
             if r.device_id==own{continue}
-            store.conn.execute("INSERT INTO remote_records(device_id,id,revision,payload) VALUES(?1,?2,?3,?4) ON CONFLICT(device_id,id) DO UPDATE SET revision=excluded.revision,payload=excluded.payload WHERE excluded.revision>remote_records.revision",params![r.device_id,r.id,r.revision,serde_json::to_string(r)?])?;
+            let changed=store.conn.execute("INSERT INTO remote_records(device_id,id,revision,payload) VALUES(?1,?2,?3,?4) ON CONFLICT(device_id,id) DO UPDATE SET revision=excluded.revision,payload=excluded.payload WHERE excluded.revision>remote_records.revision",params![r.device_id,r.id,r.revision,serde_json::to_string(r)?])?;
+            if changed>0 { store.save_record_timing(&r.device_id,&r.id,r.timing.as_ref())?; }
         }
         store.set_meta("download_cursor",&response.next_cursor)?;
         store.set_meta("remote_instance_id",&response.server_instance_id)?;

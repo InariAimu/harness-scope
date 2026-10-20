@@ -237,7 +237,7 @@ fn backfill_preserves_cost_and_tokens_and_is_transactional() {
     let after = s.local_records().unwrap().remove(0);
     assert_eq!(before, after); // timing does not rewrite price snapshots, counters or revision
     assert_eq!(s.timings().unwrap().len(), 1);
-    assert!(!serde_json::to_string(&s.pending().unwrap())
+    assert!(serde_json::to_string(&s.pending().unwrap())
         .unwrap()
         .contains("durationMs"));
     let failed: anyhow::Result<()> = s.transaction(|| {
@@ -264,6 +264,7 @@ fn stats_use_weighted_speed_median_filters_and_device_identity() {
         ("missing", 999, 0, 0),
     ] {
         let record = UsageRecord {
+            timing: None,
             request_metadata: None,
             provider: None,
             device_id: device.clone(),
@@ -379,6 +380,7 @@ fn dsh_decode_speed_is_consistent_in_details_and_mixed_harness_statistics() {
         ("claude", "claude", 300, 0, None, "unknown"),
     ] {
         let record = UsageRecord {
+            timing: None,
             request_metadata: None,
             provider: None,
             device_id: device.clone(),

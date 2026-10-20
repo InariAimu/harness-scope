@@ -17,6 +17,7 @@ fn values(s: &str) -> Vec<Value> {
 }
 fn record(id: &str) -> UsageRecord {
     UsageRecord {
+        timing: None,
         request_metadata: None,
         provider: None,
         device_id: "test-device".into(),
@@ -282,11 +283,11 @@ fn upload_retries_stale_revisions_and_conflicts_are_atomic() {
     newer.tokens.output = 30;
     sync::push(&s, request(vec![newer.clone()])).unwrap();
     sync::push(&s, request(vec![r.clone()])).unwrap();
-    assert_eq!(sync::changes(&s, 0, 500).unwrap().changes.len(), 2);
+    assert_eq!(sync::changes(&s, 0, 500).unwrap().changes.len(), 1);
     let mut bad = newer;
     bad.tokens.output = 40;
     assert!(sync::push(&s, request(vec![record("other"), bad])).is_err());
-    assert_eq!(sync::changes(&s, 0, 500).unwrap().changes.len(), 2);
+    assert_eq!(sync::changes(&s, 0, 500).unwrap().changes.len(), 1);
 }
 #[test]
 fn forged_device_and_private_fields_are_rejected() {

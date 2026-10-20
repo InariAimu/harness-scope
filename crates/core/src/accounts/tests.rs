@@ -174,6 +174,7 @@ fn record(
     cost: Option<&str>,
 ) -> UsageRecord {
     UsageRecord {
+        timing: None,
         request_metadata: None,
         device_id: device.into(),
         id: id.into(),

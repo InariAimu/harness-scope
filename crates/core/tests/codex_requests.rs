@@ -220,7 +220,7 @@ fn parser_upgrade_backfills_same_ids_keeps_frozen_costs_and_syncs_metadata_once(
     let response = sync::push(
         &server,
         PushRequest {
-            protocol_version: 3,
+            protocol_version: 4,
             device_id: device.clone(),
             device_name: "fixture".into(),
             records: pending.clone(),
@@ -232,7 +232,7 @@ fn parser_upgrade_backfills_same_ids_keeps_frozen_costs_and_syncs_metadata_once(
     sync::push(
         &server,
         PushRequest {
-            protocol_version: 3,
+            protocol_version: 4,
             device_id: device,
             device_name: "fixture".into(),
             records: pending,

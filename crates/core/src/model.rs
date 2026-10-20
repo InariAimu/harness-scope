@@ -117,6 +117,8 @@ impl Default for Cost {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UsageRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timing: Option<UsageTiming>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_metadata: Option<RequestMetadata>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
@@ -194,9 +196,9 @@ impl RequestMetadata {
     }
 }
 
-/// Local log estimates, deliberately separate from the v1 usage sync allowlist.
+/// Source-device log estimates carried by protocol v4, never network measurements.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UsageTiming {
     pub duration_ms: i64,
     pub first_token_ms: Option<i64>,

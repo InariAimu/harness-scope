@@ -29,14 +29,15 @@ impl Store {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         anyhow::ensure!(
-            version <= 3,
+            version <= 4,
             "Database schema is newer than this application"
         );
         conn.execute_batch("BEGIN IMMEDIATE")?;
         let migration = (|| -> Result<()> {
             conn.execute_batch(include_str!("schema.sql"))?;
             crate::query_store::install(&conn, version)?;
-            conn.execute_batch("PRAGMA user_version=3;")?;
+            crate::upgrade::install(&conn, version)?;
+            conn.execute_batch("PRAGMA user_version=4;")?;
             Ok(())
         })();
         if let Err(error) = migration {
@@ -112,6 +113,7 @@ impl Store {
         let payload = serde_json::to_string(&record)?;
         self.conn.execute("INSERT INTO records(device_id,id,revision,payload,source_path) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(device_id,id) DO UPDATE SET revision=excluded.revision,payload=excluded.payload,source_path=excluded.source_path",params![record.device_id,record.id,record.revision,payload,source_path])?;
         self.conn.execute("INSERT INTO outbox(id,revision,payload) VALUES(?1,?2,?3) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,payload=excluded.payload",params![record.id,record.revision,payload])?;
+        self.save_record_timing(&record.device_id, &record.id, record.timing.as_ref())?;
         Ok(true)
     }
     pub fn local_records(&self) -> Result<Vec<UsageRecord>> {
@@ -119,6 +121,14 @@ impl Store {
     }
     pub fn save_timing(&self, id: &str, timing: Option<&UsageTiming>) -> Result<()> {
         let device = self.device_id()?;
+        self.save_record_timing(&device, id, timing)
+    }
+    pub(crate) fn save_record_timing(
+        &self,
+        device: &str,
+        id: &str,
+        timing: Option<&UsageTiming>,
+    ) -> Result<()> {
         if let Some(timing) = timing {
             self.conn.execute("INSERT INTO record_timings(device_id,id,payload) VALUES(?1,?2,?3) ON CONFLICT(device_id,id) DO UPDATE SET payload=excluded.payload WHERE record_timings.payload<>excluded.payload", params![device,id,serde_json::to_string(timing)?])?;
         } else {

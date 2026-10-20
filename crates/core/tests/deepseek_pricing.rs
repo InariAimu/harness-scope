@@ -43,6 +43,7 @@ fn parsed(model: &str, time: &str) -> ParsedUsage {
 }
 fn record(e: &Engine, p: &ParsedUsage, cost: Cost) -> UsageRecord {
     UsageRecord {
+        timing: None,
         request_metadata: None,
         provider: p.provider.clone(),
         device_id: e.lock().unwrap().device_id().unwrap(),

@@ -143,6 +143,10 @@ impl Engine {
                 }
                 if old.server_url != c.server_url {
                     s.transaction(|| {
+                        s.conn.execute(
+                            "DELETE FROM record_timings WHERE device_id<>?1",
+                            [s.device_id()?],
+                        )?;
                         s.conn.execute("DELETE FROM remote_records", [])?;
                         s.set_meta("download_cursor", &0i64)?;
                         s.set_meta("remote_instance_id", &String::new())?;
@@ -685,6 +689,7 @@ impl Engine {
                     }
                     s.save_timing(&parsed.id, parsed.timing.as_ref())?;
                     let r=UsageRecord{
+        timing: parsed.timing.clone(),
         request_metadata: parsed.request_metadata,provider:parsed.provider,device_id:device.clone(),id:parsed.id,harness:harness.clone(),parser_version:descriptor.parser_version.into(),session_id:Some(parsed.session_id),native_event_id:Some(parsed.native_event_id),occurred_at:parsed.occurred_at,model:parsed.model,grain:"event".into(),count:1,tokens:parsed.tokens,cost,record_source:"session".into(),revision:1,deleted:false,status_code:None,legacy_date:None,legacy_timezone:None};
                     sync::validate_record(&r)?;
                     if s.upsert(r,&key)?{if old.is_some(){report.updated+=1}else{report.imported+=1}}else{report.skipped+=1}
@@ -968,11 +973,11 @@ impl Engine {
             .send()?
             .error_for_status()?
             .json()?;
-        anyhow::ensure!(health["protocolVersion"].as_u64().is_some_and(|v| v >= 3), "Sync server must be upgraded to protocol v3 to preserve request speed and reasoning effort; pending records have been retained");
+        anyhow::ensure!(health["protocolVersion"].as_u64().is_some_and(|v| v >= 4), "Sync server must be upgraded to protocol v4 to preserve timing and request metadata; pending records have been retained");
         let mut cursor = self.lock()?.meta::<i64>("download_cursor")?.unwrap_or(0);
         let mut first: ChangesResponse = client
             .get(format!("{base}/v1/changes"))
-            .query(&[("after", cursor), ("limit", 500), ("protocolVersion", 3)])
+            .query(&[("after", cursor), ("limit", 500), ("protocolVersion", 4)])
             .bearer_auth(&config.server_token)
             .send()?
             .error_for_status()?
@@ -984,6 +989,10 @@ impl Engine {
         if instance != first.server_instance_id {
             let s = self.lock()?;
             s.transaction(|| {
+                s.conn.execute(
+                    "DELETE FROM record_timings WHERE device_id<>?1",
+                    [s.device_id()?],
+                )?;
                 s.conn.execute("DELETE FROM remote_records", [])?;
                 s.set_meta("download_cursor", &0i64)?;
                 s.set_meta("remote_instance_id", &first.server_instance_id)?;
@@ -993,7 +1002,7 @@ impl Engine {
             drop(s);
             first = client
                 .get(format!("{base}/v1/changes"))
-                .query(&[("after", cursor), ("limit", 500), ("protocolVersion", 3)])
+                .query(&[("after", cursor), ("limit", 500), ("protocolVersion", 4)])
                 .bearer_auth(&config.server_token)
                 .send()?
                 .error_for_status()?
@@ -1007,15 +1016,18 @@ impl Engine {
                 break;
             }
             let expected: HashSet<_> = records.iter().map(|r| (r.id.clone(), r.revision)).collect();
+            let request = PushRequest {
+                protocol_version: 4,
+                device_id: device.clone(),
+                device_name: config.device_name.clone(),
+                records,
+            };
             let response: PushResponse = client
                 .post(format!("{base}/v1/push"))
                 .bearer_auth(&config.server_token)
-                .json(&PushRequest {
-                    protocol_version: 3,
-                    device_id: device.clone(),
-                    device_name: config.device_name.clone(),
-                    records,
-                })
+                .header("Content-Type", "application/json")
+                .header("Content-Encoding", "gzip")
+                .body(sync::gzip_json(&request)?)
                 .send()?
                 .error_for_status()?
                 .json()?;
@@ -1040,7 +1052,7 @@ impl Engine {
             cursor = self.lock()?.meta::<i64>("download_cursor")?.unwrap_or(0);
             let response: ChangesResponse = client
                 .get(format!("{base}/v1/changes"))
-                .query(&[("after", cursor), ("limit", 500), ("protocolVersion", 3)])
+                .query(&[("after", cursor), ("limit", 500), ("protocolVersion", 4)])
                 .bearer_auth(&config.server_token)
                 .send()?
                 .error_for_status()?

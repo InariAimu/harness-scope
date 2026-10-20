@@ -8,6 +8,7 @@ use harness_scope_core::{model::PushRequest, sync, Engine};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
+use tower_http::{compression::CompressionLayer, decompression::RequestDecompressionLayer};
 
 #[derive(Clone)]
 struct ServerState {
@@ -44,12 +45,14 @@ pub fn server_router(engine: Arc<Engine>, token: String) -> anyhow::Result<Route
         .route(
             "/health",
             get(|| async {
-                Json(json!({"status":"ok","protocolVersion":3,"supportedProtocolVersions":[1,2,3]}))
+                Json(json!({"status":"ok","protocolVersion":4,"supportedProtocolVersions":[1,2,3,4],"requestEncodings":["identity","gzip"]}))
             }),
         )
         .route("/v1/push", post(push))
         .route("/v1/changes", get(changes))
         .layer(DefaultBodyLimit::max(5 * 1024 * 1024))
+        .layer(RequestDecompressionLayer::new().gzip(true))
+        .layer(CompressionLayer::new().gzip(true))
         .with_state(ServerState {
             engine,
             token: Arc::new(token),
@@ -95,7 +98,7 @@ async fn changes(
         let store = state.engine.lock()?;
         let response = sync::changes(&store, query.after, query.limit)?;
         anyhow::ensure!(
-            [1, 2, 3].contains(&query.protocol_version),
+            [1, 2, 3, 4].contains(&query.protocol_version),
             "Unsupported protocolVersion"
         );
         anyhow::ensure!(
@@ -105,6 +108,11 @@ async fn changes(
                     .iter()
                     .all(|c| c.record.request_metadata.is_none()),
             "Upgrade client to protocol v3 to read request metadata"
+        );
+        anyhow::ensure!(
+            query.protocol_version >= 4
+                || response.changes.iter().all(|c| c.record.timing.is_none()),
+            "Upgrade client to protocol v4 to read timing metadata"
         );
         serde_json::to_value(response).map_err(Into::into)
     })

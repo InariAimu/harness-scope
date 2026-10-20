@@ -42,7 +42,42 @@ fn main() -> Result<()> {
         }
         let result = engine.sync()?;
         ensure!(result["uploaded"] == 0);
-        println!("{}", json!({"url":args.url,"readOnly":true,"sync":result}));
+        let store = engine.lock()?;
+        let records = store.records("all")?;
+        let timings = store.timings()?;
+        let timed = records
+            .iter()
+            .filter(|r| r.timing.is_some())
+            .collect::<Vec<_>>();
+        for record in &timed {
+            ensure!(
+                timings.get(&(record.device_id.clone(), record.id.clone()))
+                    == record.timing.as_ref(),
+                "Received timing differs from query projection"
+            );
+        }
+        let sample = timed.first().map(|r| {
+            (
+                format!("{}|{}", r.device_id, r.id),
+                r.timing.clone().unwrap(),
+            )
+        });
+        drop(store);
+        if let Some((id, timing)) = sample {
+            let detail = engine.execute(
+                "usage_query",
+                json!({"kind":"detail","scope":"all","requestId":id}),
+            )?;
+            ensure!(
+                detail["durationMs"] == timing.duration_ms
+                    && detail["firstTokenMs"] == json!(timing.first_token_ms),
+                "Remote timing detail differs"
+            );
+        }
+        println!(
+            "{}",
+            json!({"url":args.url,"readOnly":true,"sync":result,"timingSamples":timed.len(),"timingProjectionVerified":true})
+        );
         return Ok(());
     }
     let mut clients = Vec::new();
@@ -139,7 +174,7 @@ fn main() -> Result<()> {
         let response: ChangesResponse = http
             .get(format!("{}/v1/changes", args.url.trim_end_matches('/')))
             .bearer_auth(&token)
-            .query(&[("after", cursor), ("limit", 1)])
+            .query(&[("after", cursor), ("limit", 1), ("protocolVersion", 4)])
             .send()?
             .error_for_status()?
             .json()?;
@@ -147,12 +182,12 @@ fn main() -> Result<()> {
         ensure!(response.next_cursor > cursor);
         cursor = response.next_cursor;
         pages += 1;
-        ensure!(pages <= 4, "Probe requires an isolated test database");
+        ensure!(pages <= 3, "Probe requires an isolated test database");
         if !response.has_more {
             break;
         }
     }
-    ensure!(pages == 4, "Duplicate uploads appended extra changes");
+    ensure!(pages == 3, "Change positions did not coalesce by record");
     let device_ids = clients
         .iter()
         .map(|e| e.lock().and_then(|s| s.device_id()))

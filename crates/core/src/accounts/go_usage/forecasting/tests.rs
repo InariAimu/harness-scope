@@ -50,6 +50,7 @@ fn add(engine: &Engine, id: &str, model: &str, time: i64, input: u64) {
     store
         .upsert(
             UsageRecord {
+                timing: None,
                 request_metadata: None,
                 device_id: store.device_id().unwrap(),
                 id: id.into(),

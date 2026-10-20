@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS usage_read_cache(path TEXT PRIMARY KEY,payload TEXT N
 CREATE TABLE IF NOT EXISTS usage_contexts(id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,payload TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS migration_sources(id TEXT PRIMARY KEY,cutover INTEGER NOT NULL,timezone TEXT NOT NULL,manifest TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS server_records(device_id TEXT NOT NULL,id TEXT NOT NULL,revision INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(device_id,id));
-CREATE TABLE IF NOT EXISTS server_changes(seq INTEGER PRIMARY KEY AUTOINCREMENT,device_id TEXT NOT NULL,id TEXT NOT NULL,payload TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS server_changes(seq INTEGER PRIMARY KEY AUTOINCREMENT,device_id TEXT NOT NULL,id TEXT NOT NULL,UNIQUE(device_id,id));
 CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY,name TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS usage_index(origin TEXT NOT NULL,device_id TEXT NOT NULL,id TEXT NOT NULL,harness TEXT NOT NULL,provider TEXT,model TEXT NOT NULL,occurred_at INTEGER NOT NULL,grain TEXT NOT NULL,request_count INTEGER NOT NULL,input_tokens INTEGER NOT NULL,output_tokens INTEGER NOT NULL,cache_read INTEGER NOT NULL,cache_write INTEGER NOT NULL,amount_usd TEXT,status_code INTEGER,record_source TEXT NOT NULL,legacy_date TEXT,legacy_timezone TEXT,cost_converted INTEGER NOT NULL,billing_basis TEXT,session_id TEXT,cost_method TEXT NOT NULL,deleted INTEGER NOT NULL,PRIMARY KEY(origin,device_id,id));
 CREATE INDEX IF NOT EXISTS usage_time ON usage_index(occurred_at DESC,id) WHERE deleted=0;
