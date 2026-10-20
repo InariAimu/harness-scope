@@ -10,7 +10,7 @@ impl Vault {
     pub fn new(database: &Path) -> Self {
         Self(database.with_extension("provider-keys"))
     }
-    fn path(&self, id: &str) -> Result<PathBuf> {
+    pub(crate) fn path(&self, id: &str) -> Result<PathBuf> {
         uuid::Uuid::parse_str(id).context("Invalid provider account ID")?;
         Ok(self.0.join(id))
     }

@@ -853,7 +853,7 @@ impl Engine {
             sessions.extend(source_sessions);
         }
         self.reader.retain_metadata(&keys);
-        sessions.sort_by(|a, b| b.last_active_at.cmp(&a.last_active_at));
+        sessions.sort_by_key(|session| std::cmp::Reverse(session.last_active_at));
         Ok(sessions)
     }
     fn session_path(&self, args: &Value) -> Result<PathBuf> {
