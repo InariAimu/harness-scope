@@ -91,13 +91,13 @@ it("labels the whole session window as an estimate and applies its sample thresh
   ).toBeNull();
 });
 
-it("uses the DSH output window and admits valid short replies without changing routed measurements", () => {
+it("uses the DSH output window with conservative sample thresholds", () => {
   const estimatedSpeed: SessionSpeedEstimate = {
     basis: "decode",
     durationMs: 2482,
     eligible: true,
-    minOutputTokens: 100,
-    minDurationMs: 100,
+    minOutputTokens: 200,
+    minDurationMs: 1000,
   };
   const row = {
     dataSource: "harness_scope",
@@ -114,14 +114,28 @@ it("uses the DSH output window and admits valid short replies without changing r
       outputTokens: 122,
       estimatedSpeed: { ...estimatedSpeed, durationMs: 494 },
     }),
-  ).toBeCloseTo(246.9636, 3);
+  ).toBeNull();
   expect(
     getEstimatedTokensPerSecond({
       ...row,
-      outputTokens: 100,
-      estimatedSpeed: { ...estimatedSpeed, durationMs: 100 },
+      outputTokens: 200,
+      estimatedSpeed: { ...estimatedSpeed, durationMs: 1000 },
     }),
-  ).toBe(1000);
+  ).toBe(200);
+  for (const [outputTokens, durationMs] of [
+    [124, 160], // Observed 775 tok/s burst.
+    [1311, 778], // Token count alone cannot exclude buffered delivery.
+    [199, 2000],
+    [200, 999],
+  ]) {
+    expect(
+      getEstimatedTokensPerSecond({
+        ...row,
+        outputTokens,
+        estimatedSpeed: { ...estimatedSpeed, durationMs },
+      }),
+    ).toBeNull();
+  }
 });
 
 it("never substitutes total latency for an excluded or invalid output window", () => {
@@ -133,8 +147,8 @@ it("never substitutes total latency for an excluded or invalid output window", (
       basis: "decode" as const,
       durationMs: 29,
       eligible: false,
-      minOutputTokens: 100,
-      minDurationMs: 100,
+      minOutputTokens: 200,
+      minDurationMs: 1000,
     },
   };
   expect(getEstimatedTokensPerSecond(row)).toBeNull();
@@ -147,13 +161,13 @@ it("never substitutes total latency for an excluded or invalid output window", (
   expect(
     getEstimatedTokensPerSecond({
       ...row,
-      estimatedSpeed: { ...row.estimatedSpeed, eligible: true, durationMs: 99 },
+      estimatedSpeed: { ...row.estimatedSpeed, eligible: true, durationMs: 999 },
     }),
   ).toBeNull();
   expect(
     getEstimatedTokensPerSecond({
       ...row,
-      outputTokens: 99,
+      outputTokens: 199,
       estimatedSpeed: {
         ...row.estimatedSpeed,
         eligible: true,

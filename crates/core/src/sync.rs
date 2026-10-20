@@ -5,6 +5,26 @@ use rust_decimal::Decimal;
 use std::str::FromStr;
 
 pub fn validate_record(r: &UsageRecord) -> Result<()> {
+    if let Some(m) = &r.request_metadata {
+        anyhow::ensure!(
+            r.harness == "codex"
+                && r.grain == "event"
+                && m.service_tier
+                    .as_deref()
+                    .is_none_or(RequestMetadata::valid_tier)
+                && m.reasoning_effort
+                    .as_deref()
+                    .is_none_or(RequestMetadata::valid_effort)
+                && m.service_tier.is_some() == m.service_tier_source.is_some()
+                && m.service_tier_source.as_deref().is_none_or(|s| [
+                    "thread_settings",
+                    "turn_context"
+                ]
+                .contains(&s))
+                && *m != RequestMetadata::default(),
+            "Invalid request metadata"
+        );
+    }
     anyhow::ensure!(
         r.provider.as_deref().is_none_or(crate::providers::valid),
         "Invalid provider ID"
@@ -105,7 +125,7 @@ pub fn validate_record(r: &UsageRecord) -> Result<()> {
 }
 pub fn push(store: &Store, request: PushRequest) -> Result<PushResponse> {
     anyhow::ensure!(
-        [1, 2].contains(&request.protocol_version),
+        [1, 2, 3].contains(&request.protocol_version),
         "Unsupported protocolVersion"
     );
     anyhow::ensure!(
@@ -117,7 +137,11 @@ pub fn push(store: &Store, request: PushRequest) -> Result<PushResponse> {
             r.device_id == request.device_id,
             "Record deviceId differs from batch"
         );
-        validate_record(r)?
+        validate_record(r)?;
+        anyhow::ensure!(
+            request.protocol_version >= 3 || r.request_metadata.is_none(),
+            "Request metadata requires protocol v3"
+        );
     }
     store.transaction(||{
         store.conn.execute("INSERT INTO devices(id,name) VALUES(?1,?2) ON CONFLICT(id) DO UPDATE SET name=excluded.name",params![request.device_id,request.device_name])?;
@@ -125,6 +149,7 @@ pub fn push(store: &Store, request: PushRequest) -> Result<PushResponse> {
         for r in request.records{
             let previous:Option<String>=store.conn.query_row("SELECT payload FROM server_records WHERE device_id=?1 AND id=?2",params![r.device_id,r.id],|row|row.get(0)).optional()?;
             let old:Option<UsageRecord>=previous.map(|s|serde_json::from_str(&s)).transpose()?;
+            anyhow::ensure!(request.protocol_version >= 3 || old.as_ref().is_none_or(|r|r.request_metadata.is_none()), "Upgrade client to protocol v3 before editing records with request metadata");
             if let Some(old)=&old{if old.revision==r.revision{anyhow::ensure!(*old==r,"Revision conflict for {}",r.id)}}
             if old.as_ref().is_none_or(|old|r.revision>old.revision){
                 let payload=serde_json::to_string(&r)?;

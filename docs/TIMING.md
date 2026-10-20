@@ -19,7 +19,7 @@ Codex 重复累计快照不切分请求；task_started / turn_aborted 清除未�
 
 | 指标 | 计算与条件 |
 | --- | --- |
-| DSH 输出阶段估算 | 输出 Tokens ÷ ((耗时 − 首字等待) / 1000)；耗时依据为 dsh_step_message、首字依据为 dsh_stream_delta；输出至少 100、输出窗口至少 100 ms |
+| DSH 输出阶段估算 | 输出 Tokens ÷ ((耗时 − 首字等待) / 1000)；耗时依据为 dsh_step_message、首字依据为 dsh_stream_delta；输出至少 200、输出窗口至少 1000 ms |
 | E2E 端到端吞吐估算 | 其他日志或缺少有效流式首字依据的 DSH，输出 Tokens ÷ (估算耗时 / 1000)，包含首字等待；输出至少 200、耗时至少 1000 ms；显示 E2E 标记 |
 | 汇总估算速度 | 同一口径有效样本 Σ输出 ÷ (Σ有效窗口 / 1000)，不平均逐条速度；优先输出阶段样本，无此类有效样本才显示 E2E。两种口径不混算，悬停展示口径及采用／未混入的 E2E 样本数 |
 | 首字 | firstTokenMs / 1000，保留一位小数 |
@@ -27,6 +27,8 @@ Codex 重复累计快照不切分请求；task_started / turn_aborted 清除未�
 | 精确代理速度（预留显示） | 输出至少 100，latencyMs − firstTokenMs 至少 100 ms；本机日志不会填入此统计 |
 
 输出沿用统一 output 维度，包含 reasoning 子集。耗时只接受 100 ms 至 1 h；倒挂、缺失、过短或过长的时间戳不影响用量采集，仅使计时未知。首字必须位于起止区间内。DSH 流输出窗口过短或输出不足时显示未知，不能为了显示速度而改用整段耗时。没有流式首字依据时仍可估算 E2E，小回复不算速度但仍可统计首字。缺失计时的输出不能混入速度分子。
+
+DSH 的客户端流时间反映片段到达，无法保证等同于模型逐 Token 生成。2026-10-20 本机只读核对发现，`opencode-go / deepseek-v4.1-flash` 一次工具调用输出 124 Tokens，总耗时 6491 ms，首片段等待 6331 ms；78 个参数片段集中在余下 160 ms 到达，旧门槛得到 775 tok/s。同批还发现 1311 Tokens / 778 ms 的集中输出，仅提高 Token 门槛仍不足以过滤。现将输出量和输出窗口门槛同时提高到 200 Tokens / 1 s，列表、详情和汇总使用同一查询策略；不截断高速度数值，也不将过短窗口改作 E2E。该过滤减少短样本偏差，保留下来的值仍是客户端接收速度估算，不能排除较长时间的缓冲。
 
 API 的 models/providers 用 estDecodeSpeedOutputTokens、estDecodeSpeedGenerationMs、estDecodeSpeedSampleCount 表示输出阶段样本；estSpeedOutputTokens、estSpeedDurationMs、estSpeedSampleCount 仅表示 E2E 回退样本。另返回 estFirstTokenMedianMs、estFirstTokenSampleCount、timingSampleCount。请求列表与详情包含 timingMethod=estimated、timingSource、firstTokenSource，以及查询时派生的 estimatedSpeed（basis、durationMs、eligible、minOutputTokens、minDurationMs）。前端依后端策略显示，避免按不同门槛重算；兼容旧服务未返回策略时使用原 E2E 估算。未知状态码的成功率显示 `—`。
 

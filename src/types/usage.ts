@@ -9,6 +9,11 @@ export interface TokenUsage {
 }
 
 export interface RequestLog {
+  requestMetadata?: {
+    serviceTier?: string;
+    serviceTierSource?: "thread_settings" | "turn_context";
+    reasoningEffort?: string;
+  } | null;
   nativeProvider?: string | null;
   billingBasis?: "subscription_usage" | "model_reference" | null;
   costConverted?: boolean;

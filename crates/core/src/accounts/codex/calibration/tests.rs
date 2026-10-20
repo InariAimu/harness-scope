@@ -14,6 +14,11 @@ fn fixture() -> (tempfile::TempDir, Engine, Value) {
 }
 fn row(model: &str) -> Row {
     Row {
+        request_metadata: Some(crate::model::RequestMetadata {
+            service_tier: Some("default".into()),
+            service_tier_source: Some("turn_context".into()),
+            reasoning_effort: None,
+        }),
         harness: "codex".into(),
         provider: Some("openai".into()),
         model: model.into(),
@@ -85,6 +90,25 @@ fn mixed_model_charges_calibrate_same_account_percent_and_required_intensity() {
     close(&fast["windows"][0]["requiredIntensity"], "8");
     assert!(e.read_lock().unwrap().local_records().unwrap().is_empty());
     assert!(e.read_lock().unwrap().pending().unwrap().is_empty());
+}
+#[test]
+fn mixed_fast_and_standard_calibration_normalizes_tiers_once_and_unknown_tiers_block_fitting() {
+    let (_d, e, s) = fixture();
+    let sol = row("gpt-6.1-sol");
+    let mut fast = sol.clone();
+    fast.request_metadata.as_mut().unwrap().service_tier = Some("priority".into());
+    let data = compute(&e, &s, &[&sol, &fast], 1);
+    let w = &data["windows"][0];
+    // Equal API costs, 1 + 2.5 quota weights: Standard is 10 / 3.5 pp/h.
+    assert_eq!(w["status"], "ready");
+    close(&w["calibrationFactor"], "0.285714285714285714");
+    close(&w["modelPercentPerHour"], "2.85714285714285714");
+    assert_eq!(w["speedBaseline"], "standard");
+    fast.request_metadata = None;
+    let unknown = compute(&e, &s, &[&sol, &fast], 1);
+    assert_eq!(unknown["windows"][0]["reason"], "unknown_speed_baseline");
+    assert_eq!(unknown["windows"][0]["unknownSpeedRequests"], 1);
+    assert!(unknown["currentWindowTarget"].is_null());
 }
 #[test]
 fn account_switch_reset_and_decrease_never_mix_observations_and_plateaus_keep_idle_time() {

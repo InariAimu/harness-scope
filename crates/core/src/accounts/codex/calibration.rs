@@ -216,6 +216,7 @@ pub(super) fn calculate(
             let mut usd = Decimal::ZERO;
             let mut requests = 0u64;
             let mut unknown = 0u64;
+            let mut unknown_speed = 0u64;
             let mut models = std::collections::BTreeSet::new();
             for row in events
                 .iter()
@@ -228,9 +229,35 @@ pub(super) fn calculate(
                     .map(|m| catalog::resolve(input.catalog, m, input.plan, id, input.mode))
                     .transpose()?
                     .flatten();
+                let speed = row.request_metadata.as_ref().and_then(|s| s.speed());
+                let multiplier = match speed {
+                    Some("standard") => Some(Decimal::ONE),
+                    Some("fast")
+                        if m.is_some_and(|m| {
+                            input
+                                .catalog
+                                .subscription_speed
+                                .fast_model_ids
+                                .contains(&m.id)
+                        }) =>
+                    {
+                        Some(Decimal::from_str(
+                            &input.catalog.subscription_speed.fast_multiplier,
+                        )?)
+                    }
+                    _ => None,
+                };
+                if multiplier.is_none() {
+                    unknown_speed = unknown_speed.saturating_add(row.count);
+                }
                 match cost.zip(capacity) {
                     Some((cost, capacity)) => {
-                        let n = div(cost, Decimal::from_str(&capacity.api_equivalent_usd)?)?;
+                        // Fit a Standard-equivalent coefficient across mixed tiers.
+                        // Applying Fast to a future row then happens exactly once.
+                        let n = mul(
+                            div(cost, Decimal::from_str(&capacity.api_equivalent_usd)?)?,
+                            multiplier.unwrap_or(Decimal::ONE),
+                        )?;
                         normalized = normalized
                             .checked_add(n)
                             .context("Calibration precision exceeded")?;
@@ -246,7 +273,10 @@ pub(super) fn calculate(
             result["unpricedRequests"] = json!(unknown);
             result["localUsd"] = json!(decimal(usd));
             result["modelCount"] = json!(models.len());
+            result["unknownSpeedRequests"] = json!(unknown_speed);
+            result["speedBaseline"] = json!("standard");
             anyhow::ensure!(unknown == 0, "unpriced_calibration");
+            anyhow::ensure!(unknown_speed == 0, "unknown_speed_baseline");
             anyhow::ensure!(
                 requests > 0 && normalized > Decimal::ZERO,
                 "no_local_calibration_usage"

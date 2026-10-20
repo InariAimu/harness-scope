@@ -29,13 +29,14 @@ impl Store {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         anyhow::ensure!(
-            version <= 2,
+            version <= 3,
             "Database schema is newer than this application"
         );
         conn.execute_batch("BEGIN IMMEDIATE")?;
         let migration = (|| -> Result<()> {
             conn.execute_batch(include_str!("schema.sql"))?;
             crate::query_store::install(&conn, version)?;
+            conn.execute_batch("PRAGMA user_version=3;")?;
             Ok(())
         })();
         if let Err(error) = migration {

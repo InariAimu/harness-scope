@@ -1,3 +1,4 @@
+import { OptionSelect } from "@/components/ui/option-select";
 import { useState } from "react";
 import { useHarnessDescriptors } from "@/lib/harnessRegistry";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -141,11 +142,11 @@ export function SessionsPage({ onSettings }: { onSettings: () => void }) {
                 onValueChange={setSearch}
                 clearLabel={l("清除搜索", "Clear search")}
               />
-              <select
+              <OptionSelect
                 aria-label="Session harness"
                 className="scope-select"
                 value={app}
-                onChange={(e) => setApp(e.target.value)}
+                onValueChange={(value) => setApp(value)}
               >
                 <option value="all">{l("全部应用", "All applications")}</option>
                 {harnesses.map((h) => (
@@ -153,16 +154,16 @@ export function SessionsPage({ onSettings }: { onSettings: () => void }) {
                     {h.name}
                   </option>
                 ))}
-              </select>
-              <select
+              </OptionSelect>
+              <OptionSelect
                 aria-label="Session grouping"
                 className="scope-select"
                 value={group}
-                onChange={(e) => setGroup(e.target.value)}
+                onValueChange={(value) => setGroup(value)}
               >
                 <option value="project">{l("按项目分组", "By project")}</option>
                 <option value="time">{l("按时间分组", "By date")}</option>
-              </select>
+              </OptionSelect>
             </div>
             {list.isLoading && <p>{l("读取会话中…", "Loading sessions…")}</p>}
             {list.isError && (

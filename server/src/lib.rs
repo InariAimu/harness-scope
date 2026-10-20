@@ -44,7 +44,7 @@ pub fn server_router(engine: Arc<Engine>, token: String) -> anyhow::Result<Route
         .route(
             "/health",
             get(|| async {
-                Json(json!({"status":"ok","protocolVersion":2,"supportedProtocolVersions":[1,2]}))
+                Json(json!({"status":"ok","protocolVersion":3,"supportedProtocolVersions":[1,2,3]}))
             }),
         )
         .route("/v1/push", post(push))
@@ -72,10 +72,15 @@ async fn push(
 }
 #[derive(Deserialize)]
 struct ChangeQuery {
+    #[serde(default = "default_protocol", rename = "protocolVersion")]
+    protocol_version: u32,
     #[serde(default)]
     after: i64,
     #[serde(default = "default_limit")]
     limit: usize,
+}
+fn default_protocol() -> u32 {
+    1
 }
 fn default_limit() -> usize {
     500
@@ -88,8 +93,20 @@ async fn changes(
     auth(&headers, &state.token)?;
     tokio::task::spawn_blocking(move || {
         let store = state.engine.lock()?;
-        sync::changes(&store, query.after, query.limit)
-            .and_then(|r| serde_json::to_value(r).map_err(Into::into))
+        let response = sync::changes(&store, query.after, query.limit)?;
+        anyhow::ensure!(
+            [1, 2, 3].contains(&query.protocol_version),
+            "Unsupported protocolVersion"
+        );
+        anyhow::ensure!(
+            query.protocol_version >= 3
+                || response
+                    .changes
+                    .iter()
+                    .all(|c| c.record.request_metadata.is_none()),
+            "Upgrade client to protocol v3 to read request metadata"
+        );
+        serde_json::to_value(response).map_err(Into::into)
     })
     .await
     .map_err(error)?

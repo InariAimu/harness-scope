@@ -1,5 +1,35 @@
 use super::*;
 #[test]
+fn speed_rules_keep_subscription_and_credit_multipliers_separate_and_load_old_catalogs() {
+    let mut raw = serde_json::to_value(defaults()).unwrap();
+    raw.as_object_mut().unwrap().remove("subscriptionSpeed");
+    let old: Catalog = serde_json::from_value(raw).unwrap();
+    validate(&old).unwrap();
+    assert_eq!(old.subscription_speed.fast_multiplier, "2.5");
+    assert_eq!(
+        old.subscription_speed.purchased_credits_fast_multiplier,
+        "2"
+    );
+    assert!(old
+        .subscription_speed
+        .fast_model_ids
+        .iter()
+        .any(|m| m == "gpt-6.1-sol"));
+    for bad in ["0", "-1", "101", "NaN"] {
+        let mut c = old.clone();
+        c.subscription_speed.fast_multiplier = bad.into();
+        assert!(validate(&c).is_err());
+    }
+    let mut c = old.clone();
+    c.subscription_speed
+        .fast_model_ids
+        .push("openai/gpt-6.1-sol".into());
+    assert!(validate(&c).is_err());
+    let mut c = old;
+    c.subscription_speed.source_url = "javascript:test".into();
+    assert!(validate(&c).is_err());
+}
+#[test]
 fn screenshot_values_preserve_per_model_api_equivalents_and_100_million_token_units() {
     let c = defaults();
     validate(&c).unwrap();

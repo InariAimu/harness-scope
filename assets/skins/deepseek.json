@@ -1,0 +1,10 @@
+{
+  "id": "deepseek",
+  "artwork": "deepseek.png",
+  "source": "../deepseek.jpg",
+  "designReference": "deepseek-reference.png",
+  "generator": "built-in image_gen",
+  "faceAnchor": { "x": 0.49, "y": 0.20 },
+  "viewportAnchor": { "x": 0.66667, "y": 0.33333 },
+  "prompt": "Use case: background-extraction. Asset type: transparent character artwork for a desktop application wallpaper. Image 1 is the primary edit target: isolate its single DeepSeek character and remove ALL blue poster background and ALL lettering, logos, checkboxes and graphic elements. Preserve the character's original face, wink and smile, long flowing navy-to-light-blue hair, white frilled maid headband, navy and white modest maid outfit, blue bow and whale-like ear fins. Image 2 is supporting character design reference only for completing the lower costume and whale tail. Produce ONE character only, front three-quarter view, head to below knees, no multiple views. Match the illustrated anime rendering and recognizable identity in image 1. Keep her fully clothed in the reference maid costume. Center character in a portrait 2:3 canvas, face center approximately 50% across and 22% down, with all hair and head intact and a little transparent margin. Genuine alpha transparency around the whole silhouette, no white backdrop, no checkerboard painted into the image, no shadows outside silhouette, no text, no frame, no new props. Designed to sit on the right side of a software interface."
+}

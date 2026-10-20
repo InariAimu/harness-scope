@@ -1,13 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  CalendarDays,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
+import { CalendarDays, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { HoverTip } from "@/components/ui/hover-tip";
+import { Calendar, parseCalendarDate } from "@/components/ui/calendar";
+import { DateInput } from "@/components/ui/date-input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
@@ -39,18 +35,6 @@ interface UsageDateRangePickerProps {
 
 /* ── helpers ── */
 
-function startOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-
-function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
 function fromTs(ts: number, timeZone: string): Date {
   return usageCalendarDate(ts, timeZone);
 }
@@ -66,9 +50,8 @@ function fmtTime(ts: number, timeZone: string): string {
 }
 
 function parseDateInput(ts: number, value: string, timeZone: string): number {
+  if (!parseCalendarDate(value)) return ts;
   const [y, m, d] = value.split("-").map(Number);
-  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d))
-    return ts;
   return usageTimestamp(
     { ...usageDateParts(ts, timeZone), year: y, month: m, day: d, second: 0 },
     timeZone,
@@ -97,17 +80,6 @@ function setDateKeepTime(ts: number, day: Date, timeZone: string): number {
   );
 }
 
-function getCalendarDays(month: Date): Date[] {
-  const first = new Date(month.getFullYear(), month.getMonth(), 1);
-  const gridStart = new Date(first);
-  gridStart.setDate(first.getDate() - first.getDay());
-  return Array.from({ length: 42 }, (_, i) => {
-    const d = new Date(gridStart);
-    d.setDate(gridStart.getDate() + i);
-    return d;
-  });
-}
-
 /* ── component ── */
 
 function resolveCalendarRange(
@@ -127,8 +99,6 @@ export function UsageDateRangePicker({
   const { t, i18n } = useTranslation();
   const timeZone = useUsageTimezone();
   const [open, setOpen] = useState(false);
-  const prevMonthLabel = t("usage.prevMonth", { defaultValue: "上个月" });
-  const nextMonthLabel = t("usage.nextMonth", { defaultValue: "下个月" });
   const [activeField, setActiveField] = useState<DraftField>("start");
   // 「全部」的起点是 0，日历草稿改从结束日往前 30 天开始，避免跳到 1970 年
   const resolvedRange = useMemo(
@@ -182,21 +152,6 @@ export function UsageDateRangePicker({
     return () => clearInterval(id);
   }, [open, draftLiveEnd]);
 
-  const calendarDays = useMemo(
-    () => getCalendarDays(displayMonth),
-    [displayMonth],
-  );
-
-  const weekdayLabels = useMemo(
-    () =>
-      Array.from({ length: 7 }, (_, i) =>
-        new Intl.DateTimeFormat(locale, { weekday: "narrow" }).format(
-          new Date(2024, 0, 7 + i),
-        ),
-      ),
-    [locale],
-  );
-
   const startDay = fromTs(draftStart, timeZone);
   const endDay = fromTs(draftEnd, timeZone);
   const today = fromTs(Date.now() / 1000, timeZone);
@@ -235,14 +190,6 @@ export function UsageDateRangePicker({
         setDraftEnd(nextTs);
       }
     }
-
-    // Navigate calendar if the day is outside the displayed month
-    if (
-      day.getMonth() !== displayMonth.getMonth() ||
-      day.getFullYear() !== displayMonth.getFullYear()
-    ) {
-      setDisplayMonth(new Date(day.getFullYear(), day.getMonth(), 1));
-    }
   };
 
   const handleApply = () => {
@@ -258,10 +205,6 @@ export function UsageDateRangePicker({
       liveEndTime: draftLiveEnd,
     });
     setOpen(false);
-  };
-
-  const goToToday = () => {
-    setDisplayMonth(new Date(today.getFullYear(), today.getMonth(), 1));
   };
 
   /* ── Field card (start / end) ── */
@@ -293,16 +236,16 @@ export function UsageDateRangePicker({
           {label}
         </div>
         <div className="flex items-center gap-1.5">
-          <Input
-            type="date"
+          <DateInput
+            aria-label={label}
             className={cn(
               "h-7 flex-1 border-0 bg-transparent p-0 text-body shadow-none focus:ring-0 focus-visible:ring-0",
               isEndLive && "pointer-events-none",
             )}
             value={fmtDate(ts, timeZone)}
-            onChange={(e) => {
+            onValueChange={(value) => {
               if (isEndLive) return;
-              const next = parseDateInput(ts, e.target.value, timeZone);
+              const next = parseDateInput(ts, value, timeZone);
               setTs(next);
               const d = fromTs(next, timeZone);
               setDisplayMonth(new Date(d.getFullYear(), d.getMonth(), 1));
@@ -315,6 +258,7 @@ export function UsageDateRangePicker({
           />
           <Input
             type="time"
+            aria-label={label}
             step={60}
             className={cn(
               "h-7 w-[90px] flex-none border-0 bg-transparent p-0 text-body shadow-none focus:ring-0 focus-visible:ring-0",
@@ -369,7 +313,7 @@ export function UsageDateRangePicker({
               className={cn(
                 "px-2.5",
                 selection.preset === preset &&
-                  "border-fg-1 bg-selected font-semibold",
+                  "border-ring bg-action-soft font-semibold text-action-text",
               )}
               onClick={() => {
                 onApply({ preset });
@@ -432,110 +376,16 @@ export function UsageDateRangePicker({
           </div>
 
           {/* Right: calendar */}
-          <div className="usage-range-calendar rounded-panel border border-border bg-subtle p-2.5">
-            {/* Month navigation */}
-            <div className="flex items-center justify-between mb-1.5">
-              <HoverTip content={prevMonthLabel}>
-                <Button
-                  type="button"
-                  size="icon-compact"
-                  variant="quiet"
-                  aria-label={prevMonthLabel}
-                  onClick={() =>
-                    setDisplayMonth(
-                      new Date(
-                        displayMonth.getFullYear(),
-                        displayMonth.getMonth() - 1,
-                        1,
-                      ),
-                    )
-                  }
-                >
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                </Button>
-              </HoverTip>
-              {/* 点月份标题跳回本月：动作不在字面上，用 HoverTip 说明 */}
-              <HoverTip
-                content={t("usage.presetToday", { defaultValue: "当天" })}
-              >
-                <button
-                  type="button"
-                  className="text-body font-medium text-fg-1 transition-colors hover:text-fg-2"
-                  onClick={goToToday}
-                >
-                  {displayMonth.toLocaleDateString(locale, {
-                    year: "numeric",
-                    month: "long",
-                  })}
-                </button>
-              </HoverTip>
-              <HoverTip content={nextMonthLabel}>
-                <Button
-                  type="button"
-                  size="icon-compact"
-                  variant="quiet"
-                  aria-label={nextMonthLabel}
-                  onClick={() =>
-                    setDisplayMonth(
-                      new Date(
-                        displayMonth.getFullYear(),
-                        displayMonth.getMonth() + 1,
-                        1,
-                      ),
-                    )
-                  }
-                >
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </Button>
-              </HoverTip>
-            </div>
-
-            {/* Weekday headers */}
-            <div className="grid grid-cols-7 text-center text-badge text-fg-2 mb-0.5">
-              {weekdayLabels.map((label, i) => (
-                <div key={i} className="py-0.5">
-                  {label}
-                </div>
-              ))}
-            </div>
-
-            {/* Day grid */}
-            <div className="grid grid-cols-7 gap-px">
-              {calendarDays.map((day) => {
-                const isCurrentMonth =
-                  day.getMonth() === displayMonth.getMonth();
-                const isToday = isSameDay(day, today);
-                const isStart = isSameDay(day, startDay);
-                const isEnd = isSameDay(day, endDay);
-                const dayStart = startOfDay(day);
-                const inRange =
-                  dayStart >= startOfDay(startDay) &&
-                  dayStart <= startOfDay(endDay);
-                const isEndpoint = isStart || isEnd;
-
-                return (
-                  <button
-                    key={day.toISOString()}
-                    type="button"
-                    aria-label={day.toLocaleDateString(locale)}
-                    aria-current={isToday ? "date" : undefined}
-                    aria-pressed={isEndpoint}
-                    className={cn(
-                      "relative h-7 rounded text-caption transition-colors",
-                      !isCurrentMonth && "text-fg-3",
-                      isCurrentMonth && !inRange && "hover:bg-subtle",
-                      inRange && !isEndpoint && "bg-selected text-fg-1",
-                      isEndpoint && "bg-action text-action-fg font-medium",
-                      isToday && !isEndpoint && "ring-1 ring-border-strong",
-                    )}
-                    onClick={() => handleDatePick(day)}
-                  >
-                    {day.getDate()}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <Calendar
+            className="usage-range-calendar"
+            locale={locale}
+            month={displayMonth}
+            onMonthChange={setDisplayMonth}
+            startDate={startDay}
+            endDate={endDay}
+            today={today}
+            onSelect={handleDatePick}
+          />
         </div>
       </PopoverContent>
     </Popover>

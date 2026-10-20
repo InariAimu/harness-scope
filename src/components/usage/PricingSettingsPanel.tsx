@@ -1,3 +1,4 @@
+import { OptionSelect } from "@/components/ui/option-select";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -85,12 +86,12 @@ function SettingsForm({ settings }: { settings: PricingSettings }) {
           onChange={(event) => setRate(event.target.value)}
           placeholder={t("scope.pricing.configureRate", "请输入计价汇率")}
         />
-        <select
+        <OptionSelect
           aria-label={t("scope.pricing.currency", "计价币种")}
           className="rounded border border-border bg-surface px-2 py-1"
           value={currency}
-          onChange={(event) => {
-            const next = event.target.value;
+          onValueChange={(value) => {
+            const next = value;
             setCurrency(next);
             setRate(settings.exchangeRates[next] ?? "");
           }}
@@ -98,7 +99,7 @@ function SettingsForm({ settings }: { settings: PricingSettings }) {
           {["CNY", "EUR", "JPY", "TWD", "TRY"].map((code) => (
             <option key={code}>{code}</option>
           ))}
-        </select>
+        </OptionSelect>
         <Button
           size="compact"
           type="submit"

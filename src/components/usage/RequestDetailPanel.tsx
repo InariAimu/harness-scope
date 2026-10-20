@@ -1,4 +1,5 @@
 import { useMoneyFormat } from "@/hooks/useMoneyFormat";
+import { codexRequestHint, codexRequestMode } from "@/lib/codexRequest";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -124,6 +125,27 @@ function useDetailSections(request: RequestLog) {
     },
     { key: "model", label: t("usage.model"), value: request.model, mono: true },
   ];
+  if (request.appType === "codex") {
+    const zh = getResolvedLang(i18n).startsWith("zh");
+    basic.push(
+      {
+        key: "serviceTier",
+        label: zh ? "请求档位（日志设置）" : "Requested tier (log setting)",
+        value:
+          codexRequestMode(request) ??
+          request.requestMetadata?.serviceTier ??
+          (zh ? "未知" : "Unknown"),
+        title: codexRequestHint(request, zh),
+      },
+      {
+        key: "reasoningEffort",
+        label: zh ? "推理强度" : "Reasoning effort",
+        value:
+          request.requestMetadata?.reasoningEffort ?? (zh ? "未知" : "Unknown"),
+        mono: true,
+      },
+    );
+  }
   if (request.requestModel && request.requestModel !== request.model) {
     basic.push({
       key: "requestModel",

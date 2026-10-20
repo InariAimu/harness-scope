@@ -1,8 +1,10 @@
+import { OptionSelect } from "@/components/ui/option-select";
 import { useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import {
@@ -117,11 +119,14 @@ export function ProviderAccountEditor({
   for (const link of form.links)
     if (!available.some((v) => routeKey(v) === routeKey(link)))
       available.push({ ...link, records: 0 });
-  const updateSub = (field: string, value: string | null) =>
+  const updateSub = (field: string, value: string | null) => {
+    tracker.onChangeCapture();
+    dirty.current = true;
     setForm((v) => ({
       ...v,
       subscription: { ...v.subscription, [field]: value },
     }));
+  };
   const save = async () => {
     setBusy(true);
     try {
@@ -212,13 +217,15 @@ export function ProviderAccountEditor({
           >
             <fieldset disabled={busy} className="min-w-0 space-y-4">
               <Field label={l("供应商", "Provider")}>
-                <select
+                <OptionSelect
                   aria-label={l("供应商类型", "Provider type")}
                   className="scope-select w-full"
                   value={form.provider}
                   disabled={!!initial}
-                  onChange={(e) => {
-                    const provider = e.target.value as AccountProvider;
+                  onValueChange={(value) => {
+                    tracker.onChangeCapture();
+                    dirty.current = true;
+                    const provider = value as AccountProvider;
                     setForm((v) => ({
                       ...v,
                       provider,
@@ -245,7 +252,7 @@ export function ProviderAccountEditor({
                       {name}
                     </option>
                   ))}
-                </select>
+                </OptionSelect>
               </Field>
               <Field label={l("账号名称", "Account name")}>
                 <Input
@@ -267,21 +274,23 @@ export function ProviderAccountEditor({
                     )}
                   </p>
                   <Field label={l("参考套餐档位", "Reference plan")}>
-                    <select
+                    <OptionSelect
                       aria-label={l("参考套餐档位", "Reference plan")}
                       className="scope-select w-full"
                       value={form.codex?.plan ?? "plus"}
-                      onChange={(e) =>
+                      onValueChange={(value) => {
+                        tracker.onChangeCapture();
+                        dirty.current = true;
                         setForm((v) => ({
                           ...v,
                           codex: {
                             binaryPath: null,
                             homePath: null,
                             ...v.codex,
-                            plan: e.target.value as CodexPlan,
+                            plan: value as CodexPlan,
                           },
-                        }))
-                      }
+                        }));
+                      }}
                     >
                       {codexPlans.map((p) => (
                         <option key={p.id} value={p.id}>
@@ -289,7 +298,7 @@ export function ProviderAccountEditor({
                           {p.theoreticalMultiplier}×
                         </option>
                       ))}
-                    </select>
+                    </OptionSelect>
                   </Field>
                   <p className="text-caption text-fg-3">
                     {l(
@@ -411,36 +420,34 @@ export function ProviderAccountEditor({
                     />
                   </Field>
                   <Field label={l("币种", "Currency")}>
-                    <select
+                    <OptionSelect
                       aria-label={l("订阅币种", "Subscription currency")}
                       className="scope-select w-full"
                       value={form.subscription.currency}
-                      onChange={(e) => updateSub("currency", e.target.value)}
+                      onValueChange={(value) => updateSub("currency", value)}
                     >
                       {["USD", "CNY", "EUR", "JPY", "TWD", "TRY"].map((v) => (
                         <option key={v}>{v}</option>
                       ))}
-                    </select>
+                    </OptionSelect>
                   </Field>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label={l("本期开始", "Period start")}>
-                    <Input
+                    <DatePicker
                       aria-label={l("本期开始", "Period start")}
-                      type="date"
                       value={form.subscription.periodStart ?? ""}
-                      onChange={(e) =>
-                        updateSub("periodStart", e.target.value || null)
+                      onValueChange={(value) =>
+                        updateSub("periodStart", value || null)
                       }
                     />
                   </Field>
                   <Field label={l("下次续费", "Next renewal")}>
-                    <Input
+                    <DatePicker
                       aria-label={l("下次续费", "Next renewal")}
-                      type="date"
                       value={form.subscription.renewalDate ?? ""}
-                      onChange={(e) =>
-                        updateSub("renewalDate", e.target.value || null)
+                      onValueChange={(value) =>
+                        updateSub("renewalDate", value || null)
                       }
                     />
                   </Field>

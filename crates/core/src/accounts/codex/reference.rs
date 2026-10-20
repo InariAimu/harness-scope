@@ -83,7 +83,7 @@ fn calculate_at(engine: &Engine, args: &Value, now: i64) -> Result<Value> {
             }
             selection.sql.push(')');
         }
-        let records=selection.rows(&store,false)?;
+        let records=selection.rows_with_metadata(&store)?;
         let events:Vec<&Row>=records.iter().filter(|r|r.grain=="event" && r.count>0).collect();
         let model=requested.or_else(||events.iter().max_by_key(|r|r.occurred_at).map(|r|r.model.as_str()));
         let allowance_model=model.and_then(|m|catalog::find(&catalog,m));

@@ -96,6 +96,22 @@ impl Engine {
             }
             "save_config" => {
                 let mut c: Config = serde_json::from_value(args["config"].clone())?;
+                let accent = c.accent_color.as_bytes();
+                anyhow::ensure!(
+                    accent.len() == 7
+                        && accent[0] == b'#'
+                        && accent[1..].iter().all(u8::is_ascii_hexdigit),
+                    "Accent color must be a six-digit HEX color (#RRGGBB)"
+                );
+                c.accent_color.make_ascii_lowercase();
+                anyhow::ensure!(
+                    matches!(c.interface_skin.as_str(), "none" | "deepseek"),
+                    "Unsupported interface skin"
+                );
+                anyhow::ensure!(
+                    c.skin_transparency <= 100 && c.skin_mask_strength <= 100,
+                    "Skin transparency and veil strength must be between 0 and 100"
+                );
                 c.timezone.parse::<chrono_tz::Tz>()?;
                 anyhow::ensure!(
                     c.scan_interval_seconds >= 5 && c.scan_interval_seconds <= 86400,
@@ -658,9 +674,18 @@ impl Engine {
                     if parsed.occurred_at<cutoff{continue}
                     active.insert(parsed.id.clone());let old=s.record(&parsed.id)?;
                     if parsed.provider.is_none() { parsed.provider = old.as_ref().and_then(|r| r.provider.clone()); }
-                    let cost=pricing::resolve_with_settings(&parsed,old.as_ref(),&prices,&pricing_settings)?;
+                    let metadata_upgrade=old.as_ref().filter(|r|harness=="codex" && r.parser_version!="codex-v5-request-settings" && r.model==parsed.model && r.tokens==parsed.tokens && r.provider==parsed.provider);
+                    let mut cost=if let Some(old)=metadata_upgrade { old.cost.clone() } else { pricing::resolve_with_settings(&parsed,old.as_ref(),&prices,&pricing_settings)? };
+                    if let Some(old)=old.as_ref().filter(|r|harness=="codex" && r.model==parsed.model && r.tokens==parsed.tokens && r.provider==parsed.provider) {
+                        // Overlapping log copies may visit the upgraded record again.
+                        // A quote's timestamp alone is not a new price.
+                        let quoted_at=cost.priced_at;
+                        cost.priced_at=old.cost.priced_at;
+                        if cost!=old.cost {cost.priced_at=quoted_at;}
+                    }
                     s.save_timing(&parsed.id, parsed.timing.as_ref())?;
-                    let r=UsageRecord{provider:parsed.provider,device_id:device.clone(),id:parsed.id,harness:harness.clone(),parser_version:descriptor.parser_version.into(),session_id:Some(parsed.session_id),native_event_id:Some(parsed.native_event_id),occurred_at:parsed.occurred_at,model:parsed.model,grain:"event".into(),count:1,tokens:parsed.tokens,cost,record_source:"session".into(),revision:1,deleted:false,status_code:None,legacy_date:None,legacy_timezone:None};
+                    let r=UsageRecord{
+        request_metadata: parsed.request_metadata,provider:parsed.provider,device_id:device.clone(),id:parsed.id,harness:harness.clone(),parser_version:descriptor.parser_version.into(),session_id:Some(parsed.session_id),native_event_id:Some(parsed.native_event_id),occurred_at:parsed.occurred_at,model:parsed.model,grain:"event".into(),count:1,tokens:parsed.tokens,cost,record_source:"session".into(),revision:1,deleted:false,status_code:None,legacy_date:None,legacy_timezone:None};
                     sync::validate_record(&r)?;
                     if s.upsert(r,&key)?{if old.is_some(){report.updated+=1}else{report.imported+=1}}else{report.skipped+=1}
                 }
@@ -943,11 +968,11 @@ impl Engine {
             .send()?
             .error_for_status()?
             .json()?;
-        anyhow::ensure!(health["protocolVersion"].as_u64().is_some_and(|v| v >= 2), "Sync server must be upgraded to protocol v2 to preserve provider information; pending records have been retained");
+        anyhow::ensure!(health["protocolVersion"].as_u64().is_some_and(|v| v >= 3), "Sync server must be upgraded to protocol v3 to preserve request speed and reasoning effort; pending records have been retained");
         let mut cursor = self.lock()?.meta::<i64>("download_cursor")?.unwrap_or(0);
         let mut first: ChangesResponse = client
             .get(format!("{base}/v1/changes"))
-            .query(&[("after", cursor), ("limit", 500)])
+            .query(&[("after", cursor), ("limit", 500), ("protocolVersion", 3)])
             .bearer_auth(&config.server_token)
             .send()?
             .error_for_status()?
@@ -968,7 +993,7 @@ impl Engine {
             drop(s);
             first = client
                 .get(format!("{base}/v1/changes"))
-                .query(&[("after", cursor), ("limit", 500)])
+                .query(&[("after", cursor), ("limit", 500), ("protocolVersion", 3)])
                 .bearer_auth(&config.server_token)
                 .send()?
                 .error_for_status()?
@@ -986,7 +1011,7 @@ impl Engine {
                 .post(format!("{base}/v1/push"))
                 .bearer_auth(&config.server_token)
                 .json(&PushRequest {
-                    protocol_version: 2,
+                    protocol_version: 3,
                     device_id: device.clone(),
                     device_name: config.device_name.clone(),
                     records,
@@ -1015,7 +1040,7 @@ impl Engine {
             cursor = self.lock()?.meta::<i64>("download_cursor")?.unwrap_or(0);
             let response: ChangesResponse = client
                 .get(format!("{base}/v1/changes"))
-                .query(&[("after", cursor), ("limit", 500)])
+                .query(&[("after", cursor), ("limit", 500), ("protocolVersion", 3)])
                 .bearer_auth(&config.server_token)
                 .send()?
                 .error_for_status()?

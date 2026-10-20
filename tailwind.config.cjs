@@ -56,6 +56,7 @@ module.exports = {
           DEFAULT: "var(--action-bg)",
           fg: "var(--action-fg)",
           hover: "var(--action-hover)",
+          "hover-fg": "var(--action-hover-fg)",
           text: "var(--action-text)",
           soft: "var(--action-soft)",
         },

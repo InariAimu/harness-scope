@@ -9,6 +9,68 @@ use std::{fs, sync::Arc};
 use tower::ServiceExt;
 const TOKEN: &str = "synthetic-test-token-at-least-24-characters";
 #[tokio::test]
+async fn metadata_download_requires_v3_and_preserves_pagination_and_private_field_rejection() {
+    use harness_scope_core::{
+        model::{Cost, PushRequest, Tokens, UsageRecord},
+        sync,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(Engine::open(&dir.path().join("server.db")).unwrap());
+    let record:UsageRecord=serde_json::from_value(json!({"deviceId":"fixture-device","id":"request","harness":"codex","parserVersion":"fixture","sessionId":"session","nativeEventId":"request","occurredAt":1792500000,"model":"gpt-6.1-sol","grain":"event","count":1,"tokens":Tokens::default(),"cost":Cost::default(),"recordSource":"session","revision":1,"deleted":false,"statusCode":null,"legacyDate":null,"legacyTimezone":null,"requestMetadata":{"serviceTier":"priority","serviceTierSource":"thread_settings","reasoningEffort":"xhigh"}})).unwrap();
+    sync::push(
+        &engine.lock().unwrap(),
+        PushRequest {
+            protocol_version: 3,
+            device_id: record.device_id.clone(),
+            device_name: "fixture".into(),
+            records: vec![record.clone()],
+        },
+    )
+    .unwrap();
+    let server = server_router(engine, TOKEN.into()).unwrap();
+    for (uri, status) in [
+        ("/v1/changes?after=0&limit=1", StatusCode::BAD_REQUEST),
+        (
+            "/v1/changes?after=0&limit=1&protocolVersion=2",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "/v1/changes?after=0&limit=1&protocolVersion=3",
+            StatusCode::OK,
+        ),
+    ] {
+        let response = server
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .header("Authorization", format!("Bearer {TOKEN}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), status);
+        if status == StatusCode::OK {
+            let data: serde_json::Value = serde_json::from_slice(
+                &axum::body::to_bytes(response.into_body(), 1024 * 1024)
+                    .await
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                data["changes"][0]["record"],
+                serde_json::to_value(&record).unwrap()
+            );
+            assert_eq!(data["nextCursor"], 1);
+            assert_eq!(data["hasMore"], false);
+        }
+    }
+    let mut invalid = serde_json::to_value(record).unwrap();
+    invalid["requestMetadata"]["apiKey"] = json!("synthetic-private-value");
+    assert!(serde_json::from_value::<UsageRecord>(invalid).is_err());
+}
+#[tokio::test]
 async fn authenticated_server_and_local_origin_boundaries() {
     let dir = tempfile::tempdir().unwrap();
     let e = Arc::new(Engine::open(&dir.path().join("s.db")).unwrap());
@@ -167,7 +229,7 @@ async fn an_old_server_is_rejected_without_acknowledging_pending_records() {
     let address = listener.local_addr().unwrap();
     let router = axum::Router::new().route(
         "/health",
-        axum::routing::get(|| async { axum::Json(json!({"status":"ok","protocolVersion":1})) }),
+        axum::routing::get(|| async { axum::Json(json!({"status":"ok","protocolVersion":2})) }),
     );
     let handle = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
     let root = dir.path().join("logs");
@@ -198,7 +260,7 @@ async fn an_old_server_is_rejected_without_acknowledging_pending_records() {
     })
     .await
     .unwrap();
-    assert!(error.contains("upgraded to protocol v2"));
+    assert!(error.contains("upgraded to protocol v3"));
     assert_eq!(e.lock().unwrap().pending_count().unwrap(), 1);
     assert_eq!(e.lock().unwrap().local_records().unwrap().len(), 1);
     handle.abort();

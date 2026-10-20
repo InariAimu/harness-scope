@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { OptionSelect } from "@/components/ui/option-select";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { isTauri } from "@tauri-apps/api/core";
 import {
@@ -14,6 +15,15 @@ import { command } from "@/lib/client";
 import { AppPageHeader } from "@/components/shell/AppPageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
+import { AccentColorSettings } from "@/components/settings/AccentColorSettings";
+import { useAccentThemePreview } from "@/components/theme/AccentThemeProvider";
+import { DEFAULT_ACCENT_COLOR, normalizeAccentColor } from "@/lib/accentColor";
+import {
+  DEFAULT_SKIN_TRANSPARENCY,
+  DEFAULT_SKIN_MASK_STRENGTH,
+  skinPercentage,
+} from "@/lib/skinAppearance";
 import { toast } from "@/lib/toast";
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -33,7 +43,25 @@ export function SettingsPage({
   const { i18n } = useTranslation();
   const l = (zh: string, en: string) =>
     i18n.language.startsWith("zh") ? zh : en;
-  const [config, setConfig] = useState<Config>(snapshot.config);
+  const [config, setConfig] = useState<Config>(() => ({
+    ...snapshot.config,
+    accentColor: normalizeAccentColor(snapshot.config.accentColor) ?? DEFAULT_ACCENT_COLOR,
+    interfaceSkin: snapshot.config.interfaceSkin ?? "none",
+    skinTransparency: skinPercentage(snapshot.config.skinTransparency, DEFAULT_SKIN_TRANSPARENCY),
+    skinMaskStrength: skinPercentage(snapshot.config.skinMaskStrength, DEFAULT_SKIN_MASK_STRENGTH),
+  }));
+  const [accentValid, setAccentValid] = useState(true);
+  const setThemePreview = useAccentThemePreview();
+  useEffect(() => {
+    setThemePreview({
+      accentColor: config.accentColor,
+      theme: config.theme,
+      interfaceSkin: config.interfaceSkin,
+      skinTransparency: config.skinTransparency,
+      skinMaskStrength: config.skinMaskStrength,
+    });
+  }, [config.accentColor, config.theme, config.interfaceSkin, config.skinTransparency, config.skinMaskStrength, setThemePreview]);
+  useEffect(() => () => setThemePreview(null), [setThemePreview]);
   const [section, setSection] = useState("general");
   const [busy, setBusy] = useState(false);
   const [migration, setMigration] = useState({
@@ -88,14 +116,14 @@ export function SettingsPage({
       <AppPageHeader
         title={l("设置", "Settings")}
         actions={
-          <Button onClick={() => void save()} disabled={busy}>
+          <Button onClick={() => void save()} disabled={busy || !accentValid}>
             <Save size={14} />
             {l("保存设置", "Save settings")}
           </Button>
         }
       />
-      <div className="scope-page flex gap-6">
-        <nav className="scope-settings-nav space-y-1">
+      <div className="scope-page flex flex-col gap-4 md:flex-row md:gap-6">
+        <nav className="scope-settings-nav flex flex-wrap gap-1 md:block md:space-y-1">
           {[
             {
               id: "general",
@@ -131,25 +159,93 @@ export function SettingsPage({
                 />
               </Field>
               <Field label={l("主题", "Theme")}>
-                <select
+                <OptionSelect
                   className="scope-select"
                   value={config.theme}
-                  onChange={(e) => update("theme", e.target.value)}
+                  onValueChange={(value) => update("theme", value)}
                 >
                   <option value="system">{l("跟随系统", "System")}</option>
                   <option value="light">{l("浅色", "Light")}</option>
                   <option value="dark">{l("深色", "Dark")}</option>
-                </select>
+                </OptionSelect>
               </Field>
+              <Field label={l("界面皮肤", "Interface skin")}>
+                <OptionSelect
+                  value={config.interfaceSkin}
+                  onValueChange={(value) => update("interfaceSkin", value === "deepseek" ? "deepseek" : "none")}
+                >
+                  <option value="none">{l("无 · 纯色界面", "None · Solid background")}</option>
+                  <option value="deepseek">{l("DeepSeek · 蓝海女仆", "DeepSeek · Ocean maid")}</option>
+                </OptionSelect>
+                <p className="text-caption text-fg-3">
+                  {l(
+                    "右侧角色搭配半透明遮罩，保留内容阅读空间。皮肤和重点色可分别选择，保存设置后保留。",
+                    "Right-side artwork with a translucent veil keeps content readable. Choose skin and accent independently, then save to keep them.",
+                  )}
+                </p>
+              </Field>
+              <fieldset
+                disabled={config.interfaceSkin === "none"}
+                className="mb-5 space-y-3 disabled:opacity-45"
+                aria-label={l("皮肤显示调节", "Skin appearance")}
+              >
+                {([
+                  ["skinTransparency", l("皮肤透明度", "Skin transparency"), l("越高，角色越淡；100% 完全透明。", "Higher values fade the character; 100% is fully transparent.")],
+                  ["skinMaskStrength", l("遮罩强度", "Veil strength"), l("越高，背景遮罩越实，内容越清晰。", "Higher values strengthen the veil for clearer content.")],
+                ] as const).map(([key, label, hint]) => (
+                  <div key={key} className="space-y-1">
+                    <div className="flex items-center justify-between gap-3 text-caption">
+                      <label htmlFor={key} className="text-fg-2">{label}</label>
+                      <output htmlFor={key} className="font-mono tabular-nums">{config[key]}%</output>
+                    </div>
+                    <input
+                      id={key}
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={config[key]}
+                      aria-valuetext={`${config[key]}%`}
+                      aria-describedby={`${key}-hint`}
+                      onChange={(event) => update(key, Number(event.target.value))}
+                      className="block h-6 w-full cursor-pointer rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed"
+                      style={{ accentColor: "var(--action-bg)" }}
+                    />
+                    <p id={`${key}-hint`} className="text-caption text-fg-3">{hint}</p>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="neutral"
+                  onClick={() => setConfig((current) => ({
+                    ...current,
+                    skinTransparency: DEFAULT_SKIN_TRANSPARENCY,
+                    skinMaskStrength: DEFAULT_SKIN_MASK_STRENGTH,
+                  }))}
+                >
+                  {l("恢复皮肤默认", "Reset skin appearance")}
+                </Button>
+                <p className="text-caption text-fg-3">
+                  {l(
+                    "拖动即时预览，保存设置后保留；未保存离开将恢复原设置。请先选择皮肤以启用调节。",
+                    "Drag to preview, then save to keep changes. Leaving without saving restores saved values. Select a skin to enable these controls.",
+                  )}
+                </p>
+              </fieldset>
+              <AccentColorSettings
+                value={config.accentColor}
+                onChange={(color) => update("accentColor", color)}
+                onValidityChange={setAccentValid}
+              />
               <Field label={l("语言", "Language")}>
-                <select
+                <OptionSelect
                   className="scope-select"
                   value={config.language}
-                  onChange={(e) => update("language", e.target.value)}
+                  onValueChange={(value) => update("language", value)}
                 >
                   <option value="zh">简体中文</option>
                   <option value="en">English</option>
-                </select>
+                </OptionSelect>
               </Field>
               <Field
                 label={l("统计时区（IANA）", "Statistics timezone (IANA)")}
@@ -284,13 +380,13 @@ export function SettingsPage({
               </Field>
               <div className="grid grid-cols-2 gap-4">
                 <Field label={l("分界自然日", "Cutover date")}>
-                  <Input
-                    type="date"
+                  <DatePicker
+                    aria-label={l("分界自然日", "Cutover date")}
                     value={migration.cutoverDate}
-                    onChange={(e) => {
+                    onValueChange={(value) => {
                       setMigration((m) => ({
                         ...m,
-                        cutoverDate: e.target.value,
+                        cutoverDate: value,
                       }));
                       setPreview(null);
                     }}

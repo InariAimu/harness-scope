@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
+import { usageCalendarDate } from "@/lib/usageRange";
 import {
   deadlineDraft,
   deadlineWallTime,
@@ -35,7 +36,7 @@ export function CodexDeadlineInput({
         <label className="flex flex-col gap-1 text-caption text-fg-2">
           {l("目标时间（当前时区）", "Target time (current time zone)")} ·{" "}
           {timeZone}
-          <Input
+          <DatePicker
             type="datetime-local"
             step="1"
             aria-label={l(
@@ -43,18 +44,20 @@ export function CodexDeadlineInput({
               "Target time (current time zone)",
             )}
             value={draft.local}
-            onChange={(e) => edit(e.target.value, false)}
+            onValueChange={(value) => edit(value, false)}
+            today={usageCalendarDate(Date.now() / 1000, timeZone)}
             aria-invalid={draft.at == null}
           />
         </label>
         <label className="flex flex-col gap-1 text-caption text-fg-2">
           {l("目标时间（PST）", "Target time (PST)")} · UTC−08:00
-          <Input
+          <DatePicker
             type="datetime-local"
             step="1"
             aria-label={l("目标时间（PST）", "Target time (PST)")}
             value={draft.pst}
-            onChange={(e) => edit(e.target.value, true)}
+            onValueChange={(value) => edit(value, true)}
+            today={usageCalendarDate(Date.now() / 1000 - 8 * 3600, "UTC")}
             aria-invalid={draft.at == null}
           />
         </label>

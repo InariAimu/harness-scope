@@ -23,6 +23,12 @@ const SOURCE: Projection = Fields(&[(
     Fields(&[("thread_spawn", Fields(&[("parent_thread_id", All)]))]),
 )]);
 const PAYLOAD: Projection = Fields(&[
+    ("effort", All),
+    ("service_tier", All),
+    (
+        "thread_settings",
+        Fields(&[("model", All), ("service_tier", All)]),
+    ),
     ("model_provider", All),
     ("id", All),
     ("type", All),

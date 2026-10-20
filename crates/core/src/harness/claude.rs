@@ -81,6 +81,7 @@ impl HarnessAdapter for Claude {
                 continue;
             }
             let entry = ParsedUsage {
+                request_metadata: None,
                 provider: None,
                 id: format!("claude:{session}:{id}"),
                 session_id: session,

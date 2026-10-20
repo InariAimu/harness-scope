@@ -13,6 +13,7 @@ fn timestamp(s: &str) -> i64 {
 }
 fn usage(provider: Option<&str>) -> ParsedUsage {
     ParsedUsage {
+        request_metadata: None,
         provider: provider.map(str::to_owned),
         id: "fixture".into(),
         session_id: "session".into(),

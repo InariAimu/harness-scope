@@ -147,6 +147,7 @@ fn log(r: &UsageRecord, timing: Option<&UsageTiming>) -> Value {
         ));
     }
     v["nativeProvider"] = json!(r.provider);
+    v["requestMetadata"] = json!(r.request_metadata);
     v["billingBasis"] = json!(r.cost.billing_basis);
     v["costConverted"] = json!(r
         .cost

@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
+import { CodexFastForecastRow } from "./CodexFastForecastRow";
+import type { CodexSubscriptionSpeed } from "@/types/codexAllowances";
 import { codexDeadlineForecast } from "@/lib/codexDeadline";
 import { useQueries } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -31,6 +33,7 @@ export function CodexForecastOverview({
   zh,
   locale,
   targetAt,
+  speedRules,
 }: {
   data: CodexReference;
   view: ProviderAccountView;
@@ -40,6 +43,7 @@ export function CodexForecastOverview({
   zh: boolean;
   locale: string;
   targetAt?: number | null;
+  speedRules?: CodexSubscriptionSpeed;
 }) {
   const l = (a: string, b: string) => (zh ? a : b);
   const n = (v: string) => forecastNumber(v, locale);
@@ -237,61 +241,76 @@ export function CodexForecastOverview({
                       row?.windows.find((w) => w.reason)?.reason ??
                       null;
                     return (
-                      <tr
-                        key={model}
-                        className="border-t border-border"
-                        title={
-                          unavailable
-                            ? forecastReason(unavailable, zh)
-                            : undefined
-                        }
-                      >
-                        <td className="py-2 pr-3 max-w-52">
-                          <button
-                            type="button"
-                            aria-pressed={model === data.model}
-                            onClick={() => onModelChange(model)}
-                            className={`max-w-full truncate text-start font-mono hover:underline ${model === data.model ? "font-semibold" : "text-fg-2"}`}
-                            title={model}
-                          >
-                            {model}
-                          </button>
-                          {forecast && (
-                            <span className="block text-fg-3">
-                              {basis(forecast)}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2 pr-3 text-end tabular-nums">
-                          {row && !row.sample.reason
-                            ? `≈${money(row.sample.rateUsdPerHour)}`
-                            : "—"}
-                        </td>
-                        <td className="py-2 pr-3 text-end tabular-nums">
-                          {forecast ? (
-                            <>
-                              {`≈${n(forecast.intensity)}×`}
+                      <Fragment key={model}>
+                        <tr
+                          className="border-t border-border"
+                          title={
+                            unavailable
+                              ? forecastReason(unavailable, zh)
+                              : undefined
+                          }
+                        >
+                          <td className="py-2 pr-3 max-w-52">
+                            <button
+                              type="button"
+                              aria-pressed={model === data.model}
+                              onClick={() => onModelChange(model)}
+                              className={`max-w-full truncate text-start font-mono hover:underline ${model === data.model ? "font-semibold" : "text-fg-2"}`}
+                              title={model}
+                            >
+                              {model}
+                            </button>
+                            {forecast && (
                               <span className="block text-fg-3">
-                                {n(forecast.requestsPerHour)}{" "}
-                                {l("次/小时", "req/h")}
+                                Standard · {basis(forecast)}
                               </span>
-                            </>
-                          ) : (
-                            "—"
+                            )}
+                          </td>
+                          <td className="py-2 pr-3 text-end tabular-nums">
+                            {row && !row.sample.reason
+                              ? `≈${money(row.sample.rateUsdPerHour)}`
+                              : "—"}
+                          </td>
+                          <td className="py-2 pr-3 text-end tabular-nums">
+                            {forecast ? (
+                              <>
+                                {`≈${n(forecast.intensity)}×`}
+                                <span className="block text-fg-3">
+                                  {n(forecast.requestsPerHour)}{" "}
+                                  {l("次/小时", "req/h")}
+                                </span>
+                              </>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td className="py-2 text-end">
+                            {forecast && row
+                              ? targetRow?.status === "ready"
+                                ? `≈${money(targetRow.usdPerHour)}`
+                                : event(forecast, row.asOf)
+                              : query.isError
+                                ? l("读取失败", "Failed to load")
+                                : row
+                                  ? l("样本或额度不足", "Insufficient data")
+                                  : l("计算中…", "Calculating…")}
+                          </td>
+                        </tr>
+                        {speedRules &&
+                          row &&
+                          speedRules.fastModelIds.includes(
+                            row.allowanceModel ?? row.model ?? "",
+                          ) && (
+                            <CodexFastForecastRow
+                              model={model}
+                              data={row}
+                              rules={speedRules}
+                              targetAt={targetAt}
+                              zh={zh}
+                              locale={locale}
+                            />
                           )}
-                        </td>
-                        <td className="py-2 text-end">
-                          {forecast && row
-                            ? targetRow?.status === "ready"
-                              ? `≈${money(targetRow.usdPerHour)}`
-                              : event(forecast, row.asOf)
-                            : query.isError
-                              ? l("读取失败", "Failed to load")
-                              : row
-                                ? l("样本或额度不足", "Insufficient data")
-                                : l("计算中…", "Calculating…")}
-                        </td>
-                      </tr>
+                      </Fragment>
                     );
                   })}
                 </tbody>
@@ -332,6 +351,10 @@ export function CodexForecastOverview({
           </p>
         ))}
       <p className="text-caption text-fg-3">
+        {l(
+          "本地参考额度以 Standard 为基准；Standard / Fast 对比沿用相同请求内容与频率，Fast 仅按订阅额度倍率折算，不增加 API 折算金额。",
+          "Local reference allowances assume Standard. Standard / Fast compare identical content and cadence; the Fast multiplier changes subscription allowance, not API-equivalent cost.",
+        )}{" "}
         {l(
           "建议倍率相对采样强度，各模型分别假设后续只使用该模型，共享额度不能叠加。",
           "Multipliers are relative to sampled intensity. Each model assumes exclusive future use; shared allowances are not additive.",

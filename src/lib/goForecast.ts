@@ -1,5 +1,21 @@
 export function forecastReason(reason: string | null, zh: boolean) {
   const messages: Record<string, [string, string]> = {
+    unknown_speed_baseline: [
+      "校准区间包含未知请求档位，暂用参考估算；缺少日志设置的历史无法推断模式。",
+      "Calibration contains unknown request tiers; reference estimates apply. Missing historical settings cannot be inferred.",
+    ],
+    unsupported_fast_model: [
+      "本地官方规则未确认此模型支持 Fast，暂不套用倍率。",
+      "Local official rules do not confirm Fast support for this model.",
+    ],
+    insufficient_quota_history: [
+      "尚无足够的同账号额度历史，暂不能按校准数据评估速度模式。",
+      "Not enough same-account quota history to evaluate speed modes from calibration.",
+    ],
+    no_quota_growth: [
+      "额度变化不足一个百分点，暂不能校准速度模式。",
+      "Quota changed by less than one percentage point; speed calibration is unavailable.",
+    ],
     invalid_target_time: [
       "请输入有效且晚于当前时刻的目标时间。",
       "Enter a valid target time after the current time.",

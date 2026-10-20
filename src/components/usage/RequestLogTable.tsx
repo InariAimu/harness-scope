@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { codexRequestHint, codexRequestMode } from "@/lib/codexRequest";
 import { useTranslation } from "react-i18next";
 import { useRequestLogs } from "@/lib/query/usage";
 import { TablePagination } from "./TablePagination";
@@ -376,8 +377,25 @@ export function RequestLogTable({
       ),
       model: (
         <td className={cn(usageTable.td, usageTable.mono, "w-[18%] max-w-0")}>
-          <span className="block truncate" title={modelTitle}>
-            {log.model}
+          <span
+            className={cn(
+              "flex items-center gap-1",
+              codexRequestMode(log) === "Fast" &&
+                "text-action-text",
+            )}
+            title={[
+              modelTitle,
+              codexRequestHint(log, language.startsWith("zh")),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          >
+            <span className="truncate">{log.model}</span>
+            {codexRequestMode(log) === "Fast" && (
+              <span className="shrink-0 rounded bg-action-soft px-1 text-badge font-sans">
+                Fast
+              </span>
+            )}
           </span>
         </td>
       ),

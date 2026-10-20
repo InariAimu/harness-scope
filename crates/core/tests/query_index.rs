@@ -3,8 +3,53 @@ use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
 
 const AT: i64 = 1792339200;
+#[test]
+fn version_two_upgrade_rebuilds_metadata_projection_without_revising_or_requeuing_facts() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("v2.db");
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch(include_str!("../src/schema.sql"))
+        .unwrap();
+    conn.execute_batch("PRAGMA user_version=2;").unwrap();
+    let mut r = record("v2-device", "historical", AT);
+    r.request_metadata = Some(RequestMetadata {
+        service_tier: Some("priority".into()),
+        service_tier_source: Some("thread_settings".into()),
+        reasoning_effort: Some("xhigh".into()),
+    });
+    let payload = serde_json::to_string(&r).unwrap();
+    conn.execute(
+        "INSERT INTO records VALUES('v2-device','historical',1,?1,'source')",
+        [&payload],
+    )
+    .unwrap();
+    conn.execute("INSERT INTO meta VALUES('device_id','\"v2-device\"')", [])
+        .unwrap();
+    drop(conn);
+    let s = Store::open(&path).unwrap();
+    assert_eq!(s.local_records().unwrap(), vec![r]);
+    assert!(s.pending().unwrap().is_empty());
+    let metadata: String = s
+        .conn
+        .query_row("SELECT request_metadata FROM usage_index", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&metadata).unwrap()["reasoningEffort"],
+        "xhigh"
+    );
+    assert_eq!(
+        s.conn
+            .query_row("SELECT payload FROM records", [], |r| r.get::<_, String>(0))
+            .unwrap(),
+        payload
+    );
+    drop(s);
+    let s = Store::open(&path).unwrap();
+    assert!(s.pending().unwrap().is_empty());
+}
 fn record(device: &str, id: &str, at: i64) -> UsageRecord {
     UsageRecord {
+        request_metadata: None,
         device_id: device.into(),
         id: id.into(),
         provider: Some("route".into()),
@@ -81,7 +126,7 @@ fn version_one_upgrade_preserves_facts_outbox_and_exact_costs_and_restarts_once(
         s.conn
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        2
+        3
     );
 }
 

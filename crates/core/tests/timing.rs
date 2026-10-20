@@ -264,6 +264,7 @@ fn stats_use_weighted_speed_median_filters_and_device_identity() {
         ("missing", 999, 0, 0),
     ] {
         let record = UsageRecord {
+            request_metadata: None,
             provider: None,
             device_id: device.clone(),
             id: id.into(),
@@ -343,7 +344,18 @@ fn dsh_decode_speed_is_consistent_in_details_and_mixed_harness_statistics() {
     for (id, harness, output, duration, first, first_source) in [
         ("a", "dsh", 488, 6846, Some(4364), "dsh_stream_delta"),
         ("b", "dsh", 122, 10284, Some(9790), "dsh_stream_delta"),
-        ("boundary", "dsh", 100, 1000, Some(900), "dsh_stream_delta"),
+        ("boundary", "dsh", 200, 2000, Some(1000), "dsh_stream_delta"),
+        ("almost", "dsh", 200, 2000, Some(1001), "dsh_stream_delta"),
+        ("few", "dsh", 199, 4000, Some(1000), "dsh_stream_delta"),
+        ("spike775", "dsh", 124, 6491, Some(6331), "dsh_stream_delta"),
+        (
+            "buffered",
+            "dsh",
+            1311,
+            8836,
+            Some(8058),
+            "dsh_stream_delta",
+        ),
         ("burst", "dsh", 300, 6000, Some(5950), "dsh_stream_delta"),
         ("tiny", "dsh", 99, 6000, Some(1000), "dsh_stream_delta"),
         ("missing", "dsh", 300, 4000, None, "dsh_stream_delta"),
@@ -367,6 +379,7 @@ fn dsh_decode_speed_is_consistent_in_details_and_mixed_harness_statistics() {
         ("claude", "claude", 300, 0, None, "unknown"),
     ] {
         let record = UsageRecord {
+            request_metadata: None,
             provider: None,
             device_id: device.clone(),
             id: id.into(),
@@ -431,8 +444,12 @@ fn dsh_decode_speed_is_consistent_in_details_and_mixed_harness_statistics() {
     let before_timings = s.timings().unwrap();
     for (id, duration, eligible) in [
         ("a", 2482, true),
-        ("b", 494, true),
-        ("boundary", 100, true),
+        ("b", 494, false),
+        ("boundary", 1000, true),
+        ("almost", 999, false),
+        ("few", 3000, false),
+        ("spike775", 160, false),
+        ("buffered", 778, false),
         ("burst", 50, false),
         ("tiny", 5000, false),
     ] {
@@ -441,7 +458,18 @@ fn dsh_decode_speed_is_consistent_in_details_and_mixed_harness_statistics() {
         assert_eq!(detail["estimatedSpeed"]["basis"], "decode");
         assert_eq!(detail["estimatedSpeed"]["durationMs"], duration);
         assert_eq!(detail["estimatedSpeed"]["eligible"], eligible);
-        assert_eq!(detail["estimatedSpeed"]["minOutputTokens"], 100);
+        assert_eq!(detail["estimatedSpeed"]["minOutputTokens"], 200);
+        assert_eq!(detail["estimatedSpeed"]["minDurationMs"], 1000);
+        let logs = query::query(&s, "logs", &json!({"pageSize":100})).unwrap();
+        let log = logs["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|log| log["requestId"] == detail["requestId"])
+            .unwrap();
+        assert_eq!(log["estimatedSpeed"], detail["estimatedSpeed"]);
+        assert_eq!(log["outputTokens"], detail["outputTokens"]);
+        assert_eq!(log["firstTokenMs"], detail["firstTokenMs"]);
     }
     for id in ["missing", "untrusted", "codex", "opencode"] {
         let detail =
@@ -455,15 +483,16 @@ fn dsh_decode_speed_is_consistent_in_details_and_mixed_harness_statistics() {
         assert!(detail["estimatedSpeed"].is_null());
     }
     let stats = query::query(&s, "models", &json!({"scope":"all"})).unwrap();
-    assert_eq!(stats[0]["estDecodeSpeedOutputTokens"], 710);
-    assert_eq!(stats[0]["estDecodeSpeedGenerationMs"], 3076);
-    assert_eq!(stats[0]["estDecodeSpeedSampleCount"], 3);
+    assert_eq!(stats[0]["estDecodeSpeedOutputTokens"], 688);
+    assert_eq!(stats[0]["estDecodeSpeedGenerationMs"], 3482);
+    assert_eq!(stats[0]["estDecodeSpeedSampleCount"], 2);
     assert_eq!(stats[0]["estSpeedOutputTokens"], 1400);
     assert_eq!(stats[0]["estSpeedDurationMs"], 24000);
     assert_eq!(stats[0]["estSpeedSampleCount"], 4);
     let stats = query::query(&s, "providers", &json!({"filters":{"appType":"dsh"}})).unwrap();
-    assert_eq!(stats[0]["estDecodeSpeedOutputTokens"], 710);
-    assert_eq!(stats[0]["estDecodeSpeedGenerationMs"], 3076);
+    assert_eq!(stats[0]["estDecodeSpeedOutputTokens"], 688);
+    assert_eq!(stats[0]["estDecodeSpeedGenerationMs"], 3482);
+    assert_eq!(stats[0]["estDecodeSpeedSampleCount"], 2);
     assert_eq!(stats[0]["estSpeedOutputTokens"], 600);
     assert_eq!(stats[0]["estSpeedDurationMs"], 10000);
     assert_eq!(before, s.records("all").unwrap());

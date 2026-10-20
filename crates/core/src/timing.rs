@@ -2,6 +2,11 @@
 use crate::model::UsageTiming;
 use serde::Serialize;
 
+// Session logs measure client-side delivery. Subsecond bursts can include output
+// buffered upstream, so they cannot reliably estimate model generation speed.
+const MIN_ESTIMATED_OUTPUT_TOKENS: u64 = 200;
+const MIN_ESTIMATED_DURATION_MS: i64 = 1000;
+
 #[derive(Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum SpeedBasis {
@@ -25,28 +30,26 @@ pub(crate) fn speed_estimate(harness: &str, timing: &UsageTiming, output: u64) -
     let decode = harness == "dsh"
         && timing.duration_source == "dsh_step_message"
         && timing.first_token_source.as_deref() == Some("dsh_stream_delta");
-    let (basis, duration, min_output_tokens, min_duration_ms) = if decode {
+    let (basis, duration) = if decode {
         (
             SpeedBasis::Decode,
             timing
                 .first_token_ms
                 .filter(|first| *first >= 0)
                 .and_then(|first| timing.duration_ms.checked_sub(first)),
-            100,
-            100,
         )
     } else {
-        (SpeedBasis::EndToEnd, Some(timing.duration_ms), 200, 1000)
+        (SpeedBasis::EndToEnd, Some(timing.duration_ms))
     };
     let duration_ms = duration.filter(|ms| *ms > 0);
     SpeedEstimate {
         basis,
         duration_ms,
         eligible: (100..=3_600_000).contains(&timing.duration_ms)
-            && output >= min_output_tokens
-            && duration_ms.is_some_and(|ms| ms >= min_duration_ms),
-        min_output_tokens,
-        min_duration_ms,
+            && output >= MIN_ESTIMATED_OUTPUT_TOKENS
+            && duration_ms.is_some_and(|ms| ms >= MIN_ESTIMATED_DURATION_MS),
+        min_output_tokens: MIN_ESTIMATED_OUTPUT_TOKENS,
+        min_duration_ms: MIN_ESTIMATED_DURATION_MS,
     }
 }
 
@@ -79,5 +82,35 @@ mod tests {
         assert!(speed_estimate("dsh", &timing, 488).basis == SpeedBasis::EndToEnd);
         timing.duration_ms = 3_600_001;
         assert!(!speed_estimate("dsh", &timing, 488).eligible);
+    }
+
+    #[test]
+    fn short_or_buffered_output_is_excluded_without_falling_back_to_e2e() {
+        for (output, duration, first, eligible) in [
+            (124, 6491, 6331, false),  // Observed 775 tok/s: 124 / 0.160.
+            (1311, 8836, 8058, false), // More output still arrives in a subsecond burst.
+            (199, 5000, 1000, false),
+            (200, 5000, 4001, false),
+            (200, 5000, 4000, true),
+            (2000, 5000, 3000, true), // No arbitrary upper limit on measured speed.
+        ] {
+            let timing = UsageTiming {
+                duration_ms: duration,
+                first_token_ms: Some(first),
+                duration_source: "dsh_step_message".into(),
+                first_token_source: Some("dsh_stream_delta".into()),
+            };
+            let speed = speed_estimate("dsh", &timing, output);
+            assert!(speed.basis == SpeedBasis::Decode);
+            assert_eq!(speed.duration_ms, Some(duration - first));
+            assert_eq!(
+                speed.eligible,
+                eligible,
+                "{output} tokens / {} ms",
+                duration - first
+            );
+            assert_eq!(speed.min_output_tokens, 200);
+            assert_eq!(speed.min_duration_ms, 1000);
+        }
     }
 }

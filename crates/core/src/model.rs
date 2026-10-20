@@ -117,6 +117,8 @@ impl Default for Cost {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UsageRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_metadata: Option<RequestMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
     pub device_id: String,
     pub id: String,
@@ -140,6 +142,7 @@ pub struct UsageRecord {
 
 #[derive(Debug, Clone)]
 pub struct ParsedUsage {
+    pub request_metadata: Option<RequestMetadata>,
     pub provider: Option<String>,
     pub id: String,
     pub session_id: String,
@@ -149,6 +152,46 @@ pub struct ParsedUsage {
     pub tokens: Tokens,
     pub reported_cost: Option<String>,
     pub timing: Option<UsageTiming>,
+}
+
+/// Log settings effective at the request's turn, never the current machine config.
+/// These describe the requested tier, not a server-confirmed billing tier.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RequestMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_tier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_tier_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+}
+impl RequestMetadata {
+    pub fn speed(&self) -> Option<&'static str> {
+        match self.service_tier.as_deref()? {
+            "default" => Some("standard"),
+            "fast" | "priority" => Some("fast"),
+            _ => None,
+        }
+    }
+    pub fn valid_tier(s: &str) -> bool {
+        [
+            "default",
+            "fast",
+            "priority",
+            "auto",
+            "flex",
+            "scale",
+            "ultrafast",
+        ]
+        .contains(&s)
+    }
+    pub fn valid_effort(s: &str) -> bool {
+        [
+            "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+        ]
+        .contains(&s)
+    }
 }
 
 /// Local log estimates, deliberately separate from the v1 usage sync allowlist.
@@ -272,10 +315,27 @@ pub struct Config {
     pub server_token: String,
     pub scan_interval_seconds: u64,
     pub theme: String,
+    #[serde(default = "default_accent_color")]
+    pub accent_color: String,
+    #[serde(default = "default_interface_skin")]
+    pub interface_skin: String,
+    #[serde(default)]
+    pub skin_transparency: u8,
+    #[serde(default = "default_skin_mask_strength")]
+    pub skin_mask_strength: u8,
     pub language: String,
     pub timezone: String,
     #[serde(default = "default_models_sync")]
     pub models_dev_sync: serde_json::Value,
+}
+fn default_accent_color() -> String {
+    "#f97316".into()
+}
+fn default_interface_skin() -> String {
+    "none".into()
+}
+fn default_skin_mask_strength() -> u8 {
+    80
 }
 fn default_models_sync() -> serde_json::Value {
     serde_json::json!({"autoSyncEnabled":true,"includeCommonModels":true,"selectedModelKeys":[],"excludedCommonModelKeys":[],"lastSyncAt":null,"lastSyncError":null})
@@ -291,6 +351,10 @@ impl Default for Config {
             server_token: String::new(),
             scan_interval_seconds: 60,
             theme: "system".into(),
+            accent_color: default_accent_color(),
+            interface_skin: default_interface_skin(),
+            skin_transparency: 0,
+            skin_mask_strength: default_skin_mask_strength(),
             language: "zh".into(),
             timezone: "Asia/Shanghai".into(),
             models_dev_sync: default_models_sync(),

@@ -213,6 +213,7 @@ fn configured_peak_rates_freeze_in_cost_snapshots_and_survive_sync() {
         )
         .unwrap();
     let parsed = ParsedUsage {
+        request_metadata: None,
         provider: Some("opencode-go".into()),
         id: "p".into(),
         session_id: "s".into(),
@@ -236,6 +237,7 @@ fn configured_peak_rates_freeze_in_cost_snapshots_and_survive_sync() {
     );
     assert_eq!(cost.context.as_ref().unwrap().period, "peak");
     let record = UsageRecord {
+        request_metadata: None,
         provider: parsed.provider.clone(),
         device_id: engine.lock().unwrap().device_id().unwrap(),
         id: "p".into(),

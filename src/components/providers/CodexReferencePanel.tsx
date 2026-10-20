@@ -1,3 +1,4 @@
+import { OptionSelect } from "@/components/ui/option-select";
 import { useEffect, useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CODEX_PLANS } from "@/lib/codexSubscription";
@@ -153,11 +154,11 @@ export function CodexReferencePanel({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex flex-col gap-1 text-caption text-fg-2">
               {l("预测模型", "Forecast model")}
-              <select
+              <OptionSelect
                 aria-label={l("预测模型", "Forecast model")}
                 className="scope-select w-full"
                 value={model}
-                onChange={(e) => setModel(e.target.value)}
+                onValueChange={(value) => setModel(value)}
               >
                 <option value="">
                   {l("最近使用（自动）", "Most recent (auto)")}
@@ -170,15 +171,15 @@ export function CodexReferencePanel({
                     {m}
                   </option>
                 ))}
-              </select>
+              </OptionSelect>
             </label>
             <label className="flex flex-col gap-1 text-caption text-fg-2">
               {l("消耗速率采样", "Burn-rate sampling")}
-              <select
+              <OptionSelect
                 aria-label={l("消耗速率采样", "Burn-rate sampling")}
                 className="scope-select w-full"
                 value={lookback}
-                onChange={(e) => setLookback(Number(e.target.value))}
+                onValueChange={(value) => setLookback(Number(value))}
               >
                 <option value={0}>
                   {l("当前额度窗口", "Current quota window")}
@@ -190,7 +191,7 @@ export function CodexReferencePanel({
                 <option value={1440}>
                   {l("最近 24 小时", "Last 24 hours")}
                 </option>
-              </select>
+              </OptionSelect>
             </label>
           </div>
         )}
@@ -221,6 +222,7 @@ export function CodexReferencePanel({
             view={view}
             args={args}
             revision={rules.data?.revision}
+            speedRules={rules.data?.catalog.subscriptionSpeed}
             onModelChange={setModel}
             zh={zh}
             locale={locale}
@@ -241,6 +243,7 @@ export function CodexReferencePanel({
                 view={view}
                 args={args}
                 revision={rules.data?.revision}
+                speedRules={rules.data?.catalog.subscriptionSpeed}
                 onModelChange={setModel}
                 zh={zh}
                 locale={locale}
@@ -257,11 +260,11 @@ export function CodexReferencePanel({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="flex flex-col gap-1 text-caption text-fg-2">
                 {l("估算套餐", "Reference plan")}
-                <select
+                <OptionSelect
                   aria-label={l("估算套餐", "Reference plan")}
                   className="scope-select w-full"
                   value={plan}
-                  onChange={(e) => setPlan(e.target.value as CodexPlan)}
+                  onValueChange={(value) => setPlan(value as CodexPlan)}
                 >
                   {plans.map((p) => (
                     <option key={p.id} value={p.id}>
@@ -269,31 +272,31 @@ export function CodexReferencePanel({
                       {p.theoreticalMultiplier}×
                     </option>
                   ))}
-                </select>
+                </OptionSelect>
               </label>
               <label className="flex flex-col gap-1 text-caption text-fg-2">
                 {l("使用强度", "Usage intensity")}
-                <select
+                <OptionSelect
                   aria-label={l("使用强度", "Usage intensity")}
                   className="scope-select w-full"
                   value={pace}
-                  onChange={(e) => setPace(e.target.value)}
+                  onValueChange={(value) => setPace(value)}
                 >
                   {["0.25", "0.5", "1", "1.5", "2", "4"].map((p) => (
                     <option key={p} value={p}>
                       {p}×
                     </option>
                   ))}
-                </select>
+                </OptionSelect>
               </label>
               <label className="flex flex-col gap-1 text-caption text-fg-2">
                 {l("参考额度基准", "Allowance basis")}
-                <select
+                <OptionSelect
                   aria-label={l("参考额度基准", "Allowance basis")}
                   className="scope-select w-full sm:max-w-md"
                   value={effectiveMode}
-                  onChange={(e) =>
-                    setMode(e.target.value as CodexAllowanceMode)
+                  onValueChange={(value) =>
+                    setMode(value as CodexAllowanceMode)
                   }
                 >
                   <option value="modeldial">
@@ -308,23 +311,23 @@ export function CodexReferencePanel({
                       "Plus estimate × theoretical multiplier",
                     )}
                   </option>
-                </select>
+                </OptionSelect>
               </label>
               {quota && quota.buckets.length > 1 && (
                 <label className="flex flex-col gap-1 text-caption text-fg-2">
                   {l("官方额度桶", "Provider quota bucket")}
-                  <select
+                  <OptionSelect
                     aria-label={l("官方额度桶", "Provider quota bucket")}
                     className="scope-select w-full"
                     value={activeBucket}
-                    onChange={(e) => setBucket(e.target.value)}
+                    onValueChange={(value) => setBucket(value)}
                   >
                     {quota.buckets.map((b) => (
                       <option key={b.id} value={b.id}>
                         {b.name ?? b.id}
                       </option>
                     ))}
-                  </select>
+                  </OptionSelect>
                 </label>
               )}
             </div>

@@ -1,3 +1,4 @@
+import { OptionSelect } from "@/components/ui/option-select";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Copy, FileInput, SlidersHorizontal } from "lucide-react";
@@ -186,15 +187,15 @@ export function GoUsagePanel({
         <label htmlFor="go-estimate-plan" className="text-caption text-fg-2">
           {l("估算套餐", "Estimation plan")}
         </label>
-        <select
+        <OptionSelect
           id="go-estimate-plan"
           className="scope-select"
           value={plan}
-          onChange={(e) => changePlan(e.target.value as GoPlan)}
+          onValueChange={(value) => changePlan(value as GoPlan)}
         >
           <option value="go">Go</option>
           <option value="goPlus">Go Plus</option>
-        </select>
+        </OptionSelect>
         <span className="text-caption text-fg-3">
           {l(
             "仅用于估算，不修改手填订阅",
@@ -374,14 +375,14 @@ export function GoUsagePanel({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <label className="text-caption text-fg-2 space-y-1">
                 {l("模拟模型", "Simulation model")}
-                <select
+                <OptionSelect
                   aria-label={l("模拟模型", "Simulation model")}
                   className="scope-select w-full"
                   value={model?.id ?? ""}
-                  onChange={(e) => {
-                    setModelId(e.target.value);
+                  onValueChange={(value) => {
+                    setModelId(value);
                     setTokens(
-                      catalog?.models.find((v) => v.id === e.target.value)
+                      catalog?.models.find((v) => v.id === value)
                         ?.sampleTokens ?? emptyTokens,
                     );
                     setResult(null);
@@ -392,7 +393,7 @@ export function GoUsagePanel({
                       {m.name}
                     </option>
                   ))}
-                </select>
+                </OptionSelect>
               </label>
               <label className="text-caption text-fg-2 space-y-1">
                 {l("请求数", "Simulated requests")}
@@ -412,12 +413,12 @@ export function GoUsagePanel({
               </label>
               <label className="text-caption text-fg-2 space-y-1">
                 {l("时段", "Period")}
-                <select
+                <OptionSelect
                   aria-label={l("模拟时段", "Simulation period")}
                   className="scope-select w-full"
                   value={period}
-                  onChange={(e) => {
-                    setPeriod(e.target.value);
+                  onValueChange={(value) => {
+                    setPeriod(value);
                     setResult(null);
                   }}
                 >
@@ -428,7 +429,7 @@ export function GoUsagePanel({
                     {l("非高峰情景", "Off-peak scenario")}
                   </option>
                   <option value="peak">{l("高峰情景", "Peak scenario")}</option>
-                </select>
+                </OptionSelect>
               </label>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

@@ -190,6 +190,7 @@ pub fn preview(store: &Store, input: &MigrationInput) -> Result<Preview> {
                 cost.method = "unknown".into()
             }
             let r = UsageRecord {
+                request_metadata: None,
                 provider: None,
                 device_id: own.clone(),
                 id: format!("legacy:{}:{grain}:{key}", input.source_id),

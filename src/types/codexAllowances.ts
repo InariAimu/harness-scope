@@ -1,5 +1,12 @@
 import type { CodexPlan } from "./providerAccounts";
 export type CodexAllowanceMode = "modeldial" | "theoretical";
+export interface CodexSubscriptionSpeed {
+  sourceUrl: string;
+  checkedAt: string;
+  fastMultiplier: string;
+  purchasedCreditsFastMultiplier: string;
+  fastModelIds: string[];
+}
 export interface CodexCapacity {
   apiEquivalentUsd: string;
   tokens: string | null;
@@ -16,6 +23,7 @@ export interface CodexAllowanceCatalog {
   sourceUrl: string;
   checkedAt: string;
   notes: string;
+  subscriptionSpeed: CodexSubscriptionSpeed;
   defaultMode: CodexAllowanceMode;
   theoreticalFallback: boolean;
   plusWeeklyToFiveHourDivisor: string | null;

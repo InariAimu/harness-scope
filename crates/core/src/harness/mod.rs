@@ -1,6 +1,7 @@
 //! Adapters own formats, not persistence, pricing, networking or application state.
 pub mod claude;
 pub mod codex;
+mod codex_settings;
 mod codex_timing;
 pub mod dsh;
 pub mod files;

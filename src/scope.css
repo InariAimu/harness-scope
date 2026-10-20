@@ -56,12 +56,70 @@ body,
   font-weight: 600;
 }
 .scope-main {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+/* Skin is behind all content and never takes pointer events or layout space. */
+.interface-skin-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  background: radial-gradient(ellipse at 80% 40%, #5c85ee24, transparent 70%);
+}
+.interface-skin-character {
+  position: absolute;
+  /* Face center in the source is (49%, 20%); anchor it at the upper-right third. */
+  left: 66.667%;
+  top: 33.333%;
+  width: clamp(440px, 56vw, 860px);
+  max-width: none;
+  height: auto;
+  transform: translate(-49%, -20%);
+  opacity: var(--skin-opacity, 1);
+}
+.interface-skin-veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--bg-app) var(--skin-veil-start, 100%), transparent) 0%,
+    color-mix(in srgb, var(--bg-app) var(--skin-veil-light-25, 96%), transparent) 25%,
+    color-mix(in srgb, var(--bg-app) var(--skin-veil-light-60, 80%), transparent) 60%,
+    color-mix(in srgb, var(--bg-app) var(--skin-veil-light-end, 66%), transparent) 100%
+  );
+}
+.dark .interface-skin-veil {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--bg-app) var(--skin-veil-start, 100%), transparent) 0%,
+    color-mix(in srgb, var(--bg-app) var(--skin-veil-dark-25, 97%), transparent) 25%,
+    color-mix(in srgb, var(--bg-app) var(--skin-veil-dark-60, 86%), transparent) 60%,
+    color-mix(in srgb, var(--bg-app) var(--skin-veil-dark-end, 76%), transparent) 100%
+  );
+}
+/* Keep a translucent surface above the adjustable veil. */
+[data-interface-skin="deepseek"] .scope-main :is(.scope-card, .bg-surface) {
+  background-color: color-mix(in srgb, var(--bg-card) 40%, transparent);
+}
+[data-interface-skin="deepseek"] .scope-main :is(table, pre, .cm-editor) {
+  background-color: var(--bg-card);
+}
+@media (max-width: 900px) {
+  .interface-skin-veil {
+    background: color-mix(in srgb, var(--bg-app) var(--skin-veil-narrow-light, 92%), transparent);
+  }
+  .dark .interface-skin-veil {
+    background: color-mix(in srgb, var(--bg-app) var(--skin-veil-narrow-dark, 95%), transparent);
+  }
 }
 .scope-page {
   flex: 1;
@@ -123,6 +181,14 @@ body,
 .scope-settings-nav {
   width: 150px;
   flex-shrink: 0;
+}
+@media (max-width: 767px) {
+  .scope-settings-nav {
+    width: 100%;
+  }
+  .scope-settings-nav .scope-nav {
+    width: auto;
+  }
 }
 .scope-label {
   color: var(--text-2);

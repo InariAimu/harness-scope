@@ -1,3 +1,4 @@
+import { OptionSelect } from "@/components/ui/option-select";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "@/lib/toast";
@@ -162,18 +163,18 @@ export function PricingEditModal({
           <Label htmlFor="priceCurrency">
             {t("scope.pricing.originalCurrency", "官方单价币种")}
           </Label>
-          <select
+          <OptionSelect
             id="priceCurrency"
             className="block rounded border border-border bg-surface p-2"
             value={formData.currency}
-            onChange={(event) =>
-              setFormData({ ...formData, currency: event.target.value })
+            onValueChange={(value) =>
+              setFormData({ ...formData, currency: value })
             }
           >
             {["USD", "CNY", "EUR", "JPY", "TWD", "TRY"].map((currency) => (
               <option key={currency}>{currency}</option>
             ))}
-          </select>
+          </OptionSelect>
         </div>
         {isNew && (
           <div className="space-y-2">

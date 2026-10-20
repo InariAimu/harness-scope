@@ -164,7 +164,7 @@ impl HarnessAdapter for Codex {
         Descriptor {
             id: "codex",
             name: "Codex",
-            parser_version: "codex-v4-provider",
+            parser_version: "codex-v5-request-settings",
             default_roots: vec![
                 home.join("sessions").to_string_lossy().into(),
                 home.join("archived_sessions").to_string_lossy().into(),
@@ -212,8 +212,10 @@ impl HarnessAdapter for Codex {
         let mut seen = HashSet::new();
         let mut ordinal = 0;
         let mut timer = super::codex_timing::RequestTimer::default();
+        let mut settings = super::codex_settings::Settings::default();
         for v in lines {
             timer.observe(v);
+            settings.observe(v);
             if v["type"] == "turn_context" || v["type"] == "session_meta" {
                 if let Some(id) = crate::providers::parse(v["payload"]["model_provider"].as_str()) {
                     provider = Some(id);
@@ -299,6 +301,7 @@ impl HarnessAdapter for Codex {
                 continue;
             }
             out.usage.push(ParsedUsage {
+                request_metadata: settings.metadata(),
                 provider: provider.clone(),
                 id: format!("codex:{session}:token:{ordinal}"),
                 session_id: session.into(),

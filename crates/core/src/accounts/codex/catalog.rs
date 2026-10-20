@@ -37,6 +37,22 @@ pub struct Model {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SubscriptionSpeed {
+    pub source_url: String,
+    pub checked_at: String,
+    pub fast_multiplier: String,
+    pub purchased_credits_fast_multiplier: String,
+    pub fast_model_ids: Vec<String>,
+}
+fn default_subscription_speed() -> SubscriptionSpeed {
+    let embedded: Value =
+        serde_json::from_str(include_str!("../../../resources/codex-allowances.json"))
+            .expect("vendored Codex allowances");
+    serde_json::from_value(embedded["subscriptionSpeed"].clone())
+        .expect("valid subscription speed rules")
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Catalog {
     pub schema_version: u32,
     pub version: String,
@@ -49,6 +65,8 @@ pub struct Catalog {
     pub bucket_ids: Vec<String>,
     pub plans: Vec<Plan>,
     pub models: Vec<Model>,
+    #[serde(default = "default_subscription_speed")]
+    pub subscription_speed: SubscriptionSpeed,
 }
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -90,6 +108,31 @@ pub fn validate(c: &Catalog) -> Result<()> {
         "Invalid Codex allowance source"
     );
     NaiveDate::parse_from_str(&c.checked_at, "%Y-%m-%d").context("Invalid Codex allowance date")?;
+    let speed = &c.subscription_speed;
+    anyhow::ensure!(
+        speed.source_url.starts_with("https://") && speed.source_url.len() <= 2048,
+        "Invalid subscription speed source"
+    );
+    NaiveDate::parse_from_str(&speed.checked_at, "%Y-%m-%d")
+        .context("Invalid subscription speed date")?;
+    for value in [
+        &speed.fast_multiplier,
+        &speed.purchased_credits_fast_multiplier,
+    ] {
+        let value = number(value)?;
+        anyhow::ensure!(
+            value >= Decimal::ONE && value <= Decimal::from(100),
+            "Invalid subscription speed multiplier"
+        );
+    }
+    let mut speed_models = HashSet::new();
+    anyhow::ensure!(
+        speed.fast_model_ids.len() <= 256
+            && speed.fast_model_ids.iter().all(|m| !m.is_empty()
+                && m.len() <= 200
+                && speed_models.insert(crate::pricing::normalize(m))),
+        "Invalid subscription speed models"
+    );
     anyhow::ensure!(
         ["modeldial", "theoretical"].contains(&c.default_mode.as_str()),
         "Invalid Codex allowance mode"

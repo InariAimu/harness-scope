@@ -10,20 +10,20 @@ const buttonVariants = cva(
       variant: {
         // 旧变体都映射到 v7 的样式（不再有蓝色 / 绿色按钮）
         default:
-          "border border-transparent bg-action font-semibold text-action-fg hover:bg-action-hover",
+          "border border-transparent bg-action font-semibold text-action-fg hover:bg-action-hover hover:text-action-hover-fg",
         destructive:
           "border border-transparent bg-danger text-white hover:brightness-110",
         outline:
           "border border-border-strong bg-surface text-fg-1 hover:bg-subtle",
         secondary: "text-fg-2 hover:bg-subtle hover:text-fg-1",
         ghost: "text-fg-2 hover:bg-subtle hover:text-fg-1",
-        mcp: "border border-transparent bg-action font-semibold text-action-fg hover:bg-action-hover",
+        mcp: "border border-transparent bg-action font-semibold text-action-fg hover:bg-action-hover hover:text-action-hover-fg",
         link: "text-action-text underline-offset-4 hover:underline",
         // ── v7（tokens.css 的 btn-*）：一个视图只有一个实心按钮，其余用 neutral ──
         // 中性实心：页头主操作（操作色，以后的主题色只改这一组变量）
-        // 主题色白字对比度偏低，统一 600 字重
+        // Foreground is selected from black/white for the configured accent.
         solid:
-          "border border-transparent bg-action font-semibold text-action-fg hover:bg-action-hover",
+          "border border-transparent bg-action font-semibold text-action-fg hover:bg-action-hover hover:text-action-hover-fg",
         // 中性描边：卡片上的「切换」「添加」「设为默认」等
         neutral:
           "border border-border-strong bg-surface text-fg-1 hover:bg-subtle disabled:opacity-100 disabled:border-border disabled:bg-transparent disabled:text-fg-3",
@@ -31,11 +31,11 @@ const buttonVariants = cva(
         quiet: "border border-transparent text-fg-1 hover:bg-subtle",
         // 模式色实心：只用于模式切换的主操作
         direct:
-          "border border-transparent bg-direct-solid text-direct-on font-semibold hover:brightness-110",
+          "border border-transparent bg-action text-action-fg font-semibold hover:bg-action-hover hover:text-action-hover-fg",
         route:
-          "border border-transparent bg-route-solid text-route-on font-semibold hover:brightness-110",
+          "border border-transparent bg-action text-action-fg font-semibold hover:bg-action-hover hover:text-action-hover-fg",
         stack:
-          "border border-transparent bg-stack-solid text-stack-on font-semibold hover:brightness-110",
+          "border border-transparent bg-action text-action-fg font-semibold hover:bg-action-hover hover:text-action-hover-fg",
       },
       size: {
         // 旧尺寸都映射到 v7 的三档（docs/design-system.html「按钮」）：

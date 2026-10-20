@@ -1,3 +1,4 @@
+import { OptionSelect } from "@/components/ui/option-select";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -229,12 +230,12 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
           <label className="text-caption text-fg-2" htmlFor="account-provider">
             {l("供应商", "Provider")}
           </label>
-          <select
+          <OptionSelect
             id="account-provider"
             className="scope-select"
             value={provider}
-            onChange={(e) => {
-              setProvider(e.target.value as AccountProvider | "all");
+            onValueChange={(value) => {
+              setProvider(value as AccountProvider | "all");
               setId("");
             }}
           >
@@ -244,19 +245,19 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
                 {label}
               </option>
             ))}
-          </select>
+          </OptionSelect>
           <label
             className="text-caption text-fg-2 ms-1"
             htmlFor="provider-account"
           >
             {l("账号", "Account")}
           </label>
-          <select
+          <OptionSelect
             id="provider-account"
             className="scope-select max-w-64"
             value={account?.id ?? ""}
             disabled={!visible.length}
-            onChange={(e) => setId(e.target.value)}
+            onValueChange={(value) => setId(value)}
           >
             {!visible.length && (
               <option value="">{l("暂无账号", "No accounts")}</option>
@@ -266,7 +267,7 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
                 {v.account.name}
               </option>
             ))}
-          </select>
+          </OptionSelect>
           <span className="ms-auto text-caption text-fg-3">
             {l("仅本机 · 不参与同步", "Device-local · excluded from sync")}
           </span>

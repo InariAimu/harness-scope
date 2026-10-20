@@ -1,3 +1,4 @@
+import { OptionSelect } from "@/components/ui/option-select";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { goCatalogApi } from "@/lib/api/goCatalog";
@@ -87,11 +88,11 @@ export function GoForecastPanel({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <label className="text-caption text-fg-2 space-y-1">
           {l("预测模型", "Forecast model")}
-          <select
+          <OptionSelect
             aria-label={l("预测模型", "Forecast model")}
             className="scope-select w-full"
             value={model}
-            onChange={(e) => setModel(e.target.value)}
+            onValueChange={(value) => setModel(value)}
           >
             <option value="">
               {l("最近使用（自动）", "Most recent (auto)")}
@@ -102,35 +103,35 @@ export function GoForecastPanel({
                 {m.name}
               </option>
             ))}
-          </select>
+          </OptionSelect>
         </label>
         <label className="text-caption text-fg-2 space-y-1">
           {l("消耗速率采样", "Burn-rate sampling")}
-          <select
+          <OptionSelect
             aria-label={l("消耗速率采样", "Burn-rate sampling")}
             className="scope-select w-full"
             value={lookback}
-            onChange={(e) => setLookback(Number(e.target.value))}
+            onValueChange={(value) => setLookback(Number(value))}
           >
             <option value={15}>{l("最近 15 分钟", "Last 15 minutes")}</option>
             <option value={60}>{l("最近 1 小时", "Last hour")}</option>
             <option value={1440}>{l("最近 24 小时", "Last 24 hours")}</option>
-          </select>
+          </OptionSelect>
         </label>
         <label className="text-caption text-fg-2 space-y-1">
           {l("使用强度", "Usage intensity")}
-          <select
+          <OptionSelect
             aria-label={l("使用强度", "Usage intensity")}
             className="scope-select w-full"
             value={pace}
-            onChange={(e) => setPace(e.target.value)}
+            onValueChange={(value) => setPace(value)}
           >
             {["0.25", "0.5", "1", "1.5", "2", "4"].map((v) => (
               <option key={v} value={v}>
                 {v}×{v === "1" ? l("（保持当前）", " (current)") : ""}
               </option>
             ))}
-          </select>
+          </OptionSelect>
         </label>
       </div>
       {query.isError && (

@@ -1,3 +1,4 @@
+import { OptionSelect } from "@/components/ui/option-select";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -29,6 +30,8 @@ import {
   WindowControlsContext,
 } from "@/components/shell/AppPageHeader";
 import { WindowControls } from "@/components/shell/WindowControls";
+import { AccentThemeProvider } from "@/components/theme/AccentThemeProvider";
+import { InterfaceSkinBackdrop } from "@/components/theme/InterfaceSkinBackdrop";
 
 export interface Source {
   id: string;
@@ -43,6 +46,10 @@ export interface Config {
   serverToken: string;
   scanIntervalSeconds: number;
   theme: string;
+  accentColor: string;
+  interfaceSkin: "none" | "deepseek";
+  skinTransparency: number;
+  skinMaskStrength: number;
   language: string;
   timezone: string;
   modelsDevSync: unknown;
@@ -101,15 +108,9 @@ export default function App() {
   useEffect(() => {
     if (!data) return;
     const c = data.config;
-    document.documentElement.classList.toggle(
-      "dark",
-      c.theme === "dark" ||
-        (c.theme === "system" &&
-          matchMedia("(prefers-color-scheme: dark)").matches),
-    );
     void i18n.changeLanguage(c.language);
     localStorage.setItem("harness-scope.language", c.language);
-  }, [data?.config.theme, data?.config.language, i18n]);
+  }, [data?.config.language, i18n]);
   useEffect(() => {
     if (data) {
       void syncModelsDevPricingOnStartup(data.lastScanAt)
@@ -133,6 +134,13 @@ export default function App() {
   const label = (zh: string, en: string) =>
     i18n.language.startsWith("zh") ? zh : en;
   return (
+    <AccentThemeProvider
+      color={data?.config.accentColor}
+      theme={data?.config.theme}
+      skin={data?.config.interfaceSkin}
+      skinTransparency={data?.config.skinTransparency}
+      skinMaskStrength={data?.config.skinMaskStrength}
+    >
     <WindowControlsContext.Provider
       value={isTauri() && isWindows() ? <WindowControls /> : null}
     >
@@ -209,6 +217,7 @@ export default function App() {
           </div>
         </aside>
         <main className="scope-main">
+          <InterfaceSkinBackdrop />
           {state.isError ? (
             <>
               <AppPageHeader title="Harness Scope" />
@@ -268,12 +277,12 @@ export default function App() {
                       >
                         {label("统计范围", "Devices")}
                       </label>
-                      <select
+                      <OptionSelect
                         id="scope-device"
                         value={device}
-                        onChange={(e) => {
-                          setDevice(e.target.value);
-                          setScope(e.target.value);
+                        onValueChange={(value) => {
+                          setDevice(value);
+                          setScope(value);
                           void client.invalidateQueries({
                             queryKey: ["usage"],
                           });
@@ -293,7 +302,7 @@ export default function App() {
                               {d.name}
                             </option>
                           ))}
-                      </select>
+                      </OptionSelect>
                       <span className="flex-1" />
                       <span className="text-caption text-fg-3">
                         {data.pending} {label("条待同步", "pending")}
@@ -325,5 +334,6 @@ export default function App() {
         </main>
       </div>
     </WindowControlsContext.Provider>
+    </AccentThemeProvider>
   );
 }

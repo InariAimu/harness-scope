@@ -136,7 +136,7 @@ third_party/                     上游许可证、来源及修改记录
 
 同一旧来源的持续追加导入不属于第一版；迁移是固定快照切换。若以后增加按区间重建，必须先验证新结果，再原子替换旧区间，并同步撤销旧记录。
 
-## 5. 同步协议 v1
+## 5. 同步协议 v3
 
 单用户服务；HTTPS 由反向代理提供。服务器启动必须配置 Bearer token，默认监听 localhost；生产可显式指定绑定地址。正文、路径、API 密钥不进入协议。消息设置数量和字节上限。
 
@@ -146,7 +146,7 @@ third_party/                     上游许可证、来源及修改记录
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 3,
   "deviceId": "persistent-uuid",
   "deviceName": "desktop",
   "records": [{"id":"claude:session:message","revision":2,"deleted":false}]
@@ -159,7 +159,11 @@ third_party/                     上游许可证、来源及修改记录
 
 ### 5.2 下载
 
-`GET /v1/changes?after=<seq>&limit=<n>`：按服务器 seq 升序返回记录变化、nextCursor、hasMore 和 serverInstanceId。客户端在同一事务应用变化并推进游标。其他设备记录写入 remote_records；本机记录继续由本地事实负责，避免本机未上传修订被旧镜像覆盖。
+`GET /v1/changes?after=<seq>&limit=<n>&protocolVersion=3`：按服务器 seq 升序返回记录变化、nextCursor、hasMore 和 serverInstanceId。客户端在同一事务应用变化并推进游标。其他设备记录写入 remote_records；本机记录继续由本地事实负责，避免本机未上传修订被旧镜像覆盖。
+
+v2 增加原生供应商 ID，v3 增加可选的 `requestMetadata`，只允许 Codex 请求档位、日志设置来源与推理强度，字段和值均以白名单验证，不含正文、路径或认证。`priority`／`fast` 对应请求 Fast 设置，`default` 对应 Standard；缺失不推断。旧记录无需补字段也可读取。健康检查声明版本能力；新版客户端拒绝向 v1／v2 服务端上传并保留原 outbox。新服务端兼容接收无新元信息的 v1／v2 记录，但拒绝旧客户端读取或覆写已有 v3 元信息，避免字段被剥离后错误确认。服务端先升级，再升级各设备。
+
+历史回填沿用原 ID、递增修订并原子维护 outbox。收到更高修订时覆盖用量事实，不按新增请求累加；相同修订重试保持幂等。账户额度历史、预测配置、订阅信息和凭据不随请求元信息同步。
 
 服务器重建后 instanceId 改变：清空远端镜像和游标，并将所有本机记录重新加入 outbox，包括 tombstone。首版服务器不裁剪变化序列；未来裁剪必须增加 full snapshot 协议。
 

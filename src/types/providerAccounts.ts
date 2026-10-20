@@ -112,6 +112,7 @@ export interface CodexReferenceWindow {
 export interface CodexReference {
   asOf: number;
   model: string | null;
+  allowanceModel?: string | null;
   models: string[];
   plan: CodexPlan;
   multiplier: number;

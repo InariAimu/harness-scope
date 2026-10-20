@@ -57,6 +57,7 @@ fn add(engine: &Engine, id: &str, at: i64, provider: &str, input: u64, cache: u6
     };
     s.upsert(
         UsageRecord {
+            request_metadata: None,
             device_id: s.device_id().unwrap(),
             id: id.into(),
             provider: Some(provider.into()),

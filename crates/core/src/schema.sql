@@ -22,4 +22,3 @@ CREATE INDEX IF NOT EXISTS usage_request ON usage_index((device_id||'|'||id)) WH
 CREATE INDEX IF NOT EXISTS usage_price_candidates ON usage_index(model,provider,amount_usd) WHERE origin='local' AND deleted=0 AND record_source='session' AND cost_method<>'reported';
 CREATE TABLE IF NOT EXISTS usage_state(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL);
 INSERT OR IGNORE INTO usage_state VALUES(1,0);
-PRAGMA user_version=2;

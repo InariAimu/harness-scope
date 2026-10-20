@@ -30,7 +30,7 @@ npm run desktop
 
 Windows 数据库默认位于 `%APPDATA%/dev.inariaimu.harness-scope/harness-scope.db`，与 CC Switch 独立。设备身份保存在数据库内，换机／恢复时应保留它，避免重新上传为另一台设备。
 
-本地 schema v2 保留原始用量 JSON，使用事务内自动维护的查询投影和应用／供应商／时间索引，分页只读取当前页的价格快照与计时。首次升级会建立索引，此后随记录增量维护；不改写历史费用或同步修订。查询使用独立只读 WAL 连接，后台扫描不会阻塞已有统计读取。界面按实际用量版本刷新，短时间重复切换复用缓存，悬停或聚焦 harness 时预取图表和请求页。采集由后台统一调度，修改扫描间隔会保存并唤醒采集线程。
+本地 schema v3 保留原始用量 JSON，使用事务内自动维护的查询投影和应用／供应商／时间索引，分页只读取当前页的价格快照与计时。首次升级会建立索引，此后随记录增量维护；不改写历史费用或同步修订。查询使用独立只读 WAL 连接，后台扫描不会阻塞已有统计读取。界面按实际用量版本刷新，短时间重复切换复用缓存，悬停或聚焦 harness 时预取图表和请求页。采集由后台统一调度，修改扫描间隔会保存并唤醒采集线程。
 
 生成内嵌前端的本机调试可执行文件：
 
@@ -74,6 +74,11 @@ OpenAI／Codex 订阅账号通过本机 Codex App Server 的 `account/read`、`a
 
 「目标重置」可按当前统计时区或固定 PST（UTC−8，不自动切换 PDT）填写同一目标时刻，分别估算各模型用完当前周余量需要的强度、请求／小时和 API 折算金额／小时。优先使用有效周校准，否则标明参考估算；目标不得早于当前时刻或晚于官方周重置，不计未来补充额度，其他窗口先触限或先重置时会提示重新安排。完整窗口、每日预算与校准依据在「窗口与采样」，套餐情景、模拟强度、参考基准和本地配置编辑在「参考配置」。切换页签保留所选参数和目标时间。
 
+概览与目标重置的每个支持模型下方紧接 `原始模型名-fast` 请求类型行，按 [OpenAI 官方规则](https://learn.chatgpt.com/docs/agent-configuration/speed) 对比 Standard／Fast 订阅续航与建议强度，不另设页签，也不改写底层模型名。Fast 消耗订阅内额度为 Standard 的 2.5×；购买 credits 的 2× 单独记录，不能用于订阅窗口估算。倍率、支持模型和核对日期保存在本地参考配置 `subscriptionSpeed`；旧配置加载时补默认规则，不自动覆盖配置文件。参考额度以 Standard 为情景基准；相同内容与请求频率的 API 折算金额保持一致，消耗倍率不等于速度提升保证。
+
+Codex 日志按时间顺序读取 `thread_settings_applied.thread_settings.service_tier` 与 `turn_context.effort`，将有效设置关联到该轮的各条用量记录；`priority`／`fast` 显示 Fast，`default` 显示 Standard。档位来自请求设置，不保证实际服务端执行或结算档位。中途改变设置后，后续轮次使用新值；缺失字段的历史保留未知，不用当前机器配置倒推。Fast 请求在列表以紫色和标记显示，详情提供推理强度与来源。解析器升级会自动重新扫描可用 Codex 日志，以原记录 ID 修订并回填，模型、tokens、时间、历史费用不变；缺失或已删除源日志无法回填。额度校准按每条已知请求档位归一化，避免混合 Fast／Standard 时重复计算倍率；校准区间含未知档位时回退到标注的参考估算。
+
+
 ## 浏览器开发与合成演示
 
 开发 API 只能监听 loopback；它提供本机文件访问能力，不应暴露到公网。同步服务器不提供该命令 API。
@@ -110,7 +115,7 @@ cargo run --release -p harness-scope-service -- --db data/server.db --bind 127.0
 
 也可使用 Docker Compose：设置 `HARNESS_SCOPE_TOKEN` 后运行 `docker compose up --build -d`。Compose 默认仅向宿主机 loopback 发布 8787，数据存于命名卷。容器尚未实际运行；Debian 13 已完成 systemd + Nginx 实机部署及跨机 HTTPS 同步验证，见 [验证记录](docs/VALIDATION.md)。
 
-接口：`GET /health`、`POST /v1/push`、`GET /v1/changes?after=0&limit=500`。除健康检查外均需 Bearer token；当前客户端使用协议 v2 保存供应商信息，服务端兼容接收 v1。升级客户端时请同步升级服务器和其他客户端；遇到 v1 服务器会提示升级并保留待同步记录。协议和事务语义见详细计划第 5 节。
+接口：`GET /health`、`POST /v1/push`、`GET /v1/changes?after=0&limit=500&protocolVersion=3`。除健康检查外均需 Bearer token；当前客户端使用协议 v3 保存供应商及安全白名单中的请求档位、推理强度和来源。服务端仍接收不含新字段的 v1／v2 记录，但旧客户端不能读取或覆写含 v3 元信息的记录。先升级服务器，再升级各客户端；遇到旧服务器会提示升级、保留 outbox，既不丢字段也不确认上传。历史回填会正常递增修订、加入待传，接收设备按原 ID 覆盖，tokens 不重复累加；窗口估算配置、额度快照和凭据继续只留本机。协议和事务语义见详细计划第 5 节。
 
 ## CC Switch 历史迁移
 
