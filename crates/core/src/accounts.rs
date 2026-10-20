@@ -13,6 +13,7 @@ use std::{
 };
 
 const META: &str = "provider_accounts_v1";
+pub(crate) mod codex;
 mod go_usage;
 mod polling;
 pub(crate) use polling::Polling;
@@ -72,6 +73,8 @@ pub struct Account {
     pub subscription: Subscription,
     #[serde(default)]
     pub refresh: RefreshPolicy,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex: Option<codex::Settings>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -88,6 +91,8 @@ struct Save {
     clear_api_key: bool,
     #[serde(default)]
     refresh: RefreshPolicy,
+    #[serde(default)]
+    codex: Option<codex::Settings>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -122,9 +127,33 @@ fn validate(input: &Save) -> Result<()> {
         );
     }
     anyhow::ensure!(
-        ["deepseek", "opencode-go"].contains(&input.provider.as_str()),
+        ["deepseek", "opencode-go", "openai-codex"].contains(&input.provider.as_str()),
         "Unsupported provider"
     );
+    if input.provider == "openai-codex" {
+        codex::validate(
+            input
+                .codex
+                .as_ref()
+                .context("Choose a Codex estimation plan")?,
+        )?;
+        anyhow::ensure!(
+            input.api_key.as_deref().is_none_or(|v| v.trim().is_empty()) && !input.clear_api_key,
+            "Codex subscription uses local login, not an API key"
+        );
+        anyhow::ensure!(
+            input
+                .links
+                .iter()
+                .all(|v| v.harness == "codex" && v.provider == "openai"),
+            "Link Codex / openai routes for subscription estimates"
+        );
+    } else {
+        anyhow::ensure!(
+            input.codex.is_none(),
+            "Codex settings require a Codex subscription account"
+        );
+    }
     anyhow::ensure!(
         !input.name.trim().is_empty() && input.name.chars().count() <= 80,
         "Account name must be 1–80 characters"
@@ -199,7 +228,10 @@ pub(crate) fn execute(engine: &Engine, vault: &Vault, name: &str, args: Value) -
             accounts.retain(|a| a.account.id != id);
             let old = vault.raw(id)?;
             vault.restore(id, None)?;
-            if let Err(error) = store.set_meta(META, &accounts) {
+            if let Err(error) = store.transaction(|| {
+                codex::calibration::clear(&store, id)?;
+                store.set_meta(META, &accounts)
+            }) {
                 vault.restore(id, old.as_deref())?;
                 return Err(error);
             }
@@ -208,6 +240,8 @@ pub(crate) fn execute(engine: &Engine, vault: &Vault, name: &str, args: Value) -
         "provider_account_refresh" => polling::refresh_managed(engine, vault, id(&args)?, fetch),
         "provider_account_activity" => polling::activity(engine, &args),
         "go_usage_estimate" => go_usage::estimate(engine, &args),
+        "codex_subscription_estimate" => codex::estimate(engine, &args),
+        "go_forecast" => go_usage::forecast(engine, &args),
         "go_simulate" => go_usage::simulate(engine, &args),
         "provider_account_usage" => local_usage(
             engine,
@@ -247,6 +281,15 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
         );
     }
     let provider_changed = position.is_some_and(|i| items[i].account.provider != input.provider);
+    let connection_changed = position.is_some_and(|i| {
+        items[i]
+            .account
+            .codex
+            .as_ref()
+            .map(|v| (&v.binary_path, &v.home_path))
+            != input.codex.as_ref().map(|v| (&v.binary_path, &v.home_path))
+            || input.provider == "openai-codex" && items[i].account.links != input.links
+    });
     let new_key = input
         .api_key
         .as_deref()
@@ -266,6 +309,7 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
                 links: vec![],
                 subscription: Subscription::default(),
                 refresh: RefreshPolicy::default(),
+                codex: None,
             },
             revision: String::new(),
             snapshot: None,
@@ -280,9 +324,10 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
         links: input.links,
         subscription: input.subscription,
         refresh: input.refresh,
+        codex: input.codex,
     };
     item.revision = uuid::Uuid::new_v4().to_string();
-    if new_key.is_some() || input.clear_api_key || provider_changed {
+    if new_key.is_some() || input.clear_api_key || provider_changed || connection_changed {
         item.snapshot = None;
         item.error = None;
         item.last_attempt_at = None;
@@ -298,7 +343,12 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
     } else {
         items.push(item.clone());
     }
-    if let Err(error) = store.set_meta(META, &items) {
+    if let Err(error) = store.transaction(|| {
+        if connection_changed || provider_changed {
+            codex::calibration::clear(&store, &account_id)?;
+        }
+        store.set_meta(META, &items)
+    }) {
         vault.restore(&account_id, old_key.as_deref())?;
         return Err(error);
     }
@@ -317,7 +367,11 @@ fn refresh_with(
             .iter_mut()
             .find(|a| a.account.id == id)
             .context("Provider account no longer exists")?;
-        let key = vault.read(id);
+        let key = if item.account.provider == "openai-codex" {
+            serde_json::to_string(&item.account.codex).map_err(anyhow::Error::from)
+        } else {
+            vault.read(id)
+        };
         let request = uuid::Uuid::new_v4().to_string();
         item.request_id = Some(request.clone());
         item.last_attempt_at = Some(Utc::now().timestamp());
@@ -336,6 +390,8 @@ fn refresh_with(
         .find(|a| a.account.id == id)
         .context("Provider account no longer exists")?;
     if item.revision == captured.revision && item.request_id.as_deref() == Some(&request) {
+        let previous_snapshot = item.snapshot.clone();
+        let succeeded = response.is_ok();
         match response {
             Ok(data) => {
                 item.snapshot = Some(json!({"fetchedAt":Utc::now().timestamp(),"data":data}));
@@ -344,13 +400,26 @@ fn refresh_with(
             Err(error) => item.error = Some(error.to_string()),
         }
         let result = view(engine, item, vault);
-        store.set_meta(META, &items)?;
+        let observed = if succeeded && item.account.provider == "openai-codex" {
+            item.snapshot.clone()
+        } else {
+            None
+        };
+        store.transaction(|| {
+            if let Some(snapshot) = observed.as_ref() {
+                codex::calibration::record(&store, id, previous_snapshot.as_ref(), snapshot)?;
+            }
+            store.set_meta(META, &items)
+        })?;
         Ok(result)
     } else {
         Ok(view(engine, item, vault))
     }
 }
 fn fetch(provider: &str, key: &str) -> Result<Value> {
+    if provider == "openai-codex" {
+        return codex::fetch(&serde_json::from_str(key)?);
+    }
     let url = match provider {
         "deepseek" => "https://api.deepseek.com/user/balance",
         "opencode-go" => "https://opencode.ai/inference/go/v1/usage",

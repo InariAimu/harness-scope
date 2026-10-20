@@ -79,6 +79,8 @@ impl Engine {
             | "provider_account_refresh"
             | "provider_account_activity"
             | "go_usage_estimate"
+            | "go_forecast"
+            | "codex_subscription_estimate"
             | "go_simulate"
             | "provider_account_usage" => {
                 crate::accounts::execute(self, &self.account_vault, name, args)
@@ -169,6 +171,15 @@ impl Engine {
                 Ok(json!(display))
             }
             "prices" => Ok(json!(self.read_lock()?.prices()?)),
+            "codex_allowance_catalog" => crate::accounts::codex::catalog::info(
+                &*self.read_lock()?,
+                &self.database_path.with_extension("codex-allowances.json"),
+            ),
+            "save_codex_allowance_catalog" => crate::accounts::codex::catalog::save(
+                &*self.lock()?,
+                &self.database_path.with_extension("codex-allowances.json"),
+                args,
+            ),
             "go_catalog" => pricing::go_catalog::info(
                 &*self.read_lock()?,
                 &self.database_path.with_extension("opencode-go.json"),
@@ -800,18 +811,21 @@ impl Engine {
             if !Path::new(&source.root).exists() {
                 continue;
             }
+            let mut source_sessions = Vec::new();
             for path in adapter.discover(Path::new(&source.root))? {
                 if !visited.insert(path.clone()) {
                     continue;
                 }
                 keys.insert((source.harness.clone(), path.clone()));
                 if let Ok(rows) = self.reader.metadata(adapter, &path) {
-                    sessions.extend(rows.into_iter().map(|mut session| {
+                    source_sessions.extend(rows.into_iter().map(|mut session| {
                         session.can_delete = adapter.descriptor().delete;
                         session
                     }));
                 }
             }
+            adapter.enrich_metadata(Path::new(&source.root), &mut source_sessions);
+            sessions.extend(source_sessions);
         }
         self.reader.retain_metadata(&keys);
         sessions.sort_by(|a, b| b.last_active_at.cmp(&a.last_active_at));

@@ -10,6 +10,8 @@
 
 会话阅读使用独立的 `read_metadata()` / `read_messages(path, session_id)` 投影：前者只读列表摘要，后者只读所选会话。默认回退到完整日志；大日志或多会话数据库应覆盖这两个入口。Codex／Claude 使用有上限的头尾采样，压缩日志仅读前缀；OpenCode 在只读事务内查询会话头或限定 `session_id` 的正文。不要把这些摘要用于用量计数。
 
+独立于日志更新的原生列表信息可通过 `enrich_metadata(root, sessions)` 按来源批量补充，此入口在日志摘要缓存之外每次刷新执行。Codex 按当前来源查找 `session_index.jsonl`，以最后一条有效 `thread_name` 覆盖标题，支持活动／归档目录及日期子目录，不混用其他来源或当前 `CODEX_HOME` 的索引。索引缺失或损坏时保留日志回退：跳过环境、项目指令和 Page 上下文等注入消息，取真实提问；附件包装取 `My request` 部分，完全没有提问则显示 session ID。正文保留原始消息。
+
 阅读缓存位于 `crates/core/src/sessions.rs`。摘要按修改时间、大小与创建时间失效，SQLite 还合并 WAL；正文按 harness、规范源路径及 session ID 区分，LRU 限制为 8 个快照／96 MiB。分页和长块引用绑定快照指纹，日志续写不会把旧引用解释为新正文。`session_messages` 保留完整兼容读取；`session_transcript` 每批最多 150 条／约 256 KiB，`session_block` 按 Unicode 字符分页取完整工具参数、输出及思考。正文缓存和引用不进入数据库或同步协议。
 
 ## 身份与统计规则

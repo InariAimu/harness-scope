@@ -18,6 +18,7 @@ import type {
   GoWindowId,
 } from "@/types/goCatalog";
 import { GoRulesEditor } from "./GoRulesEditor";
+import { GoForecastPanel } from "./GoForecastPanel";
 const emptyTokens: GoTokens = {
   input: 0,
   output: 0,
@@ -52,7 +53,7 @@ export function GoUsagePanel({
 }) {
   const l = (a: string, b: string) => (zh ? a : b);
   const [plan, setPlan] = useState<GoPlan>(() => initialPlan(view));
-  const [tab, setTab] = useState("usage");
+  const [tab, setTab] = useState("forecast");
   const [windowId, setWindowId] = useState<GoWindowId>("monthly");
   const [editor, setEditor] = useState<{
     info: GoCatalogInfo;
@@ -203,6 +204,10 @@ export function GoUsagePanel({
       </div>
       <div className="flex flex-wrap gap-1 border-b border-border pb-2">
         {[
+          [
+            "forecast",
+            l("额度续航与每日预算", "Time remaining and daily budget"),
+          ],
           ["usage", l("本机分模型用量", "Local model usage")],
           ["simulate", l("用量模拟器", "Usage simulator")],
           ["rules", l("模型价表与额度", "Model rates and limits")],
@@ -218,6 +223,15 @@ export function GoUsagePanel({
           </Button>
         ))}
       </div>
+      {tab === "forecast" && rules.data && (
+        <GoForecastPanel
+          view={view}
+          info={rules.data}
+          plan={plan}
+          zh={zh}
+          locale={locale}
+        />
+      )}
       {tab === "usage" && (
         <div className="space-y-3">
           <p className="text-caption text-fg-3">

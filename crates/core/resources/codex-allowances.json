@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "version": "modeldial-2026-10-20",
+  "sourceUrl": "https://modeldial.com/subscriptions",
+  "checkedAt": "2026-10-20",
+  "notes": "ModelDial 公开记录与估算快照，采用用户截图的每周四舍五入值。API 等值不是订阅月费、现金余额或官方承诺；Token 含缓存。同一套餐的各模型共享额度，不得相加。不同样本的缓存、负载和日期不同。Pro 200 采用截图中的新额度，不自动按日历切换旧额度。",
+  "defaultMode": "modeldial",
+  "theoreticalFallback": true,
+  "plusWeeklyToFiveHourDivisor": "6",
+  "bucketIds": ["codex"],
+  "plans": [
+    {"id": "plus", "name": "Plus", "monthlyFeeUsd": "20", "theoreticalMultiplier": 1},
+    {"id": "pro100", "name": "Pro 100", "monthlyFeeUsd": "100", "theoreticalMultiplier": 5},
+    {"id": "pro200", "name": "Pro 200", "monthlyFeeUsd": "200", "theoreticalMultiplier": 10},
+    {"id": "pro500", "name": "Pro 500", "monthlyFeeUsd": "500", "theoreticalMultiplier": 25}
+  ],
+  "models": [
+    {
+      "id": "gpt-6-astra", "name": "GPT-6 Astra", "aliases": [],
+      "notes": "Plus 为用户五小时记录、每周按六窗口估算；Pro 100 为本机用量外推；Pro 200／500 为 SemiAnalysis Agent 负载月值按 12/52 归一。各档样本口径不同，不是严格倍率。",
+      "estimates": {
+        "plus": {"weekly": {"apiEquivalentUsd": "66", "tokens": "43000000"}, "rolling": null},
+        "pro100": {"weekly": {"apiEquivalentUsd": "481", "tokens": "227000000"}, "rolling": null},
+        "pro200": {"weekly": {"apiEquivalentUsd": "669", "tokens": "438000000"}, "rolling": null},
+        "pro500": {"weekly": {"apiEquivalentUsd": "1605", "tokens": "1062000000"}, "rolling": null}
+      }
+    },
+    {
+      "id": "gpt-6.1-sol", "name": "GPT-6.1 Sol", "aliases": [],
+      "notes": "Plus 社区五小时两次测得 $7.5／$7.8，ModelDial 采用 $7.8；周按六窗口估算，截图周值为四舍五入的 $47、2.38 亿 Token。Pro 100 沿用套餐间比例推算，并非该档实测。Pro 200／500 采用 Agent 负载归一周值。",
+      "estimates": {
+        "plus": {"weekly": {"apiEquivalentUsd": "47", "tokens": "238000000"}, "rolling": {"apiEquivalentUsd": "7.8", "tokens": null}},
+        "pro100": {"weekly": {"apiEquivalentUsd": "345", "tokens": "1751000000"}, "rolling": null},
+        "pro200": {"weekly": {"apiEquivalentUsd": "481", "tokens": "2354000000"}, "rolling": null},
+        "pro500": {"weekly": {"apiEquivalentUsd": "1243", "tokens": "6069000000"}, "rolling": null}
+      }
+    },
+    {
+      "id": "gpt-6-sol", "name": "GPT-6 Sol", "aliases": [],
+      "notes": "Plus 为用户五小时记录，周按六窗口估算；Pro 100 为模型／套餐比例估算。Pro 200／500 截图无可比样本，保留 null，允许显式理论倍率回退。",
+      "estimates": {
+        "plus": {"weekly": {"apiEquivalentUsd": "66", "tokens": "259000000"}, "rolling": null},
+        "pro100": {"weekly": {"apiEquivalentUsd": "487", "tokens": "1911000000"}, "rolling": null},
+        "pro200": {"weekly": null, "rolling": null},
+        "pro500": {"weekly": null, "rolling": null}
+      }
+    },
+    {
+      "id": "gpt-5.6-sol", "name": "GPT-5.6 Sol", "aliases": [],
+      "notes": "Plus 为用户五小时记录，周按六窗口估算；Pro 100 为模型／套餐比例估算。Pro 200／500 截图无可比样本，保留 null，允许显式理论倍率回退。",
+      "estimates": {
+        "plus": {"weekly": {"apiEquivalentUsd": "86", "tokens": "165000000"}, "rolling": null},
+        "pro100": {"weekly": {"apiEquivalentUsd": "603", "tokens": "1152000000"}, "rolling": null},
+        "pro200": {"weekly": null, "rolling": null},
+        "pro500": {"weekly": null, "rolling": null}
+      }
+    }
+  ]
+}

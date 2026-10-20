@@ -97,7 +97,7 @@ pub(super) fn due_at(
                 item.account.refresh.background_seconds
             };
             if seconds == 0
-                || !vault.exists(&item.account.id)
+                || (item.account.provider != "openai-codex" && !vault.exists(&item.account.id))
                 || engine.account_polling.is_refreshing(&item.account.id)
             {
                 return false;

@@ -34,6 +34,8 @@ import {
 } from "@/lib/providerAccounts";
 import { ProviderAccountEditor } from "./ProviderAccountEditor";
 import { GoUsagePanel } from "@/components/providers/GoUsagePanel";
+import { CodexReferencePanel } from "@/components/providers/CodexReferencePanel";
+import { codexWindowLabel } from "@/lib/codexSubscription";
 import { cn } from "@/lib/utils";
 
 function QuotaCard({
@@ -193,7 +195,12 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
           <>
             <Button
               variant="neutral"
-              disabled={!selected?.keyConfigured || refreshing}
+              disabled={
+                !selected ||
+                (selected.account.provider !== "openai-codex" &&
+                  !selected.keyConfigured) ||
+                refreshing
+              }
               onClick={() => account && remote.mutate(account.id)}
             >
               <RefreshCw
@@ -289,8 +296,8 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
             </h2>
             <p className="max-w-md text-body text-fg-2">
               {l(
-                "查看 DeepSeek 官方余额或 OpenCode Go 三窗口额度，并关联本机用量。也可以先填写订阅信息，稍后配置 Key。",
-                "View DeepSeek balances or OpenCode Go limits and link local usage. You can add subscription details before configuring a key.",
+                "查看 DeepSeek 余额、OpenCode Go 或 OpenAI／Codex 订阅额度，并关联本机用量。",
+                "View DeepSeek balances, OpenCode Go or OpenAI/Codex subscription limits, and link local usage.",
               )}
             </p>
             <Button variant="neutral" onClick={() => setEditing(null)}>
@@ -306,9 +313,11 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
               </span>
               <span className="inline-flex items-center gap-1">
                 <KeyRound size={12} />
-                {selected.keyConfigured
-                  ? l("Key 已保存", "Key saved")
-                  : l("未配置 Key", "No key configured")}
+                {account!.provider === "openai-codex"
+                  ? l("使用本机 Codex 登录", "Local Codex login")
+                  : selected.keyConfigured
+                    ? l("Key 已保存", "Key saved")
+                    : l("未配置 Key", "No key configured")}
               </span>
               <span>
                 {selected.snapshot
@@ -343,15 +352,69 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
                   )}
               </div>
             )}
-            {!selected.keyConfigured && (
-              <div className="rounded-control border border-border bg-subtle px-3 py-2 text-caption text-fg-2">
-                {l(
-                  "编辑账号并保存 API Key 后可查询官方余额／额度。本机用量不受影响。",
-                  "Save an API key to fetch provider balances or limits. Local usage remains available.",
+            {account!.provider !== "openai-codex" &&
+              !selected.keyConfigured && (
+                <div className="rounded-control border border-border bg-subtle px-3 py-2 text-caption text-fg-2">
+                  {l(
+                    "编辑账号并保存 API Key 后可查询官方余额／额度。本机用量不受影响。",
+                    "Save an API key to fetch provider balances or limits. Local usage remains available.",
+                  )}
+                </div>
+              )}
+            {account!.provider === "openai-codex" ? (
+              <div className="space-y-3">
+                {data?.kind === "codexQuota" ? (
+                  data.buckets.map((bucket) => (
+                    <div key={bucket.id} className="space-y-2">
+                      <p className="text-caption text-fg-2">
+                        {l("官方额度", "Provider limits")} ·{" "}
+                        {bucket.name ?? bucket.id} ·{" "}
+                        {l("套餐标识", "Plan identifier")}:{" "}
+                        {bucket.planType ?? data.planType ?? "—"}
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {bucket.windows.map((window) => (
+                          <QuotaCard
+                            key={window.id}
+                            window={window}
+                            label={codexWindowLabel(window.durationMinutes, zh)}
+                            now={now}
+                            zh={zh}
+                            date={date}
+                          />
+                        ))}
+                      </div>
+                      {!bucket.windows.length && (
+                        <p className="text-caption text-fg-3">
+                          {l(
+                            "接口未提供额度窗口，不推断为无限可用。",
+                            "No quota window returned; unlimited use is not assumed.",
+                          )}
+                        </p>
+                      )}
+                      {bucket.credits && (
+                        <p className="text-caption text-fg-3">
+                          Credits: {bucket.credits.balance ?? "—"}
+                          {bucket.credits.unlimited
+                            ? l(
+                                "（接口标记 unlimited）",
+                                " (reported unlimited)",
+                              )
+                            : ""}
+                        </p>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <section className="scope-card !p-4 text-caption text-fg-3">
+                    {l(
+                      "刷新后显示本机 Codex 登录对应的官方额度与重置时间。",
+                      "Refresh to read limits and reset times for the local Codex login.",
+                    )}
+                  </section>
                 )}
               </div>
-            )}
-            {account!.provider === "opencode-go" ? (
+            ) : account!.provider === "opencode-go" ? (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {(["rolling", "weekly", "monthly"] as const).map((id, i) => (
                   <QuotaCard
@@ -488,6 +551,15 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
                 view={selected}
                 zh={zh}
                 locale={locale}
+              />
+            )}
+            {account!.provider === "openai-codex" && (
+              <CodexReferencePanel
+                key={account!.id}
+                view={selected}
+                zh={zh}
+                locale={locale}
+                timeZone={snapshot.config.timezone}
               />
             )}
             <section className="scope-card !p-4 space-y-3">

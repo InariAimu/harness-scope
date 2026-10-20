@@ -105,6 +105,11 @@ body,
   color: var(--text-1);
   padding: 0 8px;
 }
+.scope-select:focus {
+  border-color: hsl(var(--ring));
+  outline: 1px solid hsl(var(--ring));
+  outline-offset: 0;
+}
 .scope-field {
   display: flex;
   flex-direction: column;

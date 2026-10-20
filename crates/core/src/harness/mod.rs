@@ -66,6 +66,8 @@ pub trait HarnessAdapter: Send + Sync {
         let (events, _, _, _) = self.read_source(path)?;
         Ok(self.sessions(path, &events))
     }
+    /// Apply optional native list metadata once per source, outside the log cache.
+    fn enrich_metadata(&self, _root: &Path, _sessions: &mut [Session]) {}
     fn read_messages(&self, path: &Path, session: Option<&str>) -> Result<Vec<Value>> {
         let (events, _, errors, complete) = self.read_source(path)?;
         anyhow::ensure!(

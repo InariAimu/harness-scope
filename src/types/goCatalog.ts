@@ -95,3 +95,68 @@ export interface GoSimulation {
   percent: Record<GoWindowId, string>;
   catalogRevision: string;
 }
+
+export type GoForecastWindow =
+  | {
+      id: GoWindowId;
+      status: "unavailable";
+      reason: string;
+      resetsAt: number | null;
+    }
+  | {
+      id: GoWindowId;
+      status: "ready";
+      reason: null;
+      resetsAt: number;
+      remainingPercent: string;
+      postSnapshotPercent: string;
+      exhaustionAt: number | null;
+      exhaustsBeforeReset: boolean;
+      runtimeSeconds: number;
+      expectedUsdToReset: string;
+      remainingModelUsd: string;
+      requestBudget: string;
+      requestsPerDay: string;
+      requestsPerHour: string;
+      tokensPerDay: string;
+      usdPerDay: string;
+      activeHoursPerDay: string;
+      safePaceMultiplier: string;
+    };
+export interface GoForecast {
+  asOf: number;
+  catalogRevision: string;
+  model: string | null;
+  modelName: string | null;
+  latestRawModel: string | null;
+  plan: GoPlan;
+  lookbackMinutes: number;
+  pace: string;
+  quotaFetchedAt: number | null;
+  quotaMaxAgeSeconds: number;
+  sample: {
+    requests: number;
+    spanSeconds: number;
+    unpricedRequests: number;
+    reason: string | null;
+    observedUsdPerHour: string;
+    currentUsdPerHour: string;
+    requestsPerHour: string;
+    monthlyPercentPerHour: string;
+    firstAt: number | null;
+    lastAt: number | null;
+  };
+  windows: GoForecastWindow[];
+  nextEvent: {
+    window: GoWindowId;
+    at: number;
+    kind: "reset" | "exhaustion";
+  } | null;
+  dailyBudget: {
+    window: GoWindowId;
+    requests: string;
+    tokens: string;
+    usd: string;
+    activeHours: string;
+  } | null;
+}

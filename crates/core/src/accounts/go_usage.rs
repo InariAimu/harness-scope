@@ -4,6 +4,11 @@ use crate::{
     pricing::go_catalog::{self, Catalog},
 };
 use rusqlite::params_from_iter;
+mod forecasting;
+
+pub(super) fn forecast(engine: &Engine, args: &Value) -> Result<Value> {
+    forecasting::calculate(engine, args)
+}
 
 fn plan(args: &Value) -> Result<&str> {
     let value = args["plan"].as_str().context("Choose an estimation plan")?;

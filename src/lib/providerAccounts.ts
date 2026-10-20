@@ -3,6 +3,7 @@ import type { QuotaWindow } from "@/types/providerAccounts";
 export const ACCOUNT_PROVIDER_NAMES = {
   deepseek: "DeepSeek",
   "opencode-go": "OpenCode Go",
+  "openai-codex": "OpenAI / Codex",
 };
 export const routeKey = (route: { harness: string; provider: string }) =>
   JSON.stringify([route.harness, route.provider]);
@@ -38,6 +39,14 @@ export function nativeMoney(
 }
 export function accountError(message: string, zh: boolean) {
   if (!zh) return message;
+  if (message.includes("Codex executable not found"))
+    return "未找到 Codex 程序，请在账号设置中填写 codex.exe 的绝对路径。";
+  if (message.includes("Codex home directory not found"))
+    return "Codex 数据目录不存在，请检查账号设置。";
+  if (message.includes("local ChatGPT login"))
+    return "无法读取 Codex 订阅，请先在对应 Codex 中使用 ChatGPT 账号登录，并检查 Codex 版本。";
+  if (message.includes("Codex paths"))
+    return "Codex 程序与数据目录须填写绝对路径，或留空自动检测。";
   if (message.includes("401")) return "API Key 无效或已过期，请检查凭据。";
   if (message.includes("403"))
     return "此 Key 没有查询权限，或账号没有有效订阅。";

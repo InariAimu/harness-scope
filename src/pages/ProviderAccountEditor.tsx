@@ -23,10 +23,13 @@ import {
 } from "@/lib/providerAccounts";
 import { useUnsavedChangesTracker } from "@/lib/unsavedChanges";
 import { toast } from "@/lib/toast";
+import { CODEX_PLANS } from "@/lib/codexSubscription";
+import { codexAllowancesApi } from "@/lib/api/codexAllowances";
 import type {
   AccountProvider,
   AccountSave,
   ProviderAccountView,
+  CodexPlan,
 } from "@/types/providerAccounts";
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -75,6 +78,15 @@ export function ProviderAccountEditor({
             renewalDate: null,
           },
           refresh: { foregroundSeconds: 60, backgroundSeconds: 300 },
+          ...(provider === "openai-codex"
+            ? {
+                codex: {
+                  plan: "plus" as const,
+                  binaryPath: null,
+                  homePath: null,
+                },
+              }
+            : {}),
         },
   );
   const routes = useQuery({
@@ -83,7 +95,25 @@ export function ProviderAccountEditor({
     staleTime: 30_000,
   });
   const selected = new Set(form.links.map(routeKey));
-  const available = [...(routes.data ?? [])];
+  const codexRules = useQuery({
+    queryKey: ["codex-allowances"],
+    queryFn: codexAllowancesApi.info,
+    enabled: form.provider === "openai-codex",
+    staleTime: 30_000,
+  });
+  const codexPlans =
+    codexRules.data?.catalog.plans ??
+    Object.entries(CODEX_PLANS).map(([id, p]) => ({
+      id,
+      name: p.name,
+      monthlyFeeUsd: String(p.monthlyUsd),
+      theoreticalMultiplier: p.multiplier,
+    }));
+  const available = [...(routes.data ?? [])].filter(
+    (v) =>
+      form.provider !== "openai-codex" ||
+      (v.harness === "codex" && v.provider === "openai"),
+  );
   for (const link of form.links)
     if (!available.some((v) => routeKey(v) === routeKey(link)))
       available.push({ ...link, records: 0 });
@@ -98,7 +128,7 @@ export function ProviderAccountEditor({
       const view = await api.save({
         ...form,
         apiKey: key.trim() || undefined,
-        clearApiKey: clearKey,
+        clearApiKey: form.provider === "openai-codex" ? undefined : clearKey,
       });
       setKey("");
       onSaved(view);
@@ -114,8 +144,12 @@ export function ProviderAccountEditor({
       !initial ||
       !window.confirm(
         l(
-          "删除此账号及本机保存的 Key？已有用量日志会保留。",
-          "Delete this account and its saved key? Usage logs will be kept.",
+          initial.account.provider === "openai-codex"
+            ? "删除此账号？本机 Codex 登录和已有用量日志会保留。"
+            : "删除此账号及本机保存的 Key？已有用量日志会保留。",
+          initial.account.provider === "openai-codex"
+            ? "Delete this account? Codex login and usage logs will be kept."
+            : "Delete this account and its saved key? Usage logs will be kept.",
         ),
       )
     )
@@ -189,7 +223,21 @@ export function ProviderAccountEditor({
                       ...v,
                       provider,
                       name: ACCOUNT_PROVIDER_NAMES[provider],
+                      codex:
+                        provider === "openai-codex"
+                          ? { plan: "plus", binaryPath: null, homePath: null }
+                          : undefined,
+                      links:
+                        provider === "openai-codex"
+                          ? v.links.filter(
+                              (link) =>
+                                link.harness === "codex" &&
+                                link.provider === "openai",
+                            )
+                          : v.links,
                     }));
+                    setKey("");
+                    setClearKey(false);
                   }}
                 >
                   {Object.entries(ACCOUNT_PROVIDER_NAMES).map(([id, name]) => (
@@ -210,26 +258,117 @@ export function ProviderAccountEditor({
                   }
                 />
               </Field>
-              <Field label="API Key">
-                <Input
-                  aria-label="API Key"
-                  type="password"
-                  autoComplete="new-password"
-                  value={key}
-                  disabled={clearKey}
-                  maxLength={4096}
-                  placeholder={
-                    initial?.keyConfigured
-                      ? l(
-                          "已保存；留空保留原 Key",
-                          "Saved; leave blank to keep the current key",
-                        )
-                      : l("可稍后配置", "Can be configured later")
-                  }
-                  onChange={(e) => setKey(e.target.value)}
-                />
-              </Field>
-              {initial?.keyConfigured && (
+              {form.provider === "openai-codex" ? (
+                <section className="rounded-control border border-border p-3 space-y-3">
+                  <p className="text-caption text-fg-3">
+                    {l(
+                      "使用本机 Codex 的 ChatGPT 登录读取订阅额度，无需填写 API Key。",
+                      "Reads subscription limits from a local Codex ChatGPT login; no API key is needed.",
+                    )}
+                  </p>
+                  <Field label={l("参考套餐档位", "Reference plan")}>
+                    <select
+                      aria-label={l("参考套餐档位", "Reference plan")}
+                      className="scope-select w-full"
+                      value={form.codex?.plan ?? "plus"}
+                      onChange={(e) =>
+                        setForm((v) => ({
+                          ...v,
+                          codex: {
+                            binaryPath: null,
+                            homePath: null,
+                            ...v.codex,
+                            plan: e.target.value as CodexPlan,
+                          },
+                        }))
+                      }
+                    >
+                      {codexPlans.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} · ${p.monthlyFeeUsd}/mo ·{" "}
+                          {p.theoreticalMultiplier}×
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <p className="text-caption text-fg-3">
+                    {l(
+                      "月费只表示订阅价格；参考额度来自本地分模型配置。不会覆盖下方手动月费和续费日期。",
+                      "Monthly fees are subscription prices; reference allowances come from local model-specific rules. Manual billing details below are kept.",
+                    )}
+                  </p>
+                  <Field
+                    label={l(
+                      "Codex 程序路径（可选）",
+                      "Codex executable (optional)",
+                    )}
+                  >
+                    <Input
+                      aria-label={l("Codex 程序路径", "Codex executable")}
+                      value={form.codex?.binaryPath ?? ""}
+                      placeholder={l(
+                        "留空自动检测桌面版或 PATH 中的 Codex",
+                        "Auto-detect desktop or PATH Codex",
+                      )}
+                      onChange={(e) =>
+                        setForm((v) => ({
+                          ...v,
+                          codex: {
+                            plan: "plus",
+                            homePath: null,
+                            ...v.codex,
+                            binaryPath: e.target.value || null,
+                          },
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field
+                    label={l("Codex 数据目录（可选）", "Codex home (optional)")}
+                  >
+                    <Input
+                      aria-label={l("Codex 数据目录", "Codex home")}
+                      value={form.codex?.homePath ?? ""}
+                      placeholder={l(
+                        "留空使用 CODEX_HOME 或 ~/.codex",
+                        "CODEX_HOME or ~/.codex by default",
+                      )}
+                      onChange={(e) =>
+                        setForm((v) => ({
+                          ...v,
+                          codex: {
+                            plan: "plus",
+                            binaryPath: null,
+                            ...v.codex,
+                            homePath: e.target.value || null,
+                          },
+                        }))
+                      }
+                    />
+                  </Field>
+                </section>
+              ) : (
+                <Field label="API Key">
+                  <Input
+                    aria-label="API Key"
+                    type="password"
+                    autoComplete="new-password"
+                    value={key}
+                    disabled={clearKey}
+                    maxLength={4096}
+                    placeholder={
+                      initial?.keyConfigured
+                        ? l(
+                            "已保存；留空保留原 Key",
+                            "Saved; leave blank to keep the current key",
+                          )
+                        : l("可稍后配置", "Can be configured later")
+                    }
+                    onChange={(e) => setKey(e.target.value)}
+                  />
+                </Field>
+              )}
+              {form.provider !== "openai-codex" && initial?.keyConfigured && (
                 <label className="flex items-center gap-2 text-caption text-fg-2">
                   <Checkbox
                     checked={clearKey}

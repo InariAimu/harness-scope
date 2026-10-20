@@ -6,6 +6,7 @@ import type {
   GoSimulation,
   GoTokens,
   GoUsageEstimate,
+  GoForecast,
 } from "@/types/goCatalog";
 export const goCatalogApi = {
   info: () => command<GoCatalogInfo>("go_catalog"),
@@ -17,6 +18,13 @@ export const goCatalogApi = {
     }),
   usage: (id: string, plan: GoPlan) =>
     command<GoUsageEstimate>("go_usage_estimate", { id, plan }),
+  forecast: (args: {
+    id: string;
+    plan: GoPlan;
+    model?: string;
+    lookbackMinutes: number;
+    pace: string;
+  }) => command<GoForecast>("go_forecast", args),
   simulate: (args: {
     model: string;
     plan: GoPlan;
