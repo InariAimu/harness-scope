@@ -41,23 +41,9 @@ struct Fact {
     tokens: Tokens,
 }
 fn facts(store: &Store, account: &Account, start: i64, end: i64) -> Result<Vec<Fact>> {
-    let mut selection = Selection::new(store, &json!({"scope":"local"}), start, end)?;
-    if account.links.is_empty() {
-        return Ok(vec![]);
-    }
-    selection.sql.push_str(" AND (");
-    for (i, link) in account.links.iter().enumerate() {
-        if i > 0 {
-            selection.sql.push_str(" OR ");
-        }
-        selection.sql.push_str("(u.harness=? AND u.provider=?)");
-        selection
-            .params
-            .extend([link.harness.clone().into(), link.provider.clone().into()]);
-    }
-    selection.sql.push(')');
+    let selection = linked_selection(store, account, start, end)?;
     // Decode only the optional 1h-write subset, and only for rows with cache writes.
-    let mut stmt=store.conn.prepare_cached(&format!("SELECT u.model,u.occurred_at,u.request_count,u.grain,u.input_tokens,u.output_tokens,u.cache_read,u.cache_write,CASE WHEN u.cache_write>0 THEN COALESCE(json_extract(r.payload,'$.tokens.cacheWrite1h'),0) ELSE 0 END FROM usage_index u LEFT JOIN records r ON r.device_id=u.device_id AND r.id=u.id WHERE {}",selection.sql))?;
+    let mut stmt=store.conn.prepare_cached(&format!("SELECT u.model,u.occurred_at,u.request_count,u.grain,u.input_tokens,u.output_tokens,u.cache_read,u.cache_write,CASE WHEN u.cache_write>0 THEN COALESCE(json_extract(CASE WHEN u.origin='local' THEN r.payload ELSE remote.payload END,'$.tokens.cacheWrite1h'),0) ELSE 0 END FROM usage_index u LEFT JOIN records r ON u.origin='local' AND r.device_id=u.device_id AND r.id=u.id LEFT JOIN remote_records remote ON u.origin='remote' AND remote.device_id=u.device_id AND remote.id=u.id WHERE {}",selection.sql))?;
     let rows = stmt
         .query_map(params_from_iter(selection.params.iter()), |r| {
             Ok(Fact {

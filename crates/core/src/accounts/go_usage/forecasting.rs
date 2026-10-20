@@ -211,7 +211,7 @@ fn calculate_at(engine: &Engine, args: &Value, now: i64) -> Result<Value> {
             Some(at) if at > now || now-at > FRESH_SECONDS => Some("stale_quota"),
             _ => None,
         };
-        // Bring the official snapshot forward with known linked local usage only.
+        // Bring the official snapshot forward with linked usage from all synced devices.
         // Unknown post-snapshot usage blocks forecasts instead of overstating balance.
         let mut since = Decimal::ZERO; let mut since_unknown = 0u64;
         if snapshot_reason.is_none() {

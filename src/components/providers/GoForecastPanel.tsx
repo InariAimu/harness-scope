@@ -308,8 +308,8 @@ export function GoForecastPanel({
       )}
       <p className="text-caption text-fg-3">
         {l(
-          "基于当前本地规则，按未来 UTC 高峰／非高峰自动分段计价，并补扣官方快照后已知的关联本机用量。假设后续只使用所选模型，保持样本中的请求规模与缓存分布。每日预算按均匀分布折算，集中高峰使用时需相应降低用量；其他模型或设备继续使用、服务端计费延迟、缓存变化均可能改变结果。官方快照须在 10 分钟内；缺失或不足样本时不推算无限可用。额度美元为折算量，不是新增账单。",
-          "Uses current local rules, future UTC peak/off-peak segments and known linked usage since the official snapshot. Assumes subsequent traffic uses only this model with the sampled request sizes and cache mix. Daily budgets assume uniform traffic; use less if concentrated in peak hours. Other models/devices, billing lag and cache changes affect accuracy. Quota must be newer than 10 minutes; insufficient samples never imply unlimited use. Dollar values express allowance, not a new bill.",
+          "按共用订阅采样所有已同步设备的关联路由。基于当前本地规则，按未来 UTC 高峰／非高峰分段计价，并补扣官方快照后的已知关联用量。假设后续只使用所选模型，保持样本中的请求规模与缓存分布。每日预算是所有关联设备的合计，按均匀分布折算，集中高峰使用时需相应降低用量；尚未同步的用量、其他模型、服务端计费延迟和缓存变化会影响结果。官方快照须在 10 分钟内；缺失或不足样本时不推算无限可用。额度美元为折算量，不是新增账单。",
+          "Samples linked routes from all synced devices, assuming a shared subscription. Uses current local rules, future UTC peak/off-peak segments and known linked usage since the official snapshot. Assumes subsequent traffic uses only this model with the sampled request sizes and cache mix. Daily budgets are shared totals across linked devices with uniform traffic; use less if concentrated in peak hours. Unsynced usage, other models, billing lag and cache changes affect accuracy. Quota must be newer than 10 minutes; insufficient samples never imply unlimited use. Dollar values express allowance, not a new bill.",
         )}
       </p>
     </div>

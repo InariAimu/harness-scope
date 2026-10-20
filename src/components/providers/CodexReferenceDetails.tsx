@@ -194,8 +194,8 @@ export function CodexReferenceDetails({
       </p>
       <p className="text-caption text-fg-3">
         {l(
-          "官方余量仅用于映射参考预算，不将本机折算费用扣入官方额度。假设后续仅使用所选模型并保持样本规模、缓存比例和使用强度；其他设备、其他模型、Fast／Ultrafast 与服务端计费规则都可能改变实际订阅消耗。日志不能区分同一路由的不同账号或 API Key。",
-          "Official remaining percentages only scale the reference budget; local costs are not deducted from official limits. Assumes continued use of this model with the sampled sizes, cache mix and intensity. Other devices, models, Fast/Ultrafast and provider rules can change actual subscription burn. Logs cannot distinguish accounts or API keys on the same route.",
+          "按共用订阅采样所有已同步设备的关联路由，每日预算是关联设备合计。官方余量仅用于映射参考预算，不重复扣除快照已包含的日志费用。假设后续仅使用所选模型并保持样本规模、缓存比例和使用强度；尚未同步的用量、其他模型、Fast／Ultrafast 与服务端计费规则都可能改变实际消耗。日志不能区分同一路由的不同账号或 API Key。",
+          "Samples linked routes from all synced devices, assuming a shared subscription; daily budgets are shared totals. Official remaining percentages scale the reference budget without deducting logged costs already included in the snapshot. Assumes continued use of this model with the sampled sizes, cache mix and intensity. Unsynced usage, other models, Fast/Ultrafast and provider rules can change actual burn. Logs cannot distinguish accounts or API keys on the same route.",
         )}
       </p>
     </div>

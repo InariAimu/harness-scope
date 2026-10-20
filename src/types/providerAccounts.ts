@@ -155,9 +155,9 @@ export interface CodexReference {
       spanSeconds?: number;
       deltaPercent?: string;
       observedPercentPerHour?: string;
-      localRequests?: number;
+      linkedRequests?: number;
       unpricedRequests?: number;
-      localUsd?: string;
+      linkedUsd?: string;
       modelCount?: number;
       modelPercentPerHour?: string;
       requiredPercentPerHour?: string;

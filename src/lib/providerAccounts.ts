@@ -52,7 +52,7 @@ export function accountError(message: string, zh: boolean) {
     return "此 Key 没有查询权限，或账号没有有效订阅。";
   if (message.includes("429")) return "供应商请求频率受限，请稍后刷新。";
   if (message.includes("already linked"))
-    return "所选本机路由已关联其他账号，请先解除原关联。";
+    return "所选路由已关联其他账号，请先解除原关联。";
   if (message.includes("Renewal date"))
     return "下次续费日期须晚于本期开始日期。";
   if (message.includes("timed out")) return "供应商暂时无法连接，请稍后刷新。";

@@ -209,7 +209,7 @@ export function GoUsagePanel({
             "forecast",
             l("额度续航与每日预算", "Time remaining and daily budget"),
           ],
-          ["usage", l("本机分模型用量", "Local model usage")],
+          ["usage", l("跨设备分模型用量", "Model usage across devices")],
           ["simulate", l("用量模拟器", "Usage simulator")],
           ["rules", l("模型价表与额度", "Model rates and limits")],
         ].map(([id, label]) => (
@@ -247,7 +247,7 @@ export function GoUsagePanel({
             </p>
           ) : usage.isLoading ? (
             <p className="text-caption text-fg-3">
-              {l("正在读取本机用量…", "Loading local usage…")}
+              {l("正在读取关联用量…", "Loading linked usage…")}
             </p>
           ) : (
             <>
@@ -261,7 +261,7 @@ export function GoUsagePanel({
                   >
                     <span className="text-caption text-fg-3">
                       {labels[window.id]} ·{" "}
-                      {l("本机估算占用", "Estimated local usage")}
+                      {l("跨设备估算占用", "Estimated usage across devices")}
                     </span>
                     <strong className="block text-xl tabular-nums">
                       {window.total.unmatchedRequests ? "≥ " : "≈ "}
@@ -342,8 +342,8 @@ export function GoUsagePanel({
                           <tr>
                             <td colSpan={4} className="py-4 text-fg-3">
                               {l(
-                                "此窗口没有关联路由的本机请求。",
-                                "No linked local requests in this window.",
+                                "此窗口没有关联路由的已同步请求。",
+                                "No linked requests from synced devices in this window.",
                               )}
                             </td>
                           </tr>
@@ -357,8 +357,8 @@ export function GoUsagePanel({
           )}
           <p className="text-caption text-fg-3">
             {l(
-              "仅包含关联路由的本机日志。未匹配模型、未公布的缓存单价与旧日汇总会明确排除；跨设备使用、促销和窗口边界可能与官方统计不同。上方三窗口卡片仍以官方接口为准。",
-              "Includes linked local logs only. Unknown models, unprovided cache rates and legacy daily totals are excluded. Other devices, promotions and window boundaries may differ from provider usage. The provider quota cards above remain authoritative.",
+              "按共用订阅汇总所有已同步设备的关联路由。未匹配模型、未公布的缓存单价与旧日汇总会明确排除；尚未同步的用量、促销和窗口边界可能与官方统计不同。上方三窗口卡片仍以官方接口为准。",
+              "Includes linked routes from all synced devices, assuming a shared subscription. Unknown models, unprovided cache rates and legacy daily totals are excluded. Unsynced usage, promotions and window boundaries may differ from provider usage. The provider quota cards above remain authoritative.",
             )}
           </p>
         </div>
@@ -498,7 +498,7 @@ export function GoUsagePanel({
                   }
                 }}
               >
-                {l("使用本机近 1 小时均值", "Use local last-hour average")}
+                {l("使用关联设备近 1 小时均值", "Use linked devices' last-hour average")}
               </Button>
               <Button disabled={calculating || !model} type="submit">
                 {calculating
@@ -509,12 +509,12 @@ export function GoUsagePanel({
             <p className="text-caption text-fg-3">
               {recent
                 ? l(
-                    `本机近一小时该模型 ${recent.requests} 次请求；填入后模拟相同强度的一小时。`,
-                    `This model made ${recent.requests} local requests in the last hour; the preset simulates an hour at that rate.`,
+                    `已同步设备近一小时该模型 ${recent.requests} 次关联请求；填入后模拟相同强度的一小时。`,
+                    `Linked devices made ${recent.requests} requests for this model in the last hour; the preset simulates an hour at that rate.`,
                   )
                 : l(
                     "近一小时暂无该模型样本；可填写 Token 数或使用官方典型请求。",
-                    "No local samples for this model in the last hour. Enter tokens or use an official example.",
+                    "No linked samples for this model in the last hour. Enter tokens or use an official example.",
                   )}
             </p>
           </form>

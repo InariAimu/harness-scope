@@ -1,4 +1,4 @@
-//! Provider accounts and authoritative remote balances, kept entirely device-local.
+//! Device-local account settings and balances, with linked usage across synced devices.
 use crate::{account_credentials::Vault, query_store::Selection, store::Store, Engine};
 use anyhow::{Context, Result};
 use chrono::{Datelike, NaiveDate, TimeZone, Utc};
@@ -212,8 +212,9 @@ pub(crate) fn execute(engine: &Engine, vault: &Vault, name: &str, args: Value) -
             .collect::<Vec<_>>())),
         "provider_account_routes" => {
             let store = engine.read_lock()?;
-            let mut statement = store.conn.prepare_cached("SELECT harness,provider,COUNT(*) FROM usage_index WHERE origin='local' AND deleted=0 AND provider IS NOT NULL GROUP BY harness,provider ORDER BY harness,provider")?;
-            let rows = statement.query_map([], |r| Ok(json!({"harness":r.get::<_,String>(0)?,"provider":r.get::<_,String>(1)?,"records":r.get::<_,i64>(2)?})))?.collect::<Result<Vec<_>,_>>()?;
+            let selected = Selection::new(&store, &json!({"scope":"all"}), i64::MIN, i64::MAX)?;
+            let mut statement = store.conn.prepare_cached(&format!("SELECT u.harness,u.provider,COUNT(*) FROM usage_index u WHERE {} AND u.provider IS NOT NULL GROUP BY u.harness,u.provider ORDER BY u.harness,u.provider", selected.sql))?;
+            let rows = statement.query_map(rusqlite::params_from_iter(selected.params.iter()), |r| Ok(json!({"harness":r.get::<_,String>(0)?,"provider":r.get::<_,String>(1)?,"records":r.get::<_,i64>(2)?})))?.collect::<Result<Vec<_>,_>>()?;
             Ok(json!(rows))
         }
         "provider_account_save" => save(engine, vault, serde_json::from_value(args)?),
@@ -243,7 +244,7 @@ pub(crate) fn execute(engine: &Engine, vault: &Vault, name: &str, args: Value) -
         "codex_subscription_estimate" => codex::estimate(engine, &args),
         "go_forecast" => go_usage::forecast(engine, &args),
         "go_simulate" => go_usage::simulate(engine, &args),
-        "provider_account_usage" => local_usage(
+        "provider_account_usage" => linked_usage(
             engine,
             id(&args)?,
             args["range"].as_str().unwrap_or("month"),
@@ -277,7 +278,7 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
                 .links
                 .iter()
                 .any(|link| other.account.links.contains(link)),
-            "A selected local route is already linked to another account"
+            "A selected route is already linked to another account"
         );
     }
     let provider_changed = position.is_some_and(|i| items[i].account.provider != input.provider);
@@ -523,7 +524,28 @@ fn midnight(timezone: chrono_tz::Tz, day: NaiveDate) -> Result<i64> {
     }
     anyhow::bail!("Cannot resolve local date")
 }
-fn local_usage(engine: &Engine, id: &str, range: &str) -> Result<Value> {
+// Linked routes are assumed to share this subscription on every synced device.
+// Selection excludes the server's mirror of this device, as well as tombstones.
+fn linked_selection(store: &Store, account: &Account, start: i64, end: i64) -> Result<Selection> {
+    let mut selected = Selection::new(store, &json!({"scope":"all"}), start, end)?;
+    if account.links.is_empty() {
+        selected.sql.push_str(" AND 0");
+    } else {
+        selected.sql.push_str(" AND (");
+        for (i, link) in account.links.iter().enumerate() {
+            if i > 0 {
+                selected.sql.push_str(" OR ");
+            }
+            selected.sql.push_str("(u.harness=? AND u.provider=?)");
+            selected
+                .params
+                .extend([link.harness.clone().into(), link.provider.clone().into()]);
+        }
+        selected.sql.push(')');
+    }
+    Ok(selected)
+}
+fn linked_usage(engine: &Engine, id: &str, range: &str) -> Result<Value> {
     let store = engine.read_lock()?;
     store.transaction(|| {
         let item = load(&store)?.into_iter().find(|a| a.account.id == id).context("Provider account no longer exists")?;
@@ -543,17 +565,7 @@ fn local_usage(engine: &Engine, id: &str, range: &str) -> Result<Value> {
                 end = end.min(midnight(timezone, NaiveDate::parse_from_str(date, "%Y-%m-%d")?)? - 1);
             }
         }
-        let mut selected = Selection::new(&store, &json!({"scope":"local"}), start, end)?;
-        if item.account.links.is_empty() { selected.sql.push_str(" AND 0"); }
-        else {
-            selected.sql.push_str(" AND (");
-            for (i, link) in item.account.links.iter().enumerate() {
-                if i > 0 { selected.sql.push_str(" OR "); }
-                selected.sql.push_str("(u.harness=? AND u.provider=?)");
-                selected.params.extend([link.harness.clone().into(), link.provider.clone().into()]);
-            }
-            selected.sql.push(')');
-        }
+        let selected = linked_selection(&store, &item.account, start, end)?;
         let rows = selected.rows(&store, false)?.into_iter().filter(|r| {
             if r.grain != "legacy_day" { return true; }
             let bounds = || -> Result<(i64,i64)> {

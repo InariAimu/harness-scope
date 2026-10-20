@@ -94,6 +94,61 @@ fn forecast(engine: &Engine, id: &str, extra: Value) -> Value {
         .extend(extra.as_object().unwrap().clone());
     calculate_at(engine, &args, NOW).unwrap()
 }
+
+#[test]
+fn shared_subscription_reference_and_calibration_use_synced_requests() {
+    let (_d, e, id) = fixture();
+    {
+        let s = e.lock().unwrap();
+        // All priced samples exist only on the other terminal.
+        for mut row in s.local_records().unwrap() {
+            row.request_metadata = Some(crate::model::RequestMetadata {
+                service_tier: Some("default".into()),
+                service_tier_source: Some("turn_context".into()),
+                reasoning_effort: None,
+            });
+            row.device_id = "other-device".into();
+            crate::accounts::tests::cache_remote(&s, &row);
+        }
+        let mut mirror = s.record("r0").unwrap().unwrap();
+        s.conn.execute("DELETE FROM records", []).unwrap();
+        crate::accounts::tests::cache_remote(&s, &mirror);
+        mirror.device_id = "other-device".into();
+        mirror.id = "unlinked".into();
+        mirror.provider = Some("other-provider".into());
+        crate::accounts::tests::cache_remote(&s, &mirror);
+        mirror.provider = Some("openai".into());
+        mirror.id = "deleted".into();
+        mirror.deleted = true;
+        crate::accounts::tests::cache_remote(&s, &mirror);
+        let mut accounts = load(&s).unwrap();
+        let current = accounts[0].snapshot.as_mut().unwrap();
+        current["data"]["identity"] = json!("a".repeat(64));
+        current["data"]["identitySource"] = json!("accountId");
+        current["data"]["planType"] = json!("plus");
+        let mut previous = current.clone();
+        previous["fetchedAt"] = json!(NOW - 3600);
+        for w in previous["data"]["buckets"][0]["windows"]
+            .as_array_mut()
+            .unwrap()
+        {
+            w["usedPercent"] = json!(40);
+        }
+        calibration::record(&s, &id, Some(&previous), current).unwrap();
+        s.set_meta(META, &accounts).unwrap();
+    }
+    let v = forecast(&e, &id, json!({}));
+    assert_eq!(v["sample"]["requests"], 3);
+    assert_eq!(v["sample"]["rateUsdPerHour"], "0.06");
+    assert_eq!(v["windows"][0]["status"], "ready");
+    // Official remaining allowance already includes usage before its snapshot.
+    assert_eq!(v["windows"][0]["officialRemainingPercent"], "50");
+    assert_eq!(v["windows"][0]["remainingUsd"], "0.072");
+    let calibrated = &v["calibration"]["windows"][0];
+    assert_eq!(calibrated["status"], "ready");
+    assert_eq!(calibrated["linkedRequests"], 3);
+    assert_eq!(calibrated["linkedUsd"], "0.06");
+}
 #[test]
 fn model_specific_allowances_are_separate_from_monthly_fees_and_preserve_history() {
     let (_d, e, id) = fixture();

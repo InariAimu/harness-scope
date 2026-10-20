@@ -269,9 +269,9 @@ pub(super) fn calculate(
                     None => unknown = unknown.saturating_add(row.count),
                 }
             }
-            result["localRequests"] = json!(requests);
+            result["linkedRequests"] = json!(requests);
             result["unpricedRequests"] = json!(unknown);
-            result["localUsd"] = json!(decimal(usd));
+            result["linkedUsd"] = json!(decimal(usd));
             result["modelCount"] = json!(models.len());
             result["unknownSpeedRequests"] = json!(unknown_speed);
             result["speedBaseline"] = json!("standard");
@@ -279,7 +279,7 @@ pub(super) fn calculate(
             anyhow::ensure!(unknown_speed == 0, "unknown_speed_baseline");
             anyhow::ensure!(
                 requests > 0 && normalized > Decimal::ZERO,
-                "no_local_calibration_usage"
+                "no_linked_calibration_usage"
             );
             anyhow::ensure!(input.sample_valid, "insufficient_samples");
             let capacity = input

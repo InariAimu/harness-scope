@@ -86,6 +86,102 @@ fn predict(engine: &Engine, id: &str, extra: Value) -> Value {
         .extend(extra.as_object().unwrap().clone());
     calculate_at(engine, &args, NOW).unwrap()
 }
+
+#[test]
+fn shared_subscription_forecasts_include_remote_samples_and_post_snapshot_usage_once() {
+    let (_tmp, engine, id) = fixture();
+    {
+        let s = engine.lock().unwrap();
+        let mut remote = s.record("r1").unwrap().unwrap();
+        // A fixture's local ID and payload move to the remote cache, as on another terminal.
+        s.conn
+            .execute("DELETE FROM records WHERE id='r1'", [])
+            .unwrap();
+        remote.device_id = "other-device".into();
+        crate::accounts::tests::cache_remote(&s, &remote);
+        let own = s.record("r0").unwrap().unwrap();
+        crate::accounts::tests::cache_remote(&s, &own);
+        let mut extra = remote.clone();
+        extra.id = "deleted".into();
+        extra.deleted = true;
+        crate::accounts::tests::cache_remote(&s, &extra);
+        extra.deleted = false;
+        extra.id = "unlinked".into();
+        extra.provider = Some("other-provider".into());
+        crate::accounts::tests::cache_remote(&s, &extra);
+    }
+    let base = predict(&engine, &id, json!({}));
+    assert_eq!(base["sample"]["requests"], 3);
+    assert_eq!(base["sample"]["currentUsdPerHour"], "3");
+    assert_eq!(base["windows"][0]["remainingPercent"], "50");
+    {
+        let s = engine.lock().unwrap();
+        let mut accounts = load(&s).unwrap();
+        accounts[0].snapshot.as_mut().unwrap()["fetchedAt"] = json!(NOW - 100);
+        s.set_meta(META, &accounts).unwrap();
+        let mut remote = s.record("r0").unwrap().unwrap();
+        remote.device_id = "other-device".into();
+        remote.id = "after-snapshot".into();
+        remote.occurred_at = NOW - 50;
+        crate::accounts::tests::cache_remote(&s, &remote);
+    }
+    let after = predict(&engine, &id, json!({}));
+    assert_eq!(after["sample"]["requests"], 4);
+    assert_eq!(after["sample"]["currentUsdPerHour"], "4");
+    assert_eq!(after["windows"][0]["postSnapshotPercent"], "5");
+    assert_eq!(after["windows"][0]["remainingPercent"], "45");
+    assert_eq!(after["windows"][0]["remainingModelUsd"], "9");
+    {
+        let s = engine.lock().unwrap();
+        let mut unknown = s.record("r0").unwrap().unwrap();
+        unknown.device_id = "other-device".into();
+        unknown.id = "unknown-remote".into();
+        unknown.model = "unknown-model".into();
+        unknown.occurred_at = NOW - 25;
+        crate::accounts::tests::cache_remote(&s, &unknown);
+    }
+    let unknown = predict(&engine, &id, json!({"model":"deepseek-flash"}));
+    assert_eq!(unknown["windows"][0]["reason"], "unpriced_since_snapshot");
+}
+
+#[test]
+fn remote_cache_write_durations_use_the_remote_payload_for_pricing() {
+    let (_tmp, engine, id) = fixture();
+    let s = engine.lock().unwrap();
+    let mut remote = s.record("r0").unwrap().unwrap();
+    s.conn.execute("DELETE FROM records", []).unwrap();
+    remote.device_id = "other-device".into();
+    remote.tokens.input = 0;
+    remote.tokens.cache_write = 1_000_000;
+    remote.tokens.cache_write1h = 750_000;
+    crate::accounts::tests::cache_remote(&s, &remote);
+    let mut catalog = go_catalog::load(&s).unwrap();
+    let m = catalog
+        .models
+        .iter_mut()
+        .find(|m| m.id == "deepseek-flash")
+        .unwrap();
+    for tier in &mut m.tiers {
+        tier.prices.cache_write = Some("2".into());
+        tier.prices.cache_write1h = Some("4".into());
+    }
+    let account = load(&s)
+        .unwrap()
+        .into_iter()
+        .find(|a| a.account.id == id)
+        .unwrap()
+        .account;
+    let facts = facts(&s, &account, NOW - 3600, NOW).unwrap();
+    assert_eq!(facts.len(), 1);
+    assert_eq!(facts[0].tokens.cache_write1h, 750_000);
+    let model = go_catalog::find(&catalog, "deepseek-flash").unwrap();
+    assert_eq!(
+        priced(model, &catalog, &facts[0], Some(false), "go")
+            .unwrap()
+            .usd,
+        Decimal::new(35, 1)
+    );
+}
 #[test]
 fn forecasts_use_remaining_quota_rate_and_distinct_windows_without_writing_history() {
     let (_tmp, engine, id) = fixture();

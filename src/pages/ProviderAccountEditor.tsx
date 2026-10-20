@@ -92,7 +92,7 @@ export function ProviderAccountEditor({
         },
   );
   const routes = useQuery({
-    queryKey: ["provider-account-routes"],
+    queryKey: ["usage", "provider-account-routes"],
     queryFn: api.routes,
     staleTime: 30_000,
   });
@@ -501,12 +501,12 @@ export function ProviderAccountEditor({
               </section>
               <section className="border-t border-border pt-4 space-y-2">
                 <h3 className="font-semibold text-fg-1">
-                  {l("关联本机用量", "Link local usage")}
+                  {l("关联跨设备用量", "Link usage across devices")}
                 </h3>
                 <p className="text-caption text-fg-3">
                   {l(
-                    "选择日志中的路由。一条路由只能关联一个账号，无法从历史日志区分其不同 Key。",
-                    "Select routes from local logs. A route can belong to one account; historical logs do not identify individual keys.",
+                    "选择所有已同步设备日志中的路由，按共用同一组订阅汇总。一条路由只能关联一个账号，日志无法区分其不同账号或 Key。",
+                    "Choose routes from all synced devices, assuming they share a subscription. A route can belong to one account; logs cannot distinguish accounts or keys on the same route.",
                   )}
                 </p>
                 {routes.isError && (
@@ -525,8 +525,8 @@ export function ProviderAccountEditor({
                 {!routes.isLoading && !available.length && (
                   <p className="text-caption text-fg-3">
                     {l(
-                      "暂无带供应商信息的本机日志。",
-                      "No local logs with provider information yet.",
+                      "暂无带供应商信息的用量日志，请先采集或同步。",
+                      "No logs with provider information yet. Collect or sync usage first.",
                     )}
                   </p>
                 )}

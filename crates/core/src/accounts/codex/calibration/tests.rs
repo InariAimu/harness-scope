@@ -160,7 +160,7 @@ fn account_switch_reset_and_decrease_never_mix_observations_and_plateaus_keep_id
 fn missing_local_prices_or_identity_do_not_assign_all_quota_to_the_selected_model() {
     let (_d, e, s) = fixture();
     let empty = compute(&e, &s, &[], 1);
-    assert_eq!(empty["windows"][0]["reason"], "no_local_calibration_usage");
+    assert_eq!(empty["windows"][0]["reason"], "no_linked_calibration_usage");
     assert!(empty["windows"][0]["observedPercentPerHour"].is_string());
     let missing = row("unpriced-model");
     let value = compute(&e, &s, &[&missing], 1);

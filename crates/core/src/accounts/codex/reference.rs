@@ -73,16 +73,7 @@ fn calculate_at(engine: &Engine, args: &Value, now: i64) -> Result<Value> {
         });
         let sample_start=window_start.map(|start|if minutes==0 {start}else{start.max(now-minutes*60)}).unwrap_or(now);
         let sample_seconds=(now-sample_start).max(1);
-        let mut selection=Selection::new(&store,&json!({"scope":"local"}),sample_start,now)?;
-        if item.account.links.is_empty() {selection.sql.push_str(" AND 0");} else {
-            selection.sql.push_str(" AND (");
-            for (i,link) in item.account.links.iter().enumerate() {
-                if i>0 {selection.sql.push_str(" OR ");}
-                selection.sql.push_str("(u.harness=? AND u.provider=?)");
-                selection.params.extend([link.harness.clone().into(),link.provider.clone().into()]);
-            }
-            selection.sql.push(')');
-        }
+        let selection=linked_selection(&store,&item.account,sample_start,now)?;
         let records=selection.rows_with_metadata(&store)?;
         let events:Vec<&Row>=records.iter().filter(|r|r.grain=="event" && r.count>0).collect();
         let model=requested.or_else(||events.iter().max_by_key(|r|r.occurred_at).map(|r|r.model.as_str()));

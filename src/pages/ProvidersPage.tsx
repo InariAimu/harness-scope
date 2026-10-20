@@ -160,6 +160,9 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
       "usage",
       "provider-account",
       account?.id,
+      account?.links,
+      account?.subscription.periodStart,
+      account?.subscription.renewalDate,
       effectiveRange,
       snapshot.config.timezone,
     ],
@@ -269,7 +272,7 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
             ))}
           </OptionSelect>
           <span className="ms-auto text-caption text-fg-3">
-            {l("仅本机 · 不参与同步", "Device-local · excluded from sync")}
+            {l("账号与凭据仅本机保存", "Accounts and credentials stay on this device")}
           </span>
         </div>
         {list.isError && (
@@ -297,8 +300,8 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
             </h2>
             <p className="max-w-md text-body text-fg-2">
               {l(
-                "查看 DeepSeek 余额、OpenCode Go 或 OpenAI／Codex 订阅额度，并关联本机用量。",
-                "View DeepSeek balances, OpenCode Go or OpenAI/Codex subscription limits, and link local usage.",
+                "查看 DeepSeek 余额、OpenCode Go 或 OpenAI／Codex 订阅额度，并关联所有已同步设备的用量。",
+                "View DeepSeek balances, OpenCode Go or OpenAI/Codex subscription limits, and link usage from all synced devices.",
               )}
             </p>
             <Button variant="neutral" onClick={() => setEditing(null)}>
@@ -566,9 +569,9 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
             <section className="scope-card !p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="font-semibold">
-                  {l("本机用量", "Local usage")}{" "}
+                  {l("关联设备用量", "Linked device usage")}{" "}
                   <span className="text-caption font-normal text-fg-3">
-                    {l("日志估算", "From local logs")}
+                    {l("日志估算", "From usage logs")}
                   </span>
                 </h2>
                 <div className="flex gap-1">
@@ -606,15 +609,15 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
                 ) : (
                   <p className="text-caption text-fg-3">
                     {l(
-                      "尚未关联路由，编辑账号后选择本机日志中的供应商。",
-                      "No routes linked. Edit this account to select providers from local logs.",
+                      "尚未关联路由，编辑账号后选择已采集或同步日志中的供应商。",
+                      "No routes linked. Edit this account to select providers from collected or synced logs.",
                     )}
                   </p>
                 )}
               </div>
               {usage.isError ? (
                 <p role="alert" className="text-caption text-danger-text">
-                  {l("本机用量读取失败。", "Could not load local usage.")}
+                  {l("关联用量读取失败。", "Could not load linked usage.")}
                   <Button
                     size="compact"
                     variant="quiet"
@@ -625,7 +628,7 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
                 </p>
               ) : usage.isLoading ? (
                 <p className="text-caption text-fg-3">
-                  {l("正在读取本机用量…", "Loading local usage…")}
+                  {l("正在读取关联用量…", "Loading linked usage…")}
                 </p>
               ) : (
                 usage.data?.linked && (
@@ -730,8 +733,8 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
               )}
               <p className="text-caption text-fg-3">
                 {l(
-                  "仅统计关联路由的本机日志，不能区分其不同 Key；折算金额不代表实际扣款或套餐剩余。",
-                  "Includes this device's linked routes; individual keys cannot be distinguished. Priced usage is not an invoice or remaining allowance.",
+                  "按共用订阅汇总所有已同步设备的关联路由，不能区分同一路由的不同账号或 Key；尚未同步的用量不会计入。折算金额不代表实际扣款或套餐剩余。",
+                  "Includes linked routes from all synced devices, assuming a shared subscription. Accounts or keys on the same route cannot be distinguished; unsynced usage is absent. Priced usage is not an invoice or remaining allowance.",
                 )}{" "}
                 {usage.data &&
                   `${l("统计时区", "Time zone")}: ${usage.data.timezone}`}

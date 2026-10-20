@@ -206,7 +206,7 @@ fn record(
     }
 }
 #[test]
-fn local_usage_links_exact_routes_excludes_remote_facts_and_keeps_decimal_costs() {
+fn linked_usage_includes_remote_routes_without_own_mirrors_or_deleted_facts() {
     let (_directory, engine, _vault) = setup();
     let view = create(&engine, "opencode-go");
     let mut patch = edit(&view);
@@ -236,16 +236,16 @@ fn local_usage_links_exact_routes_excludes_remote_facts_and_keeps_decimal_costs(
         s.upsert(record(&device, "d", "dsh", "opencode-go", None), "fixture")
             .unwrap();
         let remote = record("remote", "remote", "dsh", "opencode-go", Some("99"));
-        s.conn
-            .execute(
-                "INSERT INTO remote_records VALUES(?1,?2,1,?3)",
-                rusqlite::params![
-                    remote.device_id,
-                    remote.id,
-                    serde_json::to_string(&remote).unwrap()
-                ],
-            )
-            .unwrap();
+        cache_remote(&s, &remote);
+        cache_remote(&s, &record(&device, "a", "dsh", "opencode-go", Some("999")));
+        let mut deleted = remote.clone();
+        deleted.id = "deleted".into();
+        deleted.deleted = true;
+        cache_remote(&s, &deleted);
+        cache_remote(
+            &s,
+            &record("remote", "unlinked", "claude", "remote-only", Some("999")),
+        );
         original = s.local_records().unwrap();
     }
     let usage = engine
@@ -254,13 +254,38 @@ fn local_usage_links_exact_routes_excludes_remote_facts_and_keeps_decimal_costs(
             json!({"id":view["account"]["id"],"range":"today"}),
         )
         .unwrap();
-    assert_eq!(usage["summary"]["totalRequests"], 3);
-    assert_eq!(usage["summary"]["totalCost"], "0.3");
+    assert_eq!(usage["summary"]["totalRequests"], 4);
+    assert_eq!(usage["summary"]["totalCost"], "99.3");
     assert_eq!(usage["summary"]["unpricedCount"], 1);
-    assert_eq!(usage["summary"]["realTotalTokens"], 600);
+    assert_eq!(usage["summary"]["realTotalTokens"], 800);
     assert_eq!(usage["models"][0]["model"], "Original-Model-High");
     assert_eq!(engine.lock().unwrap().local_records().unwrap(), original);
     let other = create(&engine, "opencode-go");
+    let empty = engine
+        .execute(
+            "provider_account_usage",
+            json!({"id":other["account"]["id"],"range":"today"}),
+        )
+        .unwrap();
+    assert_eq!(empty["summary"]["totalRequests"], 0);
+    let routes = engine
+        .execute("provider_account_routes", json!({}))
+        .unwrap();
+    let routes = routes.as_array().unwrap();
+    assert_eq!(
+        routes
+            .iter()
+            .find(|r| r["harness"] == "dsh" && r["provider"] == "opencode-go")
+            .unwrap()["records"],
+        3
+    );
+    assert_eq!(
+        routes
+            .iter()
+            .find(|r| r["provider"] == "remote-only")
+            .unwrap()["records"],
+        1
+    );
     let mut other_patch = edit(&other);
     other_patch["links"] = patch["links"].clone();
     assert!(engine
@@ -273,6 +298,13 @@ fn local_usage_links_exact_routes_excludes_remote_facts_and_keeps_decimal_costs(
         )
         .unwrap();
     assert_eq!(engine.lock().unwrap().local_records().unwrap(), original);
+}
+
+pub(super) fn cache_remote(store: &Store, row: &UsageRecord) {
+    store.conn.execute(
+        "INSERT OR REPLACE INTO remote_records(device_id,id,revision,payload) VALUES(?1,?2,?3,?4)",
+        rusqlite::params![row.device_id,row.id,row.revision,serde_json::to_string(row).unwrap()],
+    ).unwrap();
 }
 #[test]
 fn usage_ranges_follow_configured_midnight_and_manual_renewal_boundaries() {
@@ -723,7 +755,12 @@ fn go_estimates_sum_model_normalized_allowances_without_repricing_facts() {
             if key == "write" {
                 fact.tokens.cache_write = 1;
             }
-            store.upsert(fact, "fixture").unwrap();
+            if key == "pro" {
+                fact.device_id = "remote".into();
+                cache_remote(&store, &fact);
+            } else {
+                store.upsert(fact, "fixture").unwrap();
+            }
         }
         let mut items = load(&store).unwrap();
         items[0].snapshot = Some(

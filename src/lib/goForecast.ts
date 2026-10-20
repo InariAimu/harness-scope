@@ -44,7 +44,7 @@ export function forecastReason(reason: string | null, zh: boolean) {
       "本地配置未关联此额度桶，暂不估算。",
       "This quota bucket is not mapped by local allowance rules.",
     ],
-    no_links: ["先关联本机用量路由。", "Link local usage routes first."],
+    no_links: ["先关联用量路由。", "Link usage routes first."],
     no_model: [
       "此采样区间没有可识别的最近模型；可手动选择模型。",
       "No recognized latest model in this interval; select a model.",
@@ -82,8 +82,8 @@ export function forecastReason(reason: string | null, zh: boolean) {
       "Provider window status is unknown; prediction unavailable.",
     ],
     unpriced_since_snapshot: [
-      "快照之后有未能折算的本机请求，无法可靠更新剩余额度。",
-      "Some local usage since the snapshot is unpriced; remaining quota cannot be updated reliably.",
+      "快照之后有未能折算的关联请求，无法可靠更新剩余额度。",
+      "Some linked usage since the snapshot is unpriced; remaining quota cannot be updated reliably.",
     ],
     precision_limit: [
       "规则产生的预算超出可预测范围，请检查单价。",

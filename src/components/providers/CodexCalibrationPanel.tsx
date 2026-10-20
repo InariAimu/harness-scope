@@ -31,9 +31,9 @@ export function CodexCalibrationPanel({
         "此区间额度增长不足 1 个百分点，暂不校准，不推算为无限可用。",
         "Quota growth is below one percentage point; no calibration or unlimited lifetime is inferred.",
       ],
-      no_local_calibration_usage: [
-        "额度有变化，但没有同期可归因的本机计费请求，暂不推算当前模型强度。",
-        "Quota changed without attributable local priced requests; model intensity remains unknown.",
+      no_linked_calibration_usage: [
+        "额度有变化，但没有同期可归因的关联计费请求，暂不推算当前模型强度。",
+        "Quota changed without attributable linked priced requests; model intensity remains unknown.",
       ],
       unpriced_calibration: [
         "同期有未定价或缺少参考额度的模型，不能可靠分配额度变化。",
@@ -146,8 +146,8 @@ export function CodexCalibrationPanel({
                 {forecastDuration(w.spanSeconds, zh)} ·{" "}
                 {l("额度增长", "quota growth")} {n(w.deltaPercent)}{" "}
                 {l("百分点", "percentage points")}
-                {w.localRequests != null
-                  ? ` · ${w.localRequests} ${l("本机请求", "local requests")}`
+                {w.linkedRequests != null
+                  ? ` · ${w.linkedRequests} ${l("关联请求", "linked requests")}`
                   : ""}
               </p>
             )}
@@ -155,7 +155,7 @@ export function CodexCalibrationPanel({
               <p className="text-fg-3">
                 {w.modelCount} {l("种模型参与归一化", "models normalized")} ·{" "}
                 {l("同期 API 折算", "Concurrent API equivalent")}{" "}
-                {money(w.localUsd)}
+                {money(w.linkedUsd)}
               </p>
             )}
           </section>
@@ -163,8 +163,8 @@ export function CodexCalibrationPanel({
       </div>
       <p className="text-caption text-fg-3">
         {l(
-          "假设采样区间的额度变化主要来自已关联本机日志。其他设备、服务端延迟、缓存组成或模型切换会影响归因；账号、窗口重置或额度下降后重新采样。目标倍率相对原始采样速率，不随强度滑档改变；多个窗口需同时满足，不能把各窗口或模型额度相加。",
-          "Assumes quota changes mainly come from linked local logs. Other devices, billing lag, cache mix or model switches affect attribution. Account/window changes or decreases restart sampling. Target multipliers are relative to the original sampled pace. All windows constrain usage; quotas are not additive.",
+          "按共用订阅计算，采样包含所有已同步设备的关联路由。假设额度变化主要来自这些日志；尚未同步的用量、服务端延迟、缓存组成或模型切换会影响归因。账号、窗口重置或额度下降后重新采样。目标倍率相对原始采样速率，不随强度滑档改变；多个窗口需同时满足，不能把各窗口或模型额度相加。",
+          "Assumes a shared subscription and includes linked routes from all synced devices. Unsynced usage, billing lag, cache mix or model switches affect attribution. Account/window changes or decreases restart sampling. Target multipliers are relative to the original sampled pace. All windows constrain usage; quotas are not additive.",
         )}
       </p>
     </section>
