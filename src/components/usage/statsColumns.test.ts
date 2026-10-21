@@ -25,6 +25,16 @@ const renderCells = (stat: Parameters<typeof PerformanceCells>[0]["stat"]) =>
   );
 
 describe("estimated performance statistics", () => {
+  it("shows eligible sample counts for E2E modes and keeps missing timing unknown", () => {
+    const render = (count: number) => renderToStaticMarkup(createElement(I18nextProvider,
+      { i18n: translations }, createElement(PerformanceCells, { showSampleCount: true,
+        stat: { successRate: null, estSpeedOutputTokens: count ? 1000 : 0,
+          estSpeedDurationMs: count ? 5000 : 0, estSpeedSampleCount: count } })));
+    expect(render(81)).toContain("81 samples used");
+    expect(render(81)).toContain("E2E");
+    expect(render(0)).toContain("0 samples used");
+    expect(render(0)).not.toContain("≈");
+  });
   it("uses weighted totals and marks speed and first token as estimates", () => {
     const stat = {
       successRate: null,

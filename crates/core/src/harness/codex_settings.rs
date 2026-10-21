@@ -58,6 +58,6 @@ impl Settings {
 }
 fn tier(v: &Value) -> Option<String> {
     v.as_str()
-        .filter(|v| RequestMetadata::valid_tier(v))
+        .filter(|v| *v != "standard" && RequestMetadata::valid_tier(v))
         .map(str::to_owned)
 }

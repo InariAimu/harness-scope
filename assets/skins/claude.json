@@ -1,0 +1,16 @@
+{
+  "id": "claude",
+  "artwork": "claude.png",
+  "source": "claude-reference.png",
+  "designReference": "claude-mood-reference.png",
+  "generator": "built-in image_gen",
+  "faceAnchor": {
+    "x": 0.5,
+    "y": 0.11
+  },
+  "viewportAnchor": {
+    "x": 0.66667,
+    "y": 0.33333
+  },
+  "prompt": "Use case: background-extraction / identity-preserve. Edit image 1 into a clean transparent PNG cutout for a desktop interface skin. Remove ONLY its plain white background. Preserve its original character design, illustration style, detailed costume, calm serious facial expression, amber eyes, very long copper-orange hair, flower hair ornament, black ribbons, high ruffled collar, ivory blouse and shoulder cape, black fitted waist with gold chain, orange hanging panel and tassels, long ivory pleated skirt with black/orange embroidered panels, lace-up white boots, the brown book in her left-side hand, original pose and slender mature proportions. Keep the entire original character from the top of her hair to the bottom of her boots, including loose hair strands. Image 2 is an additional identity reference ONLY, not a pose or background to copy. This is the scholarly Claude character shown in the references: do not turn her into a maid, do not add a maid headband, animal ears or tail, do not change her face into a cheerful wink, and do not borrow any DeepSeek design. One upright full-body character, same framing and proportions as image 1, small transparent margin around the silhouette, no added elements. Genuine alpha transparency, not white, not a painted checkerboard, no backdrop, no glow or shadows outside the silhouette. Preserve the book emblem and embroidery already in the original artwork; no new typography or watermark."
+}

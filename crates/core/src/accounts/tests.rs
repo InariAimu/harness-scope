@@ -1,6 +1,9 @@
 use super::*;
 use crate::model::{Cost, Tokens, UsageRecord};
 
+mod sidebar_visibility;
+mod weekly_usage;
+
 const KEY: &str = "test-local-provider-secret-do-not-echo";
 fn setup() -> (tempfile::TempDir, Engine, Vault) {
     let directory = tempfile::tempdir().unwrap();

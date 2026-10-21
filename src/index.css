@@ -19,6 +19,17 @@
     --theme-accent-on-minus-hsl: 0 0% 100%;
     --theme-accent-text-light-hsl: 24.08 83.05% 34.71%;
     --theme-accent-text-dark-hsl: 24.87 95% 68.63%;
+    /* Filled controls use readable surfaces; charts keep the selected accent. */
+    --theme-action-light: #f97316;
+    --theme-on-action-light: #000000;
+    --theme-action-light-hover: #bc5a16;
+    --theme-action-light-hsl: 24.58 94.98% 53.14%;
+    --theme-on-action-light-hsl: 0 0% 0%;
+    --theme-action-dark: #bb5611;
+    --theme-on-action-dark: #ffffff;
+    --theme-action-dark-hover: #bd5711;
+    --theme-action-dark-hsl: 24.35 83.33% 40%;
+    --theme-on-action-dark-hsl: 0 0% 100%;
     --background: 0 0% 100%;
     --foreground: 240 5.9% 10%;
     --card: 0 0% 100%;
@@ -26,8 +37,8 @@
     --popover: 0 0% 100%;
     --popover-foreground: 240 5.9% 10%;
 
-    --primary: var(--theme-accent-base-hsl);
-    --primary-foreground: var(--theme-accent-on-base-hsl);
+    --primary: var(--theme-action-light-hsl);
+    --primary-foreground: var(--theme-on-action-light-hsl);
 
     --secondary: 240 10.3% 94.3%;
     --secondary-foreground: 240 5.9% 10%;
@@ -56,8 +67,8 @@
     --popover: 240 5.2% 19%;
     --popover-foreground: 240 5.9% 90%;
 
-    --primary: var(--theme-accent-minus-hsl);
-    --primary-foreground: var(--theme-accent-on-minus-hsl);
+    --primary: var(--theme-action-dark-hsl);
+    --primary-foreground: var(--theme-on-action-dark-hsl);
 
     --secondary: 240 5% 15.7%;
     --secondary-foreground: 240 5.9% 90%;
@@ -86,10 +97,10 @@
     --text-1: #18181b;
     --text-2: #52525b;
     --text-3: #65656e;
-    --action-bg: var(--theme-accent-base);
-    --action-fg: var(--theme-accent-on-base);
-    --action-hover: var(--theme-accent-minus);
-    --action-hover-fg: var(--theme-accent-on-minus);
+    --action-bg: var(--theme-action-light);
+    --action-fg: var(--theme-on-action-light);
+    --action-hover: var(--theme-action-light-hover);
+    --action-hover-fg: var(--action-fg);
     --action-text: var(--theme-accent-text-light);
     --action-soft: color-mix(in srgb, var(--theme-accent-base) 12%, transparent);
     --inverse-bg: #18181b;
@@ -136,6 +147,7 @@
     --heat-3: color-mix(in srgb, var(--chart-1) 75%, transparent);
     --heat-4: var(--chart-1);
     --chart-2: var(--theme-accent-plus);
+    --chart-category-lightness: 53%;
     --chart-grid: #ececf0;
 
     /* Agent accents share the theme; neutral text and diff statuses stay separate. */
@@ -167,10 +179,10 @@
     --text-1: #e4e4e7;
     --text-2: #ababb3;
     --text-3: #9a9aa2;
-    --action-bg: var(--theme-accent-minus);
-    --action-fg: var(--theme-accent-on-minus);
-    --action-hover: var(--theme-accent-base);
-    --action-hover-fg: var(--theme-accent-on-base);
+    --action-bg: var(--theme-action-dark);
+    --action-fg: var(--theme-on-action-dark);
+    --action-hover: var(--theme-action-dark-hover);
+    --action-hover-fg: var(--action-fg);
     --action-text: var(--theme-accent-text-dark);
     --inverse-bg: #f4f4f5;
     --inverse-fg: #18181b;
@@ -209,6 +221,7 @@
     --danger-text: #fca5a5;
     --danger-soft: #3a1414;
     --chart-grid: #2c2c31;
+    --chart-category-lightness: 65%;
 
     --agent-codex: #d4d4d8;
     --agent-generic: var(--text-2);

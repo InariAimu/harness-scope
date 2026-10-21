@@ -1,3 +1,4 @@
+import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import type { CodexReference } from "@/types/providerAccounts";
 import { CodexCalibrationPanel } from "./CodexCalibrationPanel";
 import {
@@ -6,7 +7,6 @@ import {
   forecastReason,
 } from "@/lib/goForecast";
 import { nativeMoney } from "@/lib/providerAccounts";
-import { formatTokensCompact } from "@/components/usage/format";
 
 export function CodexReferenceDetails({
   data,
@@ -18,6 +18,7 @@ export function CodexReferenceDetails({
   locale: string;
 }) {
   const l = (a: string, b: string) => (zh ? a : b);
+  const formatQuantity = useUsageNumberFormat();
   const number = (s: string) => forecastNumber(s, locale);
   const money = (s: string) =>
     nativeMoney(Number(s).toPrecision(4), "USD", locale);
@@ -82,7 +83,7 @@ export function CodexReferenceDetails({
               {l("共同约束的每日参考预算", "Combined daily reference budget")}:
               ≈{money(data.dailyBudget.usd)} ·{" "}
               {number(data.dailyBudget.requests)} {l("次/天", "requests/day")} ·{" "}
-              {formatTokensCompact(data.dailyBudget.tokens, locale)} Tokens/
+              {formatQuantity(data.dailyBudget.tokens)} Tokens/
               {l("天", "day")} · {l("约束来自", "constrained by")}{" "}
               {labels[data.dailyBudget.window]}
             </p>
@@ -114,7 +115,7 @@ export function CodexReferenceDetails({
               <p className="text-fg-3">
                 {basisLabel(w.capacity.basis)}
                 {w.capacity.tokens
-                  ? ` · ${l("来源 Token 参考（含缓存）", "Source token estimate (including cache)")}: ${formatTokensCompact(w.capacity.tokens, locale)}`
+                  ? ` · ${l("来源 Token 参考（含缓存）", "Source token estimate (including cache)")}: ${formatQuantity(w.capacity.tokens)}`
                   : ""}
               </p>
             )}
@@ -166,7 +167,7 @@ export function CodexReferenceDetails({
                       {number(w.requestsPerDay!)} {l("次/天", "requests/day")}
                     </p>
                     <p>
-                      {formatTokensCompact(w.tokensPerDay!, locale)} Tokens/
+                      {formatQuantity(w.tokensPerDay!)} Tokens/
                       {l("天", "day")}
                     </p>
                   </>

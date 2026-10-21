@@ -1,3 +1,4 @@
+import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { codexRequestHint, codexRequestMode } from "@/lib/codexRequest";
 import { useTranslation } from "react-i18next";
@@ -21,7 +22,6 @@ import {
   formatEstimatedTokensPerSecond,
   formatFirstTokenSeconds,
   formatOutputTokensPerSecond,
-  formatTokensCompact,
   getLocaleFromLanguage,
   isSessionLogRequest,
   parseFiniteNumber,
@@ -170,6 +170,7 @@ export function RequestLogTable({
   columns = DEFAULT_COLUMNS,
 }: RequestLogTableProps) {
   const { t, i18n } = useTranslation();
+  const formatQuantity = useUsageNumberFormat();
   const { costMoney, usdHint } = useMoneyFormat();
   const [page, setPage] = useState(0);
   const pageSize = 20;
@@ -408,12 +409,12 @@ export function RequestLogTable({
               : fmtInt(freshInput, locale)
           }
         >
-          {formatTokensCompact(freshInput, locale)}
+          {formatQuantity(freshInput)}
         </td>
       ),
       output: (
         <td className={usageTable.td} title={fmtInt(log.outputTokens, locale)}>
-          {formatTokensCompact(log.outputTokens, locale)}
+          {formatQuantity(log.outputTokens)}
         </td>
       ),
       cacheRead: (
@@ -424,7 +425,7 @@ export function RequestLogTable({
             write: fmtInt(log.cacheCreationTokens, locale),
           })}
         >
-          {hasCache ? formatTokensCompact(log.cacheReadTokens, locale) : "—"}
+          {hasCache ? formatQuantity(log.cacheReadTokens) : "—"}
         </td>
       ),
       cacheWrite: (
@@ -441,7 +442,7 @@ export function RequestLogTable({
           }
         >
           {!cacheWriteUnknown && log.cacheCreationTokens > 0
-            ? formatTokensCompact(log.cacheCreationTokens, locale)
+            ? formatQuantity(log.cacheCreationTokens)
             : "—"}
         </td>
       ),

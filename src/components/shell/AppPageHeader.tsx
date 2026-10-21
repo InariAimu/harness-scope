@@ -26,7 +26,7 @@ interface AppPageHeaderProps {
 }
 
 /**
- * 内容区页头：高 52，整条可拖动窗口，左边是图标 + 标题，右边是操作。
+ * 内容区页头：与侧栏品牌区共用高度，整条可拖动窗口，左边是图标 + 标题，右边是操作。
  */
 export function AppPageHeader({
   leading,
@@ -43,7 +43,7 @@ export function AppPageHeader({
   return (
     <header
       className={cn(
-        "flex h-[52px] shrink-0 items-center gap-5 border-b border-border pe-4 ps-6",
+        "flex h-[var(--app-header-height,52px)] shrink-0 items-center gap-5 border-b border-border pe-4 ps-6",
         className,
       )}
       {...DRAG_REGION_ATTR}

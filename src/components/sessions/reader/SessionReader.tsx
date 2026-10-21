@@ -1,3 +1,4 @@
+import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import {
   useCallback,
   useDeferredValue,
@@ -170,6 +171,7 @@ export function SessionReader({
 }: SessionReaderProps) {
   const { t } = useTranslation();
   const rt = useReaderT();
+  const formatQuantity = useUsageNumberFormat();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
   const findButtonRef = useRef<HTMLButtonElement>(null);
@@ -397,8 +399,9 @@ export function SessionReader({
       projectDir: session.projectDir ?? undefined,
       t: rt,
       includeThinking,
+      formatQuantity,
     }),
-    [appName, includeThinking, rt, session.projectDir, style, t],
+    [appName, formatQuantity, includeThinking, rt, session.projectDir, style, t],
   );
 
   const copyTurn = useCallback(

@@ -1,6 +1,7 @@
+import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import { useMoneyFormat } from "@/hooks/useMoneyFormat";
 import { useTranslation } from "react-i18next";
-import { formatTokensShort } from "./format";
+import { fmtInt, getLocaleFromLanguage, getResolvedLang } from "./format";
 
 interface UsageTooltipCardProps {
   heading: string;
@@ -20,16 +21,19 @@ export function UsageTooltipCard({
   costConverted,
 }: UsageTooltipCardProps) {
   const { t, i18n } = useTranslation();
+  const formatQuantity = useUsageNumberFormat();
   const { costMoney } = useMoneyFormat();
-  const language = i18n.resolvedLanguage || i18n.language || "en";
+  const locale = getLocaleFromLanguage(getResolvedLang(i18n));
   const rows = [
     {
       label: t("usage.trend.tokens"),
-      value: formatTokensShort(tokens, language),
+      value: formatQuantity(tokens),
+      title: fmtInt(tokens, locale),
     },
     {
       label: t("usage.trend.requests"),
-      value: formatTokensShort(requests, language),
+      value: formatQuantity(requests),
+      title: fmtInt(requests, locale),
     },
     {
       label: t("usage.trend.cost"),
@@ -38,7 +42,7 @@ export function UsageTooltipCard({
   ];
 
   return (
-    <div className="min-w-[180px] rounded-[10px] border border-border bg-surface px-4 py-3 shadow-v7-lg">
+    <div className="min-w-[180px] rounded-[10px] border border-border bg-popover px-4 py-3 shadow-v7-lg">
       <p className="m-0 mb-2 whitespace-nowrap text-body font-semibold text-fg-1">
         {heading}
       </p>
@@ -46,7 +50,7 @@ export function UsageTooltipCard({
         {rows.map((row) => (
           <div key={row.label} className="contents">
             <span className="text-fg-2">{row.label}</span>
-            <span className="text-end tabular-nums text-fg-1">{row.value}</span>
+            <span className="text-end tabular-nums text-fg-1" title={row.title}>{row.value}</span>
           </div>
         ))}
       </div>

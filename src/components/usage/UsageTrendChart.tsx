@@ -1,5 +1,6 @@
+import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import { useMoneyFormat } from "@/hooks/useMoneyFormat";
-import { useMemo, useState } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Area,
@@ -12,7 +13,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useUsageTrends } from "@/lib/query/usage";
 import { useUsageDisplay } from "@/lib/query/usageDisplay";
 import { Loader2 } from "lucide-react";
@@ -25,6 +25,7 @@ import {
 import { resolveUsageRange, usageDateParts } from "@/lib/usageRange";
 import { useUsageTimezone } from "@/lib/query/usageTimezone";
 import type { UsageRangeSelection } from "@/types/usage";
+import type { UsageChartMetric } from "./composition";
 
 interface UsageTrendChartProps {
   range: UsageRangeSelection;
@@ -33,6 +34,10 @@ interface UsageTrendChartProps {
   providerName?: string;
   model?: string;
   refreshIntervalMs: number;
+  metric: UsageChartMetric;
+  controls: ReactNode;
+  composition?: ReactNode;
+  title?: string;
 }
 
 export interface UsageTrendStatLike {
@@ -161,28 +166,6 @@ export function formatUsageTrendTickLabel(
   return point?.label ?? xKey;
 }
 
-export function createUsageTrendTokenTickFormatter(
-  locale: string,
-): Intl.NumberFormat {
-  return new Intl.NumberFormat(locale, {
-    notation: "compact",
-    compactDisplay: "short",
-    maximumFractionDigits: 1,
-  });
-}
-
-export function formatUsageTrendTokenTickLabel(
-  value: unknown,
-  formatter: Intl.NumberFormat,
-): string {
-  const num = parseFiniteNumber(value);
-  if (num == null) return "--";
-
-  return formatter.format(num);
-}
-
-type TrendMetric = "requests" | "tokens" | "cost";
-
 const AXIS_TICK = { fill: "var(--text-3)", fontSize: 11 };
 
 export function UsageTrendChart({
@@ -192,10 +175,14 @@ export function UsageTrendChart({
   providerName,
   model,
   refreshIntervalMs,
+  metric,
+  controls,
+  composition,
+  title,
 }: UsageTrendChartProps) {
   const { t, i18n } = useTranslation();
   const { costMoney, moneyTick, rate } = useMoneyFormat();
-  const [metric, setMetric] = useState<TrendMetric>("tokens");
+  const formatQuantity = useUsageNumberFormat();
   const { data: display } = useUsageDisplay();
   const timeZone = useUsageTimezone();
   const chartType = resolveTrendChartType(display);
@@ -205,6 +192,7 @@ export function UsageTrendChart({
     { appType, providerName, model },
     {
       refetchInterval: refreshIntervalMs > 0 ? refreshIntervalMs : false,
+      enabled: !composition,
     },
   );
 
@@ -212,10 +200,6 @@ export function UsageTrendChart({
   const isHourly = durationSeconds <= 24 * 60 * 60;
   const language = i18n.resolvedLanguage || i18n.language || "en";
   const dateLocale = getLocaleFromLanguage(language);
-  const tokenTickFormatter = useMemo(
-    () => createUsageTrendTokenTickFormatter(dateLocale),
-    [dateLocale],
-  );
 
   const chartData = useMemo(
     () =>
@@ -244,7 +228,7 @@ export function UsageTrendChart({
   const formatYTick = (value: unknown) =>
     metric === "cost"
       ? moneyTick(value)
-      : formatUsageTrendTokenTickLabel(value, tokenTickFormatter);
+      : formatQuantity(value);
 
   const Chart = chartType === "bar" ? BarChart : AreaChart;
   // 成本先换算成显示币种再画，Y 轴才会按这个币种挑整齐的刻度。
@@ -259,7 +243,7 @@ export function UsageTrendChart({
     const point = payload[0]?.payload as UsageTrendChartPoint | undefined;
     const heading = point?.tooltipLabel ?? point?.label ?? "";
     return (
-      <div className="rounded-[8px] border border-border bg-surface px-3 py-2 text-caption text-fg-1 shadow-v7-md">
+      <div className="rounded-[8px] border border-border bg-popover px-3 py-2 text-caption text-fg-1 shadow-v7-md">
         <p className="mb-1 font-semibold">{heading}</p>
         <div className="flex items-center gap-2 tabular-nums">
           <span
@@ -288,34 +272,23 @@ export function UsageTrendChart({
           id="usage-trend-title"
           className="m-0 whitespace-nowrap text-caption font-semibold text-fg-2"
         >
-          {t("usage.trend.title", { range: rangeLabel })}
+          {title ?? t("usage.trend.title", { range: rangeLabel })}
         </h2>
         <span
           data-testid="usage-trend-legend"
           className="inline-flex items-center gap-1.5 whitespace-nowrap text-caption text-fg-2"
         >
-          <span
+          {!composition && <span
             aria-hidden="true"
             className="h-2.5 w-2.5 rounded-[2px] bg-chart-1"
-          />
+          />}
           {metricLabel}
         </span>
-        <div className="flex-1" />
-        <SegmentedControl<TrendMetric>
-          size="sm"
-          aria-label={t("usage.trend.metricLabel")}
-          value={metric}
-          onValueChange={setMetric}
-          items={[
-            { value: "tokens", label: t("usage.trend.tokens") },
-            { value: "requests", label: t("usage.trend.requests") },
-            { value: "cost", label: t("usage.trend.cost") },
-          ]}
-        />
+        {controls}
       </div>
 
       <div className="mt-1 h-[132px] w-full">
-        {isLoading ? (
+        {composition ?? (isLoading ? (
           <div className="flex h-full items-center justify-center">
             <Loader2 className="h-5 w-5 animate-spin text-fg-3" />
           </div>
@@ -345,7 +318,7 @@ export function UsageTrendChart({
                 allowDuplicatedCategory={false}
               />
               <YAxis
-                width={44}
+                width="auto"
                 axisLine={false}
                 tickLine={false}
                 tick={AXIS_TICK}
@@ -385,7 +358,7 @@ export function UsageTrendChart({
               )}
             </Chart>
           </ResponsiveContainer>
-        )}
+        ))}
       </div>
     </section>
   );

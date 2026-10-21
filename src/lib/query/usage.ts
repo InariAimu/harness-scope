@@ -409,6 +409,7 @@ export function useProviderStats(
         effective.model,
       );
     },
+    enabled: options?.enabled ?? true,
     staleTime: USAGE_STALE_TIME_MS,
     placeholderData: keepPreviousData,
     refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS,
@@ -448,6 +449,7 @@ export function useModelStats(
         effective.model,
       );
     },
+    enabled: options?.enabled ?? true,
     staleTime: USAGE_STALE_TIME_MS,
     placeholderData: keepPreviousData,
     refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS,

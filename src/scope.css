@@ -6,6 +6,7 @@ body,
   overflow: hidden;
 }
 .scope-shell {
+  --app-header-height: 52px;
   display: flex;
   height: 100%;
   min-height: 0;
@@ -15,6 +16,8 @@ body,
   overflow: hidden;
 }
 .scope-sidebar {
+  --sidebar-item-radius: 8px;
+  --sidebar-item-inset: 12px;
   display: flex;
   flex-direction: column;
   width: 200px;
@@ -27,7 +30,7 @@ body,
   width: 72px;
 }
 .scope-brand {
-  height: 48px;
+  height: var(--app-header-height);
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -36,14 +39,175 @@ body,
   border-bottom: 1px solid hsl(var(--border));
   white-space: nowrap;
 }
+.scope-sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+.scope-sidebar-footer {
+  flex-shrink: 0;
+}
+.scope-provider-row {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  border-radius: var(--sidebar-item-radius);
+  color: var(--text-2);
+}
+.scope-provider-row.has-accounts {
+  padding-inline-end: 4px;
+}
+.scope-provider-row:hover {
+  background: var(--bg-subtle);
+}
+.scope-provider-row.active {
+  background: var(--bg-selected);
+  color: var(--text-1);
+  font-weight: 600;
+}
+.scope-provider-row .scope-provider-link {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  color: inherit;
+  background: transparent;
+}
+.scope-provider-row .scope-provider-link:hover {
+  background: transparent;
+}
+.scope-subscriptions-refresh,
+.scope-subscriptions-disclosure {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+  color: var(--text-3);
+}
+.scope-subscriptions-refresh:hover,
+.scope-subscriptions-disclosure:hover {
+  background: var(--bg-subtle);
+  color: var(--text-1);
+}
+.scope-subscriptions-refresh:disabled {
+  cursor: wait;
+}
+.scope-subscriptions-list {
+  padding: 4px 0 8px;
+}
+.scope-subscription-item {
+  position: relative;
+}
+.scope-subscription-item + .scope-subscription-item {
+  margin-top: 4px;
+}
+.scope-subscription-item + .scope-subscription-item::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  inset-inline: var(--sidebar-item-inset);
+  height: 1px;
+  background: hsl(var(--border));
+  pointer-events: none;
+}
+.scope-subscription-account {
+  display: block;
+  width: 100%;
+  padding: 4px var(--sidebar-item-inset);
+  text-align: start;
+  border-radius: var(--sidebar-item-radius);
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+.scope-subscription-account:hover,
+.scope-subscription-account:focus-visible {
+  background: color-mix(in srgb, var(--bg-subtle) 70%, var(--bg-selected));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border-strong) 55%, transparent);
+}
+.scope-provider-group button:focus-visible {
+  outline: 2px solid var(--action-bg);
+  outline-offset: -2px;
+}
+.scope-subscription-account-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  line-height: 20px;
+}
+.scope-subscription-account-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+  font-size: 12px;
+  font-weight: 500;
+}
+.scope-subscription-updated {
+  flex-shrink: 0;
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.scope-subscription-quota {
+  display: grid;
+  grid-template-columns: 18px 42px minmax(0, 1fr) 30px;
+  align-items: center;
+  column-gap: 4px;
+  height: 20px;
+  line-height: 20px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.scope-subscription-progress {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: hsl(var(--border));
+}
+.scope-subscription-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--action-bg);
+}
+.scope-subscription-percent {
+  text-align: right;
+  color: var(--text-2);
+}
+.scope-subscription-quota.is-low .scope-subscription-progress > span {
+  background: var(--danger);
+}
+.scope-subscription-quota.is-low .scope-subscription-percent {
+  color: var(--danger-text);
+}
+.scope-subscription-balance {
+  display: block;
+  height: 20px;
+  line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
 .scope-nav {
   width: 100%;
   display: flex;
   align-items: center;
   gap: 9px;
   height: 34px;
-  padding: 0 12px;
-  border-radius: 7px;
+  padding: 0 var(--sidebar-item-inset, 12px);
+  border-radius: var(--sidebar-item-radius, 8px);
   color: var(--text-2);
   text-align: left;
 }
@@ -73,17 +237,17 @@ body,
   overflow: hidden;
   pointer-events: none;
   user-select: none;
-  background: radial-gradient(ellipse at 80% 40%, #5c85ee24, transparent 70%);
+  background: radial-gradient(ellipse at 80% 40%, var(--skin-tint, #5c85ee24), transparent 70%);
 }
 .interface-skin-character {
   position: absolute;
-  /* Face center in the source is (49%, 20%); anchor it at the upper-right third. */
+  /* Each original design has its own face anchor, placed at the upper-right third. */
   left: 66.667%;
   top: 33.333%;
   width: clamp(440px, 56vw, 860px);
   max-width: none;
   height: auto;
-  transform: translate(-49%, -20%);
+  transform: translate(var(--skin-face-x, -49%), var(--skin-face-y, -20%));
   opacity: var(--skin-opacity, 1);
 }
 .interface-skin-veil {
@@ -107,10 +271,10 @@ body,
   );
 }
 /* Keep a translucent surface above the adjustable veil. */
-[data-interface-skin="deepseek"] .scope-main :is(.scope-card, .bg-surface, table) {
+[data-interface-skin]:not([data-interface-skin="none"]) .scope-main :is(.scope-card, .bg-surface, table) {
   background-color: color-mix(in srgb, var(--bg-card) 40%, transparent);
 }
-[data-interface-skin="deepseek"] .scope-main :is(pre, .cm-editor) {
+[data-interface-skin]:not([data-interface-skin="none"]) .scope-main :is(pre, .cm-editor) {
   background-color: var(--bg-card);
 }
 @media (max-width: 900px) {

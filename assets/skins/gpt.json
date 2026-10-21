@@ -1,0 +1,16 @@
+{
+  "id": "gpt",
+  "artwork": "gpt.png",
+  "source": "../gpt.jpg",
+  "designReference": "gpt-reference.png",
+  "generator": "built-in image_gen",
+  "faceAnchor": {
+    "x": 0.49,
+    "y": 0.14
+  },
+  "viewportAnchor": {
+    "x": 0.66667,
+    "y": 0.33333
+  },
+  "prompt": "Use case: identity-preserve.\nAsset type: transparent anime character artwork for a desktop application's right-side background skin.\nPrimary reference (image 1, assets/gpt.jpg): preserve this exact GPT character identity, facial design, violet eyes, playful gentle confident smile, silver-white flowing long hair, bangs, paired white curved segmented dragon horns, pointed ears, white knot-shaped temple ornament with dangling tassel, ruffled headpiece, lavender puff sleeves and white ruffled bodice, purple neck ribbon, and hands gently clasped together near the chest. Remove all original poster background and text.\nSupporting reference (image 2): use this turnaround only to inform the character's lavender dragon wings, scaled curling pale lavender dragon tail, flowing white-and-lavender layered long skirt, and decorative knot motifs. It is the same character; primary image controls face, hair, expression and upper clothing. Do not replace her with a different character or costume.\nCreate ONE polished full-body single-view character illustration with genuinely transparent RGBA background, portrait composition about 2:3. Front-facing with a slight natural turn; centered face, clear silhouette, complete horns and hair. Keep the character tall within the canvas and wings partially open behind her shoulders, not excessively wide; tail curls alongside lower skirt. Refined fine anime linework and soft lavender shading consistent with the primary reference. Silver white and lavender palette, no blue/navy hair, no whale tail, no orange scholar elements. No scenery, text, watermark, border, floor, cast shadow, checkerboard or multiple views. The app will separately position the face at the right-upper thirds point and apply a readability veil; do not bake any veil or transparency into the character itself."
+}

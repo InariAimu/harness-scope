@@ -113,13 +113,6 @@ export const formatDuration = (ms: number): string => {
   return m ? `${h}h${m}m` : `${h}h`;
 };
 
-/** 980 / 28.5k / 1.2M */
-export const formatTokens = (tokens: number): string => {
-  if (tokens < 1000) return String(tokens);
-  if (tokens < 1_000_000) return `${Number((tokens / 1000).toFixed(1))}k`;
-  return `${Number((tokens / 1_000_000).toFixed(1))}M`;
-};
-
 /** $0.0081 / $0.012 / $1.25 */
 export const formatCost = (usd: number): string => {
   if (usd < 0.01) return `$${Number(usd.toFixed(4))}`;

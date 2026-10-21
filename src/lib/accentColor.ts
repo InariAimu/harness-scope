@@ -1,5 +1,8 @@
 export const DEFAULT_ACCENT_COLOR = "#f97316";
 
+const BUTTON_TEXT_CONTRAST = 4.6;
+const MAX_BUTTON_DARKENING = 0.18;
+
 export function normalizeAccentColor(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const hex = value.trim().toLowerCase();
@@ -50,17 +53,61 @@ function foreground(background: string): string {
     : "#ffffff";
 }
 
-function readable(color: string, background: string, target: string): string {
-  if (colorContrast(color, background) >= 4.5) return color;
+function readable(
+  color: string,
+  background: string,
+  target: string,
+  minimum = 4.5,
+): string {
+  if (colorContrast(color, background) >= minimum) return color;
   // Find the smallest adjustment that keeps small text readable on raised surfaces.
   let low = 0;
   let high = 1;
   for (let i = 0; i < 12; i++) {
     const mid = (low + high) / 2;
-    if (colorContrast(mix(color, target, mid), background) >= 4.5) high = mid;
+    if (colorContrast(mix(color, target, mid), background) >= minimum) high = mid;
     else low = mid;
   }
   return mix(color, target, high);
+}
+
+function buttonColors(color: string, hover: string) {
+  let background = color;
+  // Prefer white within a bounded adjustment; bright accents keep their color.
+  if (
+    colorContrast(color, "#ffffff") < BUTTON_TEXT_CONTRAST &&
+    colorContrast(mix(color, "#000000", MAX_BUTTON_DARKENING), "#ffffff") >=
+      BUTTON_TEXT_CONTRAST
+  ) {
+    let low = 0;
+    let high = MAX_BUTTON_DARKENING;
+    for (let i = 0; i < 28; i++) {
+      const mid = (low + high) / 2;
+      if (
+        colorContrast(mix(color, "#000000", mid), "#ffffff") >=
+        BUTTON_TEXT_CONTRAST
+      )
+        high = mid;
+      else low = mid;
+    }
+    background = mix(color, "#000000", high);
+  }
+  const text =
+    colorContrast(background, "#ffffff") >= BUTTON_TEXT_CONTRAST
+      ? "#ffffff"
+      : foreground(background);
+  return {
+    background,
+    foreground: text,
+    // Keep text polarity stable on hover, including when the original hover
+    // shade crosses the black/white contrast threshold.
+    hoverBackground: readable(
+      hover,
+      text,
+      text === "#ffffff" ? "#000000" : "#ffffff",
+      BUTTON_TEXT_CONTRAST,
+    ),
+  };
 }
 
 /** HSL channels for existing Tailwind tokens, including /opacity modifiers. */
@@ -98,6 +145,8 @@ export function createAccentPalette(value: unknown) {
     foreground: foreground(base),
     foregroundMinus: foreground(minus),
     foregroundPlus: foreground(plus),
+    actionLight: buttonColors(base, minus),
+    actionDark: buttonColors(minus, base),
   };
 }
 
@@ -117,5 +166,15 @@ export function accentColorVariables(value: unknown): Record<string, string> {
     "--theme-accent-on-minus-hsl": hsl(palette.foregroundMinus),
     "--theme-accent-text-light-hsl": hsl(palette.textLight),
     "--theme-accent-text-dark-hsl": hsl(palette.textDark),
+    "--theme-action-light": palette.actionLight.background,
+    "--theme-on-action-light": palette.actionLight.foreground,
+    "--theme-action-light-hover": palette.actionLight.hoverBackground,
+    "--theme-action-light-hsl": hsl(palette.actionLight.background),
+    "--theme-on-action-light-hsl": hsl(palette.actionLight.foreground),
+    "--theme-action-dark": palette.actionDark.background,
+    "--theme-on-action-dark": palette.actionDark.foreground,
+    "--theme-action-dark-hover": palette.actionDark.hoverBackground,
+    "--theme-action-dark-hsl": hsl(palette.actionDark.background),
+    "--theme-on-action-dark-hsl": hsl(palette.actionDark.foreground),
   };
 }

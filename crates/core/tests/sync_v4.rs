@@ -15,6 +15,33 @@ fn timing() -> UsageTiming {
     )
     .unwrap()
 }
+
+#[test]
+fn deferred_claude_revisions_cannot_starve_compatible_uploads() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = Store::open(&dir.path().join("scope.db")).unwrap();
+    let device = s.device_id().unwrap();
+    for n in 0..201 {
+        let mut r = record(&device, &format!("claude:{n:03}"));
+        r.harness = "claude".into();
+        r.timing = Some(UsageTiming {
+            duration_ms: 2000,
+            first_token_ms: None,
+            duration_source: "claude_api_request_blocks".into(),
+            first_token_source: None,
+        });
+        s.upsert(r, "synthetic").unwrap();
+    }
+    s.upsert(record(&device, "codex:compatible"), "synthetic")
+        .unwrap();
+    assert_eq!(s.pending().unwrap().len(), 200);
+    assert_eq!(s.pending_claude_metadata_count().unwrap(), 201);
+    let compatible = s.pending_compatible(false).unwrap();
+    assert_eq!(compatible.len(), 1);
+    assert_eq!(compatible[0].id, "codex:compatible");
+    assert_eq!(s.pending_count().unwrap(), 202);
+    assert_eq!(s.pending_compatible(true).unwrap().len(), 200);
+}
 fn push(server: &Store, records: Vec<UsageRecord>, version: u32) -> anyhow::Result<PushResponse> {
     sync::push(
         server,

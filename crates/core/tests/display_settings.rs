@@ -20,6 +20,8 @@ fn old_database_defaults_and_display_preferences_survive_restart() {
     // Upgrading an existing display-settings record adds only the new preference.
     let upgraded = save(&e, json!({"trendChartType":"area"}));
     assert_eq!(upgraded["currency"], "CNY");
+    let upgraded = save(&e, json!({"numberUnitStyle":"chinese","numberDecimals":2}));
+    assert_eq!(upgraded["trendChartType"], "area");
     drop(e);
     let e = Engine::open(&path).unwrap();
     let value = e.execute("usage_display", json!({})).unwrap();
@@ -28,6 +30,8 @@ fn old_database_defaults_and_display_preferences_survive_restart() {
     assert_eq!(value["sidebarTodayItems"], json!(["cost", "requests"]));
     assert_eq!(value["requestLogColumns"]["app"], false);
     assert_eq!(value["trendChartType"], "area");
+    assert_eq!(value["numberUnitStyle"], "chinese");
+    assert_eq!(value["numberDecimals"], 2);
     assert_eq!(
         save(&e, json!({"trendChartType":"bar"}))["trendChartType"],
         "bar"
@@ -44,12 +48,22 @@ fn patches_preserve_other_fields_rates_and_allow_explicit_resets() {
     );
     save(&e, json!({"exchangeRates":{"EUR":0.9}}));
     save(&e, json!({"trendChartType":"area"}));
+    save(&e, json!({"numberUnitStyle":"chinese","numberDecimals":3}));
+    save(&e, json!({"numberUnitStyle":"full"}));
     let value = save(&e, json!({"requestLogColumns":{"app":false}}));
     assert_eq!(value["currency"], "CNY");
     assert_eq!(value["exchangeRates"], json!({"CNY":7.25,"EUR":0.9}));
     let value = save(&e, json!({"sidebarTodayItems":[],"requestLogColumns":{}}));
     assert_eq!(value["sidebarTodayItems"], json!([]));
     assert_eq!(value["requestLogColumns"], json!({}));
+    assert_eq!(value["numberUnitStyle"], "full");
+    assert_eq!(value["numberDecimals"], 3);
+    let value = save(
+        &e,
+        json!({"numberUnitStyle":"international","numberDecimals":0}),
+    );
+    assert_eq!(value["numberUnitStyle"], "international");
+    assert_eq!(value["numberDecimals"], 0);
     assert_eq!(value["exchangeRates"]["CNY"], 7.25);
     assert_eq!(value["trendChartType"], "area");
 }
@@ -71,6 +85,12 @@ fn invalid_patches_are_rejected_atomically() {
         json!({"currency":"CNY","trendChartType":"line"}),
         json!({"trendChartType":""}),
         json!({"trendChartType":42}),
+        json!({"numberUnitStyle":"auto"}),
+        json!({"numberUnitStyle":42}),
+        json!({"numberDecimals":-1}),
+        json!({"numberDecimals":1.5}),
+        json!({"numberDecimals":"2"}),
+        json!({"currency":"CNY","numberUnitStyle":"chinese","numberDecimals":4}),
     ] {
         assert!(e
             .execute("save_usage_display", json!({"patch":patch}))
@@ -112,7 +132,7 @@ fn presentation_changes_do_not_reprice_revise_or_requeue_usage() {
     };
     save(
         &e,
-        json!({"currency":"JPY","exchangeRates":{"JPY":158},"sidebarTodayItems":["tokens","requests"],"requestLogColumns":{"cost":false},"trendChartType":"area"}),
+        json!({"currency":"JPY","exchangeRates":{"JPY":158},"sidebarTodayItems":["tokens","requests"],"requestLogColumns":{"cost":false},"trendChartType":"area","numberUnitStyle":"chinese","numberDecimals":2}),
     );
     let s = e.lock().unwrap();
     assert_eq!(records, s.local_records().unwrap());

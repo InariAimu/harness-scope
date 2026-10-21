@@ -1,3 +1,4 @@
+import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import { useMoneyFormat } from "@/hooks/useMoneyFormat";
 import { memo, type ReactNode, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
@@ -40,7 +41,6 @@ import { cn } from "@/lib/utils";
 import type { SessionMeta, TurnIndex } from "@/types";
 import {
   fmtInt,
-  formatTokensCompact,
   getLocaleFromLanguage,
   getResolvedLang,
   parseFiniteNumber,
@@ -508,6 +508,7 @@ const Sep = () => (
  * 没导入过（扫描关着、超过 30 天被汇总、应用没有用量来源）时不显示。
  */
 function SessionUsageSummary({ session }: { session: SessionMeta }) {
+  const tokens = useUsageNumberFormat();
   const { t, i18n } = useTranslation();
   const { costMoney, usdHint } = useMoneyFormat();
   const rt = useReaderT();
@@ -520,7 +521,6 @@ function SessionUsageSummary({ session }: { session: SessionMeta }) {
   const locale = getLocaleFromLanguage(getResolvedLang(i18n));
   const cost = parseFiniteNumber(data.totalCost);
   const unpriced = (data.unpricedCount ?? 0) > 0;
-  const tokens = (value: number) => formatTokensCompact(value, locale);
   return (
     <>
       <Sep />

@@ -19,7 +19,14 @@ import {
 import type { UsageDisplaySettings } from "@/types";
 import { cn } from "@/lib/utils";
 import {
+  createUsageNumberFormatter,
+  NUMBER_DECIMAL_PLACES,
+  NUMBER_UNIT_STYLES,
+  resolveUsageNumberFormat,
+} from "@/lib/usageNumberFormat";
+import {
   DISPLAY_CURRENCIES,
+  getLocaleFromLanguage,
   getResolvedLang,
   isValidExchangeRate,
   resolveMoneyDisplay,
@@ -155,7 +162,7 @@ function ChecklistMenu({
 
 /**
  * 用量「设置」页签顶部的「显示」：币种与手填汇率（只改显示，库里照旧存美元）、
- * 侧栏「今日」显示什么、请求日志显示哪些列、趋势图用柱形图还是曲线面积图。
+ * 数量单位与精度、侧栏「今日」显示什么、请求日志的列和趋势图样式。
  */
 export function UsageDisplaySection({
   value,
@@ -245,6 +252,28 @@ export function UsageDisplaySection({
       setChartType(savedChartType);
     }
   };
+
+  const savedNumberFormat = resolveUsageNumberFormat(value);
+  const [numberFormat, setNumberFormat] = useState(savedNumberFormat);
+  const [savingNumberFormat, setSavingNumberFormat] = useState(false);
+  useEffect(() => {
+    if (!pendingSaves.current) setNumberFormat(savedNumberFormat);
+  }, [savedNumberFormat.unitStyle, savedNumberFormat.decimals]);
+  const changeNumberFormat = async (next: typeof numberFormat) => {
+    setNumberFormat(next);
+    setSavingNumberFormat(true);
+    try {
+      if ((await save({ numberUnitStyle: next.unitStyle, numberDecimals: next.decimals })) === false) {
+        setNumberFormat(savedNumberFormat);
+      }
+    } finally {
+      setSavingNumberFormat(false);
+    }
+  };
+  const previewNumber = createUsageNumberFormatter({
+    numberUnitStyle: numberFormat.unitStyle,
+    numberDecimals: numberFormat.decimals,
+  }, getLocaleFromLanguage(lang));
 
   const changeCurrency = async (next: DisplayCurrency) => {
     setCurrency(next);
@@ -426,6 +455,70 @@ export function UsageDisplaySection({
                 : undefined
             }
           />
+          <span className="text-body text-fg-2">
+            {t("usage.display.numberUnitStyle")}
+          </span>
+          <Select
+            value={numberFormat.unitStyle}
+            disabled={savingNumberFormat}
+            onValueChange={(next) => {
+              const picked = NUMBER_UNIT_STYLES.find(style => style === next);
+              if (picked && picked !== numberFormat.unitStyle) {
+                void changeNumberFormat({ ...numberFormat, unitStyle: picked });
+              }
+            }}
+          >
+            <SelectTrigger
+              className="h-7 w-full text-body"
+              aria-label={t("usage.display.numberUnitStyle")}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {NUMBER_UNIT_STYLES.map(style => (
+                <SelectItem key={style} value={style}>
+                  {t(`usage.display.numberUnitStyles.${style}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-body text-fg-2 md:ps-5">
+            {t("usage.display.numberDecimals")}
+          </span>
+          <Select
+            value={String(numberFormat.decimals)}
+            disabled={savingNumberFormat || numberFormat.unitStyle === "full"}
+            onValueChange={(next) => {
+              const picked = NUMBER_DECIMAL_PLACES.find(digits => String(digits) === next);
+              if (picked !== undefined && picked !== numberFormat.decimals) {
+                void changeNumberFormat({ ...numberFormat, decimals: picked });
+              }
+            }}
+          >
+            <SelectTrigger
+              className="h-7 w-full text-body"
+              aria-label={t("usage.display.numberDecimals")}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {NUMBER_DECIMAL_PLACES.map(digits => (
+                <SelectItem key={digits} value={String(digits)}>
+                  {t("usage.display.numberDecimalOption", { digits })}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="col-span-2 m-0 text-caption tabular-nums text-fg-3 md:col-span-4">
+            {t("usage.display.numberPreview", {
+              small: previewNumber(12345),
+              medium: previewNumber(12345678),
+              large: previewNumber(1234567890),
+            })}
+          </p>
+          <p className="col-span-2 m-0 text-caption text-fg-3 md:col-span-4">
+            {t("usage.display.numberFormatHint")}
+          </p>
         </div>
         {currency !== "USD" && (
           <p

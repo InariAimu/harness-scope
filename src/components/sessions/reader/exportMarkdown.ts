@@ -1,3 +1,4 @@
+import { createUsageNumberFormatter } from "@/lib/usageNumberFormat";
 import { formatMessageTime } from "../utils";
 import type { AgentReaderStyle } from "./agentStyles";
 import { describeEvent } from "./SessionEventRow";
@@ -7,7 +8,6 @@ import {
   formatMergedTitle,
   formatStepMeta,
   formatStepTitle,
-  formatTokens,
   isFailureStatus,
   type StepMeta,
   type Translate,
@@ -26,9 +26,12 @@ export interface MarkdownExportOptions {
   projectDir?: string;
   t: Translate;
   includeThinking?: boolean;
+  formatQuantity?: (value: unknown) => string;
 }
 
-const metaText = (meta: StepMeta, t: Translate) => {
+const defaultFormatQuantity = createUsageNumberFormatter();
+
+const metaText = (meta: StepMeta, { t, formatQuantity = defaultFormatQuantity }: MarkdownExportOptions) => {
   const parts: string[] = [];
   if (isFailureStatus(meta.status)) parts.push(t(`status.${meta.status}`));
   if (meta.exitCode !== undefined) {
@@ -37,7 +40,7 @@ const metaText = (meta: StepMeta, t: Translate) => {
   if (meta.diff) parts.push(`+${meta.diff.added} −${meta.diff.removed}`);
   if (meta.durationMs) parts.push(formatDuration(meta.durationMs));
   if (meta.tokens !== undefined) {
-    parts.push(t("summaryTokens", { tokens: formatTokens(meta.tokens) }));
+    parts.push(t("summaryTokens", { tokens: formatQuantity(meta.tokens) }));
   }
   if (meta.costUsd !== undefined) parts.push(formatCost(meta.costUsd));
   return parts.length ? ` — ${parts.join(" · ")}` : "";
@@ -62,13 +65,13 @@ const stepLines = (
     case "tool": {
       const title = formatStepTitle(step, style, { projectDir, t });
       const meta = formatStepMeta(step, style);
-      return [`${pad}- ${meta.glyph} ${title.text}${metaText(meta, t)}`];
+      return [`${pad}- ${meta.glyph} ${title.text}${metaText(meta, options)}`];
     }
     case "merged": {
       const title = formatMergedTitle(step);
       const meta = formatStepMeta(step, style);
       return [
-        `${pad}- ${meta.glyph} ${title.text}${metaText(meta, t)}`,
+        `${pad}- ${meta.glyph} ${title.text}${metaText(meta, options)}`,
         ...step.children.flatMap((child) =>
           stepLines(child, options, depth + 1),
         ),

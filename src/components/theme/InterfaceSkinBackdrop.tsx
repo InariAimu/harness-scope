@@ -1,13 +1,24 @@
-import deepseekArtwork from "../../../assets/skins/deepseek.png";
+import type { CSSProperties } from "react";
+import { getInterfaceSkin } from "@/lib/interfaceSkins";
 import { useInterfaceSkin } from "./AccentThemeProvider";
 
 export function InterfaceSkinBackdrop() {
-  if (useInterfaceSkin() !== "deepseek") return null;
+  const skin = getInterfaceSkin(useInterfaceSkin());
+  if (!skin) return null;
   return (
-    <div className="interface-skin-backdrop" aria-hidden="true">
+    <div
+      className="interface-skin-backdrop"
+      aria-hidden="true"
+      style={{
+        "--skin-tint": skin.tint,
+        "--skin-face-x": `${-skin.faceAnchor.x}%`,
+        "--skin-face-y": `${-skin.faceAnchor.y}%`,
+      } as CSSProperties}
+    >
       <img
+        key={skin.id}
         className="interface-skin-character"
-        src={deepseekArtwork}
+        src={skin.artwork}
         alt=""
         draggable={false}
       />

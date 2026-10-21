@@ -183,6 +183,16 @@ impl Store {
     pub fn pending(&self) -> Result<Vec<UsageRecord>> {
         self.read_records("SELECT payload FROM outbox ORDER BY id LIMIT 200")
     }
+    /// Keep unsupported Claude revisions queued without starving other harnesses.
+    pub fn pending_compatible(&self, claude_metadata: bool) -> Result<Vec<UsageRecord>> {
+        if claude_metadata {
+            return self.pending();
+        }
+        self.read_records("SELECT payload FROM outbox WHERE NOT (json_extract(payload,'$.harness')='claude' AND (json_extract(payload,'$.timing') IS NOT NULL OR json_extract(payload,'$.requestMetadata') IS NOT NULL)) ORDER BY id LIMIT 200")
+    }
+    pub fn pending_claude_metadata_count(&self) -> Result<u64> {
+        Ok(self.conn.query_row("SELECT COUNT(*) FROM outbox WHERE json_extract(payload,'$.harness')='claude' AND (json_extract(payload,'$.timing') IS NOT NULL OR json_extract(payload,'$.requestMetadata') IS NOT NULL)", [], |r| r.get(0))?)
+    }
     pub fn ack(&self, acks: &[Ack]) -> Result<()> {
         for ack in acks {
             self.conn.execute(

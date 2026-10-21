@@ -26,6 +26,8 @@ pub fn validate_record(r: &UsageRecord) -> Result<()> {
                 "opencode_content_start",
             ),
             "dsh" => (&["dsh_step_message"], "dsh_stream_delta"),
+            // Claude block timestamps cannot establish a first-token boundary.
+            "claude" => (&["claude_api_request_blocks"], ""),
             _ => anyhow::bail!("Unsupported timing harness"),
         };
         anyhow::ensure!(
@@ -35,6 +37,7 @@ pub fn validate_record(r: &UsageRecord) -> Result<()> {
                 && t.first_token_ms
                     .is_none_or(|v| (0..=t.duration_ms).contains(&v))
                 && sources.0.contains(&t.duration_source.as_str())
+                && (r.harness != "claude" || t.first_token_ms.is_none())
                 && t.first_token_ms.is_some() == t.first_token_source.is_some()
                 && t.first_token_source
                     .as_deref()
@@ -43,9 +46,15 @@ pub fn validate_record(r: &UsageRecord) -> Result<()> {
         );
     }
     if let Some(m) = &r.request_metadata {
+        let sources: &[&str] = match r.harness.as_str() {
+            "codex" => &["thread_settings", "turn_context"],
+            "claude" => &["claude_usage"],
+            _ => &[],
+        };
         anyhow::ensure!(
-            r.harness == "codex"
+            !sources.is_empty()
                 && r.grain == "event"
+                && r.record_source == "session"
                 && m.service_tier
                     .as_deref()
                     .is_none_or(RequestMetadata::valid_tier)
@@ -53,11 +62,10 @@ pub fn validate_record(r: &UsageRecord) -> Result<()> {
                     .as_deref()
                     .is_none_or(RequestMetadata::valid_effort)
                 && m.service_tier.is_some() == m.service_tier_source.is_some()
-                && m.service_tier_source.as_deref().is_none_or(|s| [
-                    "thread_settings",
-                    "turn_context"
-                ]
-                .contains(&s))
+                && m.service_tier_source
+                    .as_deref()
+                    .is_none_or(|s| sources.contains(&s))
+                && (r.harness != "codex" || m.service_tier.as_deref() != Some("standard"))
                 && *m != RequestMetadata::default(),
             "Invalid request metadata"
         );

@@ -1,3 +1,4 @@
+import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import { useMoneyFormat } from "@/hooks/useMoneyFormat";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -8,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   fmtInt,
-  formatTokensCompact,
   getLocaleFromLanguage,
   getResolvedLang,
   parseFiniteNumber,
@@ -118,6 +118,7 @@ function MetricCard({
       </div>
       <span
         className="truncate text-metric tabular-nums text-fg-1"
+        style={value.length > 8 ? { fontSize: Math.max(12, 200 / value.length) } : undefined}
         title={title}
       >
         {value}
@@ -171,6 +172,7 @@ export function UsageHero({
   compact = false,
 }: UsageHeroProps) {
   const { t, i18n } = useTranslation();
+  const formatQuantity = useUsageNumberFormat();
   const { money, moneyTitle } = useMoneyFormat();
   const locale = getLocaleFromLanguage(getResolvedLang(i18n));
   const [moreOpen, setMoreOpen] = useState(false);
@@ -250,7 +252,8 @@ export function UsageHero({
             />
             <MetricCard
               label={t("usage.totalRequests")}
-              value={placeholder ?? fmtInt(requests, locale)}
+              value={placeholder ?? formatQuantity(requests)}
+              title={fmtInt(requests, locale)}
             />
             <MetricCard
               label={t("usage.realTotal")}
@@ -258,7 +261,7 @@ export function UsageHero({
                 title: t("usage.metrics.realTotalHelpTitle"),
                 body: t("usage.metrics.realTotalHelp"),
               }}
-              value={placeholder ?? formatTokensCompact(realTotal, locale)}
+              value={placeholder ?? formatQuantity(realTotal)}
               title={fmtInt(realTotal, locale)}
             />
             <MetricCard
@@ -279,12 +282,12 @@ export function UsageHero({
             >
               <MiniMetric
                 label={t("usage.freshInput")}
-                value={formatTokensCompact(input, locale)}
+                value={formatQuantity(input)}
                 title={fmtInt(input, locale)}
               />
               <MiniMetric
                 label={t("usage.output")}
-                value={formatTokensCompact(output, locale)}
+                value={formatQuantity(output)}
                 title={fmtInt(output, locale)}
               />
               <MiniMetric
@@ -292,7 +295,7 @@ export function UsageHero({
                 value={
                   cacheWriteState === "na"
                     ? "N/A"
-                    : formatTokensCompact(cacheWrite, locale)
+                    : formatQuantity(cacheWrite)
                 }
                 title={
                   cacheWriteState === "na" ? undefined : fmtInt(cacheWrite)
@@ -306,7 +309,7 @@ export function UsageHero({
               />
               <MiniMetric
                 label={t("usage.cacheRead")}
-                value={formatTokensCompact(cacheRead, locale)}
+                value={formatQuantity(cacheRead)}
                 title={fmtInt(cacheRead, locale)}
               />
             </div>

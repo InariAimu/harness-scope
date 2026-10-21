@@ -1,3 +1,4 @@
+import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import { OptionSelect } from "@/components/ui/option-select";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -9,7 +10,6 @@ import {
   forecastReason,
 } from "@/lib/goForecast";
 import { nativeMoney } from "@/lib/providerAccounts";
-import { formatTokensCompact } from "@/components/usage/format";
 import type { GoCatalogInfo, GoPlan, GoWindowId } from "@/types/goCatalog";
 import type { ProviderAccountView } from "@/types/providerAccounts";
 
@@ -27,6 +27,7 @@ export function GoForecastPanel({
   locale: string;
 }) {
   const l = (a: string, b: string) => (zh ? a : b);
+  const formatQuantity = useUsageNumberFormat();
   const [model, setModel] = useState("");
   const [lookback, setLookback] = useState(60);
   const [pace, setPace] = useState("1");
@@ -218,7 +219,7 @@ export function GoForecastPanel({
                   )}
                   : ≈{number(data.dailyBudget.requests)}{" "}
                   {l("次/天", "requests/day")} ·{" "}
-                  {formatTokensCompact(data.dailyBudget.tokens, locale)} Tokens/
+                  {formatQuantity(data.dailyBudget.tokens)} Tokens/
                   {l("天", "day")} · {l("约束来自", "constrained by")}{" "}
                   {labels[data.dailyBudget.window]}
                 </p>
@@ -277,7 +278,7 @@ export function GoForecastPanel({
                             {l("次请求/天", "requests/day")}
                           </p>
                           <p>
-                            {formatTokensCompact(w.tokensPerDay, locale)}{" "}
+                            {formatQuantity(w.tokensPerDay)}{" "}
                             Tokens/{l("天", "day")} · {money(w.usdPerDay)} /{" "}
                             {l("天", "day")}
                           </p>

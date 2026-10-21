@@ -232,4 +232,6 @@ export interface UsageDisplaySettings {
   sidebarTodayItems?: string[];
   requestLogColumns?: Record<string, boolean>;
   trendChartType?: string;
+  numberUnitStyle?: string;
+  numberDecimals?: number;
 }

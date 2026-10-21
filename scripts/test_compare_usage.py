@@ -8,10 +8,43 @@ import sqlite3
 import tempfile
 import unittest
 
-from compare_usage import add, bucket, ccswitch_groups, compare, opencode_groups
+from compare_usage import add, bucket, ccswitch_groups, claude_groups, compare, opencode_groups
 
 
 class ComparisonTests(unittest.TestCase):
+    def test_claude_blocks_copies_and_cost_state_do_not_duplicate_requests(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            rows = [dict(type="assistant", sessionId="fixture", message=dict(
+                id="msg", model="synthetic-model", usage=dict(input_tokens=10, output_tokens=output,
+                cache_read_input_tokens=20, cache_creation_input_tokens=5,
+                output_tokens_details=dict(thinking_tokens=3)))) for output in [5, 8, 6]]
+            rows.append(dict(type="cost-state", totalCostUSD=999, modelUsage={"synthetic-model": dict(outputTokens=1000)}))
+            body = "\n".join(json.dumps(row) for row in rows) + "\n"
+            (root / "one.jsonl").write_text(body, encoding="utf-8")
+            (root / "copy.jsonl").write_text(body, encoding="utf-8")
+            reference = claude_groups(root, {"fixture"})
+            group = reference[("fixture", "synthetic-model")]
+            self.assertEqual((group["requests"], group["output"], group["totalTokens"]), (1, 8, 43))
+            actual = defaultdict(bucket)
+            add(actual, "fixture", "synthetic-model", dict(input=10, output=8, cacheRead=20, cacheWrite=5), "0.25")
+            check = compare(actual, reference, compare_cost=False)
+            self.assertEqual(check["status"], "passed")
+            self.assertIn("not_compared", check["pricing"])
+            self.assertEqual(claude_groups(root, {"other"}), {})
+
+    def test_claude_invalid_counts_or_partial_json_never_pass(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "bad.jsonl"
+            for value in [-1, True, 2.5]:
+                row = dict(type="assistant", message=dict(id="msg", usage=dict(input_tokens=value, output_tokens=1)))
+                path.write_text(json.dumps(row), encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    claude_groups(path, set())
+            path.write_text('{"type":', encoding="utf-8")
+            with self.assertRaises(ValueError):
+                claude_groups(path, set())
+
     def test_decimal_costs_and_missing_usage_are_not_rounded_or_hidden(self):
         actual, reference = defaultdict(bucket), defaultdict(bucket)
         tokens = dict(input=80, output=20, cacheRead=30, cacheWrite=10)

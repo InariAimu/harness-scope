@@ -9,6 +9,103 @@ use std::{fs, sync::Arc};
 use tower::ServiceExt;
 const TOKEN: &str = "synthetic-test-token-at-least-24-characters";
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn claude_capability_defers_only_unsupported_revisions_and_resumes_without_loss() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let dir = tempfile::tempdir().unwrap();
+    let server = Arc::new(Engine::open(&dir.path().join("server.db")).unwrap());
+    let capable = Arc::new(AtomicBool::new(false));
+    let flag = capable.clone();
+    let router = axum::Router::new().route("/health", axum::routing::get(move || {
+        let flag = flag.clone();
+        async move { axum::Json(json!({"protocolVersion":4,"recordCapabilities":if flag.load(Ordering::SeqCst){vec!["claude_request_timing_v2"]}else{vec![]}})) }
+    })).fallback_service(server_router(server.clone(), TOKEN.into()).unwrap());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let root = dir.path().join("logs");
+    fs::create_dir(&root).unwrap();
+    fs::write(
+        root.join("fixture.jsonl"),
+        include_str!("../../tests/fixtures/claude/modern.jsonl"),
+    )
+    .unwrap();
+    let client = Arc::new(Engine::open(&dir.path().join("client.db")).unwrap());
+    {
+        let s = client.lock().unwrap();
+        let mut config = s.config().unwrap();
+        config.sources = vec![Source {
+            id: "fixture".into(),
+            harness: "claude".into(),
+            root: root.to_string_lossy().into(),
+            enabled: true,
+        }];
+        config.server_url = format!("http://{address}");
+        config.server_token = TOKEN.into();
+        s.set_meta("config", &config).unwrap();
+    }
+    let run = client.clone();
+    tokio::task::spawn_blocking(move || {
+        run.scan(false).unwrap();
+        let s = run.lock().unwrap();
+        let mut compatible = s.local_records().unwrap().remove(0);
+        compatible.id = "codex:compatible".into();
+        compatible.harness = "codex".into();
+        compatible.timing = None;
+        compatible.request_metadata = None;
+        s.upsert(compatible, "synthetic").unwrap();
+        drop(s);
+        let report = run.sync().unwrap();
+        assert_eq!(report["uploaded"], 1);
+        assert_eq!(report["deferredClaude"], 2);
+        assert!(report["warning"]
+            .as_str()
+            .unwrap()
+            .contains("retained locally"));
+        assert_eq!(run.lock().unwrap().pending_count().unwrap(), 2);
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        server
+            .lock()
+            .unwrap()
+            .conn
+            .query_row("SELECT COUNT(*) FROM server_records", [], |r| r
+                .get::<_, u64>(0))
+            .unwrap(),
+        1
+    );
+    capable.store(true, Ordering::SeqCst);
+    let run = client.clone();
+    tokio::task::spawn_blocking(move || {
+        let report = run.sync().unwrap();
+        assert_eq!(report["uploaded"], 2);
+        assert!(report["warning"].is_null());
+        assert_eq!(run.lock().unwrap().pending_count().unwrap(), 0);
+        assert!(run
+            .lock()
+            .unwrap()
+            .meta::<Option<String>>("last_sync_error")
+            .unwrap()
+            .flatten()
+            .is_none());
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        server
+            .lock()
+            .unwrap()
+            .conn
+            .query_row("SELECT COUNT(*) FROM server_records", [], |r| r
+                .get::<_, u64>(0))
+            .unwrap(),
+        3
+    );
+    handle.abort();
+}
+
 fn gzip(data: &[u8]) -> Vec<u8> {
     use std::io::Write;
     let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());

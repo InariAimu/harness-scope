@@ -21,7 +21,7 @@ const buttonVariants = cva(
         link: "text-action-text underline-offset-4 hover:underline",
         // ── v7（tokens.css 的 btn-*）：一个视图只有一个实心按钮，其余用 neutral ──
         // 中性实心：页头主操作（操作色，以后的主题色只改这一组变量）
-        // Foreground is selected from black/white for the configured accent.
+        // Action colors prefer white text with bounded background adjustment.
         solid:
           "border border-transparent bg-action font-semibold text-action-fg hover:bg-action-hover hover:text-action-hover-fg",
         // 中性描边：卡片上的「切换」「添加」「设为默认」等

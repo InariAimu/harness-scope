@@ -1,3 +1,4 @@
+import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import { useMoneyFormat } from "@/hooks/useMoneyFormat";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -6,13 +7,13 @@ import { TablePagination, useClientPagination } from "./TablePagination";
 import { cn } from "@/lib/utils";
 import {
   fmtInt,
-  formatTokensCompact,
   getLocaleFromLanguage,
   getResolvedLang,
 } from "./format";
 import { usageTable } from "./usageTable";
 import { PerformanceCells, PerformanceHeaders } from "./statsColumns";
 import type { UsageRangeSelection } from "@/types/usage";
+import { groupModelStats, modelStatsRowKey } from "@/lib/modelStats";
 
 interface ModelStatsTableProps {
   range: UsageRangeSelection;
@@ -30,6 +31,7 @@ export function ModelStatsTable({
   refreshIntervalMs,
 }: ModelStatsTableProps) {
   const { t, i18n } = useTranslation();
+  const formatQuantity = useUsageNumberFormat();
   const { costMoney, moneyTitle } = useMoneyFormat();
   const locale = getLocaleFromLanguage(getResolvedLang(i18n));
   const { data: stats, isLoading } = useModelStats(
@@ -40,12 +42,12 @@ export function ModelStatsTable({
     },
   );
 
-  const rows = useMemo(
-    () => [...(stats ?? [])].sort((a, b) => b.requestCount - a.requestCount),
+  const groups = useMemo(
+    () => groupModelStats(stats ?? []),
     [stats],
   );
   const pagination = useClientPagination(
-    rows,
+    groups,
     JSON.stringify([range, appType, providerName, model]),
   );
 
@@ -70,31 +72,41 @@ export function ModelStatsTable({
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {groups.length === 0 ? (
               <tr>
                 <td colSpan={7} className={usageTable.empty}>
                   {t("usage.noData")}
                 </td>
               </tr>
             ) : (
-              pagination.pageRows.map((stat) => (
-                <tr key={stat.model} className={usageTable.row}>
+              pagination.pageRows.flatMap((group) => group.rows).map((stat) => (
+                <tr key={modelStatsRowKey(stat)} className={usageTable.row}>
                   <td className={cn(usageTable.td, usageTable.mono)}>
                     <span
-                      className="block max-w-[320px] truncate"
+                      className="flex max-w-[320px] items-center gap-2"
                       title={stat.model}
                     >
-                      {stat.model}
+                      <span className="min-w-0 truncate">{stat.model}</span>
+                      {stat.requestMode && (
+                        <span
+                          className={cn("shrink-0 rounded px-1.5 py-0.5 text-badge font-normal",
+                            stat.requestMode === "fast" ? "bg-action-soft text-action-text" : "bg-subtle text-fg-2")}
+                          title={stat.requestMode === "unknown" ? t("usage.modelModeUnknownHint") : t("usage.modelModeHint")}
+                        >
+                          {stat.requestMode === "standard" ? "Standard" : stat.requestMode === "fast" ? "Fast"
+                            : stat.requestMode === "unknown" ? t("usage.modelModeUnknown") : stat.requestMode}
+                        </span>
+                      )}
                     </span>
                   </td>
-                  <td className={usageTable.td}>
-                    {fmtInt(stat.requestCount, locale)}
+                  <td className={usageTable.td} title={fmtInt(stat.requestCount, locale)}>
+                    {formatQuantity(stat.requestCount)}
                   </td>
                   <td
                     className={usageTable.td}
                     title={fmtInt(stat.totalTokens, locale)}
                   >
-                    {formatTokensCompact(stat.totalTokens, locale)}
+                    {formatQuantity(stat.totalTokens)}
                   </td>
                   <td
                     className={cn(usageTable.td, "font-medium")}
@@ -102,7 +114,7 @@ export function ModelStatsTable({
                   >
                     {costMoney(stat.totalCost, 2, stat.costConverted)}
                   </td>
-                  <PerformanceCells stat={stat} />
+                  <PerformanceCells stat={stat} showSampleCount />
                 </tr>
               ))
             )}
@@ -113,6 +125,7 @@ export function ModelStatsTable({
         page={pagination.page}
         totalPages={pagination.totalPages}
         total={pagination.total}
+        totalLabel={t("usage.modelGroupCount", { count: pagination.total })}
         onPageChange={pagination.setPage}
       />
     </div>

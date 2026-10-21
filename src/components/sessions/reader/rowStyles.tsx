@@ -1,8 +1,9 @@
+import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import { memo, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 import type { StatusTone, StepMeta } from "./toolSummary";
-import { formatCost, formatDuration, formatTokens } from "./toolSummary";
+import { formatCost, formatDuration } from "./toolSummary";
 import { useReaderT } from "./i18n";
 
 /**
@@ -59,6 +60,7 @@ export const StepMetaText = memo(function StepMetaText({
   className?: string;
 }) {
   const rt = useReaderT();
+  const formatTokens = useUsageNumberFormat();
   const parts: ReactNode[] = [];
   if (meta.exitCode !== undefined) {
     parts.push(

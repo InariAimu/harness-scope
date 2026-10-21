@@ -71,6 +71,7 @@ export function ProviderAccountEditor({
       : {
           provider,
           name: ACCOUNT_PROVIDER_NAMES[provider],
+          showInSidebar: true,
           links: [],
           subscription: {
             planName: "",
@@ -265,6 +266,15 @@ export function ProviderAccountEditor({
                   }
                 />
               </Field>
+              <label className="flex items-center gap-2 text-caption text-fg-2">
+                <Checkbox
+                  checked={form.showInSidebar !== false}
+                  onCheckedChange={(showInSidebar) =>
+                    setForm((v) => ({ ...v, showInSidebar }))
+                  }
+                />
+                {l("在左侧供应商列表中显示", "Show in sidebar providers")}
+              </label>
               {form.provider === "openai-codex" ? (
                 <section className="rounded-control border border-border p-3 space-y-3">
                   <p className="text-caption text-fg-3">

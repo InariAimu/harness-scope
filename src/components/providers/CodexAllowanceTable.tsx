@@ -1,8 +1,8 @@
+import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import type {
   CodexAllowanceInfo,
   CodexAllowanceMode,
 } from "@/types/codexAllowances";
-import { formatTokensCompact } from "@/components/usage/format";
 import { nativeMoney } from "@/lib/providerAccounts";
 export function CodexAllowanceTable({
   info,
@@ -16,6 +16,7 @@ export function CodexAllowanceTable({
   locale: string;
 }) {
   const l = (a: string, b: string) => (zh ? a : b);
+  const formatQuantity = useUsageNumberFormat();
   const money = (s: string) =>
     nativeMoney(Number(s).toPrecision(4), "USD", locale);
   const basisLabel = (basis: string) =>
@@ -77,7 +78,7 @@ export function CodexAllowanceTable({
                           <span>≈{money(v.apiEquivalentUsd)}</span>
                           <span className="block text-fg-3">
                             {v.tokens
-                              ? formatTokensCompact(v.tokens, locale)
+                              ? formatQuantity(v.tokens)
                               : "—"}{" "}
                             Tokens
                           </span>

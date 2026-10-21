@@ -1,3 +1,4 @@
+import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import { memo } from "react";
 import { ChevronRight, Copy } from "lucide-react";
 
@@ -7,7 +8,6 @@ import { useReaderT } from "./i18n";
 import {
   formatCost,
   formatDuration,
-  formatTokens,
   type TurnSummary,
 } from "./toolSummary";
 
@@ -41,6 +41,7 @@ export const SessionTimeline = memo(function SessionTimeline({
   onCopyTurn,
 }: SessionTimelineProps) {
   const rt = useReaderT();
+  const formatTokens = useUsageNumberFormat();
   const parts: { key: string; text: string; danger?: boolean }[] = [];
   if (summary.commandCount > 0) {
     parts.push({

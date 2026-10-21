@@ -1,5 +1,5 @@
 import { OptionSelect } from "@/components/ui/option-select";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -8,15 +8,15 @@ import {
   History,
   LayoutGrid,
   Settings,
-  Wallet,
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
 import { command, setScope } from "@/lib/client";
 import { toast } from "@/lib/toast";
-import { hasUnsavedChanges } from "@/lib/unsavedChanges";
+import { discardUnsavedChanges, hasUnsavedChanges } from "@/lib/unsavedChanges";
 import { UsageDashboard } from "@/components/usage/UsageDashboard";
 import { SidebarToday } from "@/components/shell/SidebarToday";
+import { SidebarSubscriptions } from "@/components/shell/SidebarSubscriptions";
 import { ApplicationsPage } from "@/pages/ApplicationsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SessionsPage } from "@/pages/SessionsPage";
@@ -32,6 +32,7 @@ import {
 import { WindowControls } from "@/components/shell/WindowControls";
 import { AccentThemeProvider } from "@/components/theme/AccentThemeProvider";
 import { InterfaceSkinBackdrop } from "@/components/theme/InterfaceSkinBackdrop";
+import type { InterfaceSkinId } from "@/lib/interfaceSkins";
 
 export interface Source {
   id: string;
@@ -47,7 +48,7 @@ export interface Config {
   scanIntervalSeconds: number;
   theme: string;
   accentColor: string;
-  interfaceSkin: "none" | "deepseek";
+  interfaceSkin: InterfaceSkinId;
   skinTransparency: number;
   skinMaskStrength: number;
   language: string;
@@ -92,6 +93,8 @@ export default function App() {
   });
   const [page, setPage] = useState("usage");
   const [collapsed, setCollapsed] = useState(false);
+  const [accountToEdit, setAccountToEdit] = useState<string>();
+  const accountOpened = useCallback(() => setAccountToEdit(undefined), []);
   const [device, setDevice] = useState("local");
   const data = state.data;
   const usageVersion = useRef<number | undefined>();
@@ -124,12 +127,12 @@ export default function App() {
     }
   }, [!!data, data?.lastScanAt, client]);
   const navigate = (next: string) => {
-    if (
-      hasUnsavedChanges() &&
-      !window.confirm(t("scope.unsaved", "放弃未保存的修改？"))
-    )
-      return;
+    if (hasUnsavedChanges()) {
+      if (!window.confirm(t("scope.unsaved", "放弃未保存的修改？"))) return false;
+      discardUnsavedChanges();
+    }
     setPage(next);
+    return true;
   };
   const label = (zh: string, en: string) =>
     i18n.language.startsWith("zh") ? zh : en;
@@ -161,53 +164,59 @@ export default function App() {
               )}
             </button>
           </div>
-          <div className="px-3 py-5 text-caption text-fg-3">
-            {collapsed ? "HS" : label("本机工具", "LOCAL TOOLS")}
+          <div className="scope-sidebar-scroll">
+            <div className="px-3 py-5 text-caption text-fg-3">
+              {collapsed ? "HS" : label("本机工具", "LOCAL TOOLS")}
+            </div>
+            <nav className="px-2 space-y-1">
+              {[
+                {
+                  id: "applications",
+                  name: label("应用", "Applications"),
+                  Icon: LayoutGrid,
+                },
+                {
+                  id: "usage",
+                  name: label("用量统计", "Usage"),
+                  Icon: ChartColumn,
+                },
+                {
+                  id: "sessions",
+                  name: label("会话", "Sessions"),
+                  Icon: History,
+                },
+              ].map(({ id, name, Icon }) => (
+                <button
+                  key={id}
+                  title={name}
+                  aria-label={name}
+                  className={`scope-nav ${page === id ? "active" : ""}`}
+                  onClick={() => navigate(id)}
+                >
+                  <Icon size={16} className="shrink-0" aria-hidden="true" />
+                  {!collapsed && <span className="shrink-0 whitespace-nowrap">{name}</span>}
+                  {!collapsed && id === "usage" && <SidebarToday />}
+                </button>
+              ))}
+              <SidebarSubscriptions
+                collapsed={collapsed}
+                active={page === "providers"}
+                enabled={!!data}
+                onNavigate={() => navigate("providers")}
+                onAccountClick={(id) => {
+                  if (navigate("providers")) setAccountToEdit(id);
+                }}
+              />
+            </nav>
           </div>
-          <nav className="flex-1 px-2 space-y-1">
-            {[
-              {
-                id: "applications",
-                name: label("应用", "Applications"),
-                Icon: LayoutGrid,
-              },
-              {
-                id: "usage",
-                name: label("用量统计", "Usage"),
-                Icon: ChartColumn,
-              },
-              {
-                id: "sessions",
-                name: label("会话", "Sessions"),
-                Icon: History,
-              },
-              {
-                id: "providers",
-                name: label("供应商", "Providers"),
-                Icon: Wallet,
-              },
-            ].map(({ id, name, Icon }) => (
-              <button
-                key={id}
-                title={name}
-                aria-label={name}
-                className={`scope-nav ${page === id ? "active" : ""}`}
-                onClick={() => navigate(id)}
-              >
-                <Icon size={16} />
-                {!collapsed && name}
-                {!collapsed && id === "usage" && <SidebarToday />}
-              </button>
-            ))}
-          </nav>
-          <div className="border-t border-border p-2">
+          <div className="scope-sidebar-footer border-t border-border p-2">
             <button
               title={label("设置", "Settings")}
               className={`scope-nav ${page === "settings" ? "active" : ""}`}
               onClick={() => navigate("settings")}
             >
-              <Settings size={16} />
-              {!collapsed && label("设置", "Settings")}
+              <Settings size={16} className="shrink-0" aria-hidden="true" />
+              {!collapsed && <span className="shrink-0 whitespace-nowrap">{label("设置", "Settings")}</span>}
             </button>
             {!collapsed && (
               <div className="px-3 pt-3 pb-2 text-caption text-fg-3">
@@ -328,7 +337,13 @@ export default function App() {
               {page === "sessions" && (
                 <SessionsPage onSettings={() => navigate("settings")} />
               )}
-              {page === "providers" && <ProvidersPage snapshot={data} />}
+              {page === "providers" && (
+                <ProvidersPage
+                  snapshot={data}
+                  accountToEdit={accountToEdit}
+                  onAccountOpened={accountOpened}
+                />
+              )}
             </>
           )}
         </main>

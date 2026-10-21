@@ -156,8 +156,8 @@ pub struct ParsedUsage {
     pub timing: Option<UsageTiming>,
 }
 
-/// Log settings effective at the request's turn, never the current machine config.
-/// These describe the requested tier, not a server-confirmed billing tier.
+/// Request-local settings or response usage, never the current machine config.
+/// Source distinguishes requested Codex tiers from Claude's reported service tier.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RequestMetadata {
@@ -171,7 +171,7 @@ pub struct RequestMetadata {
 impl RequestMetadata {
     pub fn speed(&self) -> Option<&'static str> {
         match self.service_tier.as_deref()? {
-            "default" => Some("standard"),
+            "default" | "standard" => Some("standard"),
             "fast" | "priority" => Some("fast"),
             _ => None,
         }
@@ -179,6 +179,7 @@ impl RequestMetadata {
     pub fn valid_tier(s: &str) -> bool {
         [
             "default",
+            "standard",
             "fast",
             "priority",
             "auto",
@@ -253,6 +254,10 @@ pub struct UsageDisplaySettings {
     pub request_log_columns: Option<std::collections::BTreeMap<String, bool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trend_chart_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub number_unit_style: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub number_decimals: Option<u8>,
 }
 impl UsageDisplaySettings {
     pub fn apply(&mut self, patch: Self) -> anyhow::Result<()> {
@@ -303,6 +308,20 @@ impl UsageDisplaySettings {
                 "Unsupported trend chart type"
             );
             self.trend_chart_type = Some(chart_type);
+        }
+        if let Some(unit_style) = patch.number_unit_style {
+            anyhow::ensure!(
+                ["international", "chinese", "full"].contains(&unit_style.as_str()),
+                "Unsupported number unit style"
+            );
+            self.number_unit_style = Some(unit_style);
+        }
+        if let Some(decimals) = patch.number_decimals {
+            anyhow::ensure!(
+                decimals <= 3,
+                "Number decimal places must be between 0 and 3"
+            );
+            self.number_decimals = Some(decimals);
         }
         Ok(())
     }

@@ -26,6 +26,7 @@ export interface ProviderAccount {
   id: string;
   provider: AccountProvider;
   name: string;
+  showInSidebar: boolean;
   links: AccountLink[];
   subscription: AccountSubscription;
   refresh: RefreshPolicy;
@@ -77,11 +78,19 @@ export interface ProviderAccountView {
   lastAttemptAt: number | null;
   error: string | null;
   refreshing: boolean;
+  weeklyUsageWindow?: WeeklyUsageWindow | null;
+}
+export type AccountUsageRange = "today" | "month" | "subscription" | "weekly";
+export interface WeeklyUsageWindow {
+  startDate: number;
+  resetsAt: number;
+  bucket: string | null;
 }
 export interface AccountSave {
   id?: string;
   provider: AccountProvider;
   name: string;
+  showInSidebar?: boolean;
   links: AccountLink[];
   subscription: AccountSubscription;
   apiKey?: string;
@@ -191,4 +200,5 @@ export interface AccountUsage {
   timezone: string;
   summary: UsageSummary;
   models: { model: string; summary: UsageSummary }[];
+  weeklyUsageWindow?: WeeklyUsageWindow | null;
 }

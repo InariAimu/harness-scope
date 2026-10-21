@@ -45,7 +45,7 @@ pub fn server_router(engine: Arc<Engine>, token: String) -> anyhow::Result<Route
         .route(
             "/health",
             get(|| async {
-                Json(json!({"status":"ok","protocolVersion":4,"supportedProtocolVersions":[1,2,3,4],"requestEncodings":["identity","gzip"]}))
+                Json(json!({"status":"ok","protocolVersion":4,"supportedProtocolVersions":[1,2,3,4],"requestEncodings":["identity","gzip"],"recordCapabilities":["claude_request_timing_v2"]}))
             }),
         )
         .route("/v1/push", post(push))

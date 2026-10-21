@@ -1,3 +1,4 @@
+import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import { memo, useCallback, useMemo, useState } from "react";
 import { Copy } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -19,7 +20,7 @@ import {
   hasHighlightableMarkdownMatch,
   SessionMarkdown,
 } from "./SessionMarkdown";
-import { formatCost, formatTokens } from "./toolSummary";
+import { formatCost } from "./toolSummary";
 import type { TurnFinal } from "./turns";
 
 const SNIPPET_RADIUS = 60;
@@ -57,6 +58,7 @@ export const SessionFinalReply = memo(function SessionFinalReply({
 }: SessionFinalReplyProps) {
   const { t } = useTranslation();
   const rt = useReaderT();
+  const formatTokens = useUsageNumberFormat();
   const { style, projectDir, searchQuery, onCopy } = useReaderContext();
   const [expanded, setExpanded] = useState(false);
   const text = final.text;

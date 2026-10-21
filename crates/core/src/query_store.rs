@@ -133,6 +133,9 @@ impl Selection {
     pub fn rows_with_metadata(&self, store: &Store) -> Result<Vec<Row>> {
         self.select_rows(store, false, true)
     }
+    pub fn model_rows(&self, store: &Store) -> Result<Vec<Row>> {
+        self.select_rows(store, true, true)
+    }
     fn select_rows(
         &self,
         store: &Store,

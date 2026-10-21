@@ -4,6 +4,7 @@ import type {
   AccountRoute,
   AccountSave,
   AccountUsage,
+  AccountUsageRange,
   ProviderAccountView,
   CodexReference,
   CodexPlan,
@@ -28,6 +29,6 @@ export const providerAccountsApi = {
     command<ProviderAccountView>("provider_account_refresh", { id }),
   activity: (id: string, lease: string, active: boolean) =>
     command<boolean>("provider_account_activity", { id, lease, active }),
-  usage: (id: string, range: string) =>
+  usage: (id: string, range: AccountUsageRange) =>
     command<AccountUsage>("provider_account_usage", { id, range }),
 };

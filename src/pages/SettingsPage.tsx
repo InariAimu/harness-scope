@@ -19,6 +19,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { AccentColorSettings } from "@/components/settings/AccentColorSettings";
 import { useAccentThemePreview } from "@/components/theme/AccentThemeProvider";
 import { DEFAULT_ACCENT_COLOR, normalizeAccentColor } from "@/lib/accentColor";
+import { INTERFACE_SKINS, normalizeInterfaceSkin } from "@/lib/interfaceSkins";
 import {
   DEFAULT_SKIN_TRANSPARENCY,
   DEFAULT_SKIN_MASK_STRENGTH,
@@ -46,7 +47,7 @@ export function SettingsPage({
   const [config, setConfig] = useState<Config>(() => ({
     ...snapshot.config,
     accentColor: normalizeAccentColor(snapshot.config.accentColor) ?? DEFAULT_ACCENT_COLOR,
-    interfaceSkin: snapshot.config.interfaceSkin ?? "none",
+    interfaceSkin: normalizeInterfaceSkin(snapshot.config.interfaceSkin),
     skinTransparency: skinPercentage(snapshot.config.skinTransparency, DEFAULT_SKIN_TRANSPARENCY),
     skinMaskStrength: skinPercentage(snapshot.config.skinMaskStrength, DEFAULT_SKIN_MASK_STRENGTH),
   }));
@@ -171,11 +172,14 @@ export function SettingsPage({
               </Field>
               <Field label={l("界面皮肤", "Interface skin")}>
                 <OptionSelect
+                  aria-label={l("界面皮肤", "Interface skin")}
                   value={config.interfaceSkin}
-                  onValueChange={(value) => update("interfaceSkin", value === "deepseek" ? "deepseek" : "none")}
+                  onValueChange={(value) => update("interfaceSkin", normalizeInterfaceSkin(value))}
                 >
                   <option value="none">{l("无 · 纯色界面", "None · Solid background")}</option>
-                  <option value="deepseek">{l("DeepSeek · 蓝海女仆", "DeepSeek · Ocean maid")}</option>
+                  {INTERFACE_SKINS.map((skin) => (
+                    <option key={skin.id} value={skin.id}>{l(skin.name.zh, skin.name.en)}</option>
+                  ))}
                 </OptionSelect>
                 <p className="text-caption text-fg-3">
                   {l(

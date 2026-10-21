@@ -54,7 +54,10 @@ export function AppGlyph({
     >
       {svg ? (
         <span
-          className="inline-flex items-center justify-center"
+          className={cn(
+            "inline-flex items-center justify-center",
+            app === "codex" && "text-fg-1",
+          )}
           style={{ width: size, height: size, fontSize: size, lineHeight: 1 }}
           dangerouslySetInnerHTML={{ __html: svg }}
         />

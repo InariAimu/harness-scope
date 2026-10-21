@@ -2147,6 +2147,16 @@
   "usage": {
     "display": {
       "title": "显示",
+      "numberUnitStyle": "数量单位",
+      "numberUnitStyles": {
+        "international": "国际单位（K / M / B）",
+        "chinese": "中文单位（万 / 亿）",
+        "full": "完整数字"
+      },
+      "numberDecimals": "缩写小数位",
+      "numberDecimalOption": "最多 {{digits}} 位",
+      "numberPreview": "示例：{{small}} · {{medium}} · {{large}}",
+      "numberFormatHint": "用于 Token 和请求数，单位不随界面语言切换；省略小数末尾的 0。",
       "currency": "币种",
       "rate": "汇率",
       "rateHint": "手动填写，只用于换算显示；费用仍按美元记录。",
@@ -2437,6 +2447,22 @@
       "less": "少",
       "more": "多"
     },
+    "chart": {
+      "viewLabel": "分析视图",
+      "metricLabel": "统计指标",
+      "trend": "趋势",
+      "models": "模型占比",
+      "providers": "供应商占比",
+      "modelsTitle": "模型分布 · {{range}}",
+      "providersTitle": "供应商分布 · {{range}}",
+      "other": "其他",
+      "unknownModel": "未知模型",
+      "loading": "正在加载占比",
+      "loadFailed": "占比数据加载失败",
+      "retry": "重试",
+      "noCost": "暂无已记录成本可计算占比",
+      "summary": "{{metric}}合计 {{total}}，各项占比见右侧明细"
+    },
     "trend": {
       "title": "使用趋势 · {{range}}",
       "metricLabel": "趋势指标",
@@ -2453,6 +2479,12 @@
       "pricing": "定价"
     },
     "sortedByRequests": "按请求数排序",
+    "sortedByModelRequests": "按模型总请求数排序",
+    "modelModeUnknown": "档位未知",
+    "modelModeHint": "按日志记录的请求档位分组，不代表服务端确认的计费档位。推理强度、上下文和任务差异仍会影响速度。",
+    "modelModeUnknownHint": "日志缺少可确认的请求档位，未归入 Standard 或 Fast。",
+    "modelGroupCount": "共 {{count}} 个模型",
+    "firstTokenSamples": "首字样本：{{count}} 条",
     "app": "应用",
     "speed": "速度",
     "speedValue": "{{value}} tok/s",
@@ -4917,6 +4949,7 @@
     "durationSource": "耗时依据",
     "firstTokenSource": "首字依据",
     "timingSources": {
+      "claude_api_request_blocks": "Claude api-request → 同一请求最后助手内容块（含客户端开销，不含后续工具执行）",
       "codex_token_usage_record": "Codex 请求边界 → token_usage_record",
       "codex_model_output_before_tool": "Codex 请求边界 → 工具执行前最后输出",
       "codex_token_count": "Codex 请求边界 → token_count",

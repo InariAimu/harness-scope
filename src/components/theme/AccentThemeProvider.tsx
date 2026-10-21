@@ -9,16 +9,17 @@ import {
 } from "react";
 import { accentColorVariables } from "@/lib/accentColor";
 import { skinAppearanceVariables } from "@/lib/skinAppearance";
+import { normalizeInterfaceSkin, type InterfaceSkinId } from "@/lib/interfaceSkins";
 
 interface ThemePreview {
   accentColor: string;
   theme: string;
-  interfaceSkin: "none" | "deepseek";
+  interfaceSkin: InterfaceSkinId;
   skinTransparency: number;
   skinMaskStrength: number;
 }
 
-const SkinContext = createContext("none");
+const SkinContext = createContext<InterfaceSkinId>("none");
 export const useInterfaceSkin = () => useContext(SkinContext);
 
 const PreviewContext = createContext<
@@ -45,7 +46,7 @@ export function AccentThemeProvider({
   const [preview, setPreview] = useState<ThemePreview | null>(null);
   const effectiveColor = preview?.accentColor ?? color;
   const effectiveTheme = preview?.theme ?? theme;
-  const effectiveSkin = preview?.interfaceSkin ?? skin;
+  const effectiveSkin = normalizeInterfaceSkin(preview?.interfaceSkin ?? skin);
   const effectiveTransparency = preview?.skinTransparency ?? skinTransparency;
   const effectiveMaskStrength = preview?.skinMaskStrength ?? skinMaskStrength;
 

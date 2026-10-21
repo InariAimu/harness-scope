@@ -47,9 +47,25 @@ const CLAUDE: Projection = Fields(&[
     ("type", All),
     ("timestamp", All),
     ("sessionId", All),
+    ("id", All),
+    ("requestRef", All),
+    ("effort", All),
+    ("perTurnEffort", All),
+    (
+        "params",
+        Fields(&[
+            ("model", All),
+            ("output_config", Fields(&[("effort", All)])),
+        ]),
+    ),
     (
         "message",
-        Fields(&[("id", All), ("model", All), ("usage", All)]),
+        Fields(&[
+            ("id", All),
+            ("model", All),
+            ("usage", All),
+            ("stop_reason", All),
+        ]),
     ),
 ]);
 

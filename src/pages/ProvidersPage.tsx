@@ -1,3 +1,4 @@
+import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import { OptionSelect } from "@/components/ui/option-select";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -13,6 +14,7 @@ import {
 import type { Snapshot } from "@/App";
 import type {
   AccountProvider,
+  AccountUsageRange,
   ProviderAccountView,
   QuotaWindow,
 } from "@/types/providerAccounts";
@@ -20,7 +22,6 @@ import { AppPageHeader } from "@/components/shell/AppPageHeader";
 import { Button } from "@/components/ui/button";
 import { appShortName } from "@/components/usage/RequestLogTable";
 import {
-  formatTokensCompact,
   getLocaleFromLanguage,
 } from "@/components/usage/format";
 import { useMoneyFormat } from "@/hooks/useMoneyFormat";
@@ -38,6 +39,7 @@ import { GoUsagePanel } from "@/components/providers/GoUsagePanel";
 import { CodexReferencePanel } from "@/components/providers/CodexReferencePanel";
 import { codexWindowLabel } from "@/lib/codexSubscription";
 import { cn } from "@/lib/utils";
+import { useProviderAccounts } from "@/lib/query/providerAccounts";
 
 function QuotaCard({
   window,
@@ -105,8 +107,17 @@ function QuotaCard({
     </section>
   );
 }
-export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
+export function ProvidersPage({
+  snapshot,
+  accountToEdit,
+  onAccountOpened,
+}: {
+  snapshot: Snapshot;
+  accountToEdit?: string;
+  onAccountOpened: () => void;
+}) {
   const { i18n } = useTranslation();
+  const formatQuantity = useUsageNumberFormat();
   const zh = i18n.language.startsWith("zh");
   const l = (a: string, b: string) => (zh ? a : b);
   const locale = getLocaleFromLanguage(i18n.language);
@@ -117,19 +128,26 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
   const [editing, setEditing] = useState<
     ProviderAccountView | null | undefined
   >();
-  const [range, setRange] = useState("month");
+  const [editorVersion, setEditorVersion] = useState(0);
+  const [range, setRange] = useState<AccountUsageRange>("month");
   const [now, setNow] = useState(() => Date.now() / 1000);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now() / 1000), 30_000);
     return () => clearInterval(timer);
   }, []);
-  const list = useQuery({
-    queryKey: ["provider-accounts"],
-    queryFn: api.list,
-    staleTime: 30_000,
-    refetchInterval: 2_000,
-  });
+  const list = useProviderAccounts();
   const accounts = list.data ?? [];
+  useEffect(() => {
+    if (!accountToEdit || !list.data) return;
+    const target = list.data.find((v) => v.account.id === accountToEdit);
+    if (target) {
+      setProvider(target.account.provider);
+      setId(target.account.id);
+      setEditing(target);
+      setEditorVersion((v) => v + 1);
+    }
+    onAccountOpened();
+  }, [accountToEdit, list.data, onAccountOpened]);
   const visible = accounts.filter(
     (v) => provider === "all" || v.account.provider === provider,
   );
@@ -151,10 +169,36 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
   const refreshing =
     !!selected?.refreshing ||
     (remote.isPending && remote.variables === account?.id);
+  const supportsWeekly =
+    account?.provider === "openai-codex" || account?.provider === "opencode-go";
+  const weeklyWindow = selected?.weeklyUsageWindow;
+  const weeklyReady =
+    !!weeklyWindow && weeklyWindow.startDate <= now && weeklyWindow.resetsAt > now;
   const effectiveRange =
-    range === "subscription" && !account?.subscription.periodStart
+    (range === "subscription" && !account?.subscription.periodStart) ||
+    (range === "weekly" && !supportsWeekly)
       ? "month"
       : range;
+  const usageRanges: {
+    id: AccountUsageRange;
+    label: string;
+    disabled?: boolean;
+  }[] = [
+    { id: "today", label: l("今天", "Today") },
+    { id: "month", label: l("本月", "This month") },
+    {
+      id: "subscription",
+      label: l("订阅周期", "Subscription period"),
+      disabled: !account?.subscription.periodStart,
+    },
+  ];
+  if (supportsWeekly) {
+    usageRanges.push({
+      id: "weekly",
+      label: l("本周额度周期", "Weekly quota period"),
+      disabled: !weeklyReady,
+    });
+  }
   const usage = useQuery({
     queryKey: [
       "usage",
@@ -164,10 +208,13 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
       account?.subscription.periodStart,
       account?.subscription.renewalDate,
       effectiveRange,
+      ...(effectiveRange === "weekly"
+        ? [weeklyWindow?.startDate, weeklyWindow?.resetsAt, weeklyWindow?.bucket]
+        : []),
       snapshot.config.timezone,
     ],
     queryFn: () => api.usage(account!.id, effectiveRange),
-    enabled: !!account,
+    enabled: !!account && (effectiveRange !== "weekly" || weeklyReady),
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
@@ -179,6 +226,16 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
       minute: "2-digit",
     });
   const data = selected?.snapshot?.data;
+  const periodDate = (value: number) =>
+    new Date(value * 1000).toLocaleString(locale, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      timeZone: snapshot.config.timezone,
+    });
   const sub = account?.subscription;
   const error =
     remote.error && remote.variables === account?.id
@@ -566,7 +623,10 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
                 timeZone={snapshot.config.timezone}
               />
             )}
-            <section className="scope-card !p-4 space-y-3">
+            <section
+              aria-label={l("关联设备用量", "Linked device usage")}
+              className="scope-card !p-4 space-y-3"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="font-semibold">
                   {l("关联设备用量", "Linked device usage")}{" "}
@@ -574,18 +634,14 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
                     {l("日志估算", "From usage logs")}
                   </span>
                 </h2>
-                <div className="flex gap-1">
-                  {[
-                    ["today", l("今天", "Today")],
-                    ["month", l("本月", "This month")],
-                    ["subscription", l("本期", "Billing period")],
-                  ].map(([id, label]) => (
+                <div className="flex flex-wrap gap-1">
+                  {usageRanges.map(({ id, label, disabled }) => (
                     <Button
                       key={id}
                       size="compact"
                       variant={effectiveRange === id ? "neutral" : "quiet"}
                       aria-pressed={effectiveRange === id}
-                      disabled={id === "subscription" && !sub!.periodStart}
+                      disabled={disabled}
                       onClick={() => setRange(id)}
                     >
                       {label}
@@ -593,6 +649,28 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
                   ))}
                 </div>
               </div>
+              {supportsWeekly && !weeklyReady && (
+                <p className="text-caption text-fg-3">
+                  {l(
+                    "暂无有效的官方周额度窗口，请先刷新官方额度。",
+                    "No active official weekly quota window. Refresh provider limits first.",
+                  )}
+                </p>
+              )}
+              {effectiveRange === "weekly" &&
+                weeklyReady &&
+                usage.data?.weeklyUsageWindow && (
+                  <p className="text-caption text-fg-3 tabular-nums">
+                    {l("官方周额度周期", "Official weekly quota period")}: {" "}
+                    {periodDate(usage.data.weeklyUsageWindow.startDate)} → {" "}
+                    {periodDate(usage.data.weeklyUsageWindow.resetsAt)}
+                    {usage.data.weeklyUsageWindow.bucket &&
+                      ` · ${usage.data.weeklyUsageWindow.bucket}`}
+                    {` · ${snapshot.config.timezone}`}
+                    <br />
+                    {l("已统计至", "Usage through")} {periodDate(usage.data.endDate)}
+                  </p>
+                )}
               <div className="flex flex-wrap gap-1.5">
                 {account!.links.length ? (
                   account!.links.map((link) => (
@@ -615,9 +693,14 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
                   </p>
                 )}
               </div>
-              {usage.isError ? (
+              {effectiveRange === "weekly" && !weeklyReady ? null : usage.isError ? (
                 <p role="alert" className="text-caption text-danger-text">
-                  {l("关联用量读取失败。", "Could not load linked usage.")}
+                  {effectiveRange === "weekly"
+                    ? l(
+                        "官方周额度周期读取失败，请刷新官方额度后重试。",
+                        "Could not read the weekly quota period. Refresh provider limits and retry.",
+                      )
+                    : l("关联用量读取失败。", "Could not load linked usage.")}
                   <Button
                     size="compact"
                     variant="quiet"
@@ -637,16 +720,11 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
                       {[
                         [
                           l("请求数", "Requests"),
-                          usage.data.summary.totalRequests.toLocaleString(
-                            locale,
-                          ),
+                          formatQuantity(usage.data.summary.totalRequests),
                         ],
                         [
                           l("Tokens", "Tokens"),
-                          formatTokensCompact(
-                            usage.data.summary.realTotalTokens,
-                            locale,
-                          ),
+                          formatQuantity(usage.data.summary.realTotalTokens),
                         ],
                         [
                           l("按价表折算", "Priced usage"),
@@ -705,15 +783,10 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
                                   {v.model}
                                 </td>
                                 <td className="text-end tabular-nums">
-                                  {v.summary.totalRequests.toLocaleString(
-                                    locale,
-                                  )}
+                                  {formatQuantity(v.summary.totalRequests)}
                                 </td>
                                 <td className="text-end tabular-nums">
-                                  {formatTokensCompact(
-                                    v.summary.realTotalTokens,
-                                    locale,
-                                  )}
+                                  {formatQuantity(v.summary.realTotalTokens)}
                                 </td>
                                 <td className="text-end tabular-nums">
                                   {costMoney(
@@ -737,6 +810,7 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
                   "Includes linked routes from all synced devices, assuming a shared subscription. Accounts or keys on the same route cannot be distinguished; unsynced usage is absent. Priced usage is not an invoice or remaining allowance.",
                 )}{" "}
                 {usage.data &&
+                  (effectiveRange !== "weekly" || weeklyReady) &&
                   `${l("统计时区", "Time zone")}: ${usage.data.timezone}`}
               </p>
             </section>
@@ -745,7 +819,7 @@ export function ProvidersPage({ snapshot }: { snapshot: Snapshot }) {
       </div>
       {editing !== undefined && (
         <ProviderAccountEditor
-          key={editing?.account.id ?? "new"}
+          key={`${editing?.account.id ?? "new"}:${editorVersion}`}
           initial={editing ?? undefined}
           provider={provider === "all" ? "deepseek" : provider}
           accounts={accounts}

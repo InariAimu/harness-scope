@@ -10,6 +10,7 @@ interface TablePaginationProps {
   totalPages: number;
   /** 总条数，显示在左侧 */
   total: number;
+  totalLabel?: string;
   onPageChange: (page: number) => void;
 }
 
@@ -21,6 +22,7 @@ export function TablePagination({
   page,
   totalPages,
   total,
+  totalLabel,
   onPageChange,
 }: TablePaginationProps) {
   const { t, i18n } = useTranslation();
@@ -46,7 +48,7 @@ export function TablePagination({
 
   return (
     <div className="flex h-10 items-center gap-2 text-caption text-fg-3">
-      <span className="tabular-nums">{t("usage.totalRecords", { total })}</span>
+      <span className="tabular-nums">{totalLabel ?? t("usage.totalRecords", { total })}</span>
       <div className="flex-1" />
       <HoverTip content={t("usage.prevPage")}>
         <button

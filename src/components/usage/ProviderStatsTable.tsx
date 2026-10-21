@@ -1,3 +1,4 @@
+import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import { useMoneyFormat } from "@/hooks/useMoneyFormat";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -6,7 +7,6 @@ import { TablePagination, useClientPagination } from "./TablePagination";
 import { cn } from "@/lib/utils";
 import {
   fmtInt,
-  formatTokensCompact,
   getLocaleFromLanguage,
   getResolvedLang,
 } from "./format";
@@ -31,6 +31,7 @@ export function ProviderStatsTable({
   refreshIntervalMs,
 }: ProviderStatsTableProps) {
   const { t, i18n } = useTranslation();
+  const formatQuantity = useUsageNumberFormat();
   const { costMoney, moneyTitle } = useMoneyFormat();
   const locale = getLocaleFromLanguage(getResolvedLang(i18n));
   const { data: stats, isLoading } = useProviderStats(
@@ -94,14 +95,14 @@ export function ProviderStatsTable({
                         {provider.label}
                       </span>
                     </td>
-                    <td className={usageTable.td}>
-                      {fmtInt(stat.requestCount, locale)}
+                    <td className={usageTable.td} title={fmtInt(stat.requestCount, locale)}>
+                      {formatQuantity(stat.requestCount)}
                     </td>
                     <td
                       className={usageTable.td}
                       title={fmtInt(stat.totalTokens, locale)}
                     >
-                      {formatTokensCompact(stat.totalTokens, locale)}
+                      {formatQuantity(stat.totalTokens)}
                     </td>
                     <td
                       className={cn(usageTable.td, "font-medium")}

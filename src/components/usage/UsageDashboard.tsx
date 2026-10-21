@@ -53,7 +53,7 @@ import { usageApi } from "@/lib/api/usage";
 import { getUsageRangePresetLabel, resolveUsageRange } from "@/lib/usageRange";
 import { cn } from "@/lib/utils";
 import { UsageHero } from "./UsageHero";
-import { UsageTrendChart } from "./UsageTrendChart";
+import { UsageChartPanel } from "./UsageChartPanel";
 import { RequestLogTable } from "./RequestLogTable";
 import { ProviderStatsTable } from "./ProviderStatsTable";
 import { ModelStatsTable } from "./ModelStatsTable";
@@ -66,7 +66,6 @@ import { usageTable } from "./usageTable";
 import { resolveRequestLogColumns } from "./requestLogColumns";
 import { useUsageDisplay } from "@/lib/query/usageDisplay";
 import { useUsageTimezone } from "@/lib/query/usageTimezone";
-import { UsageHeatmap } from "./UsageHeatmap";
 import { fmtInt, formatRelativeTime, getLocaleFromLanguage } from "./format";
 import { getUsageProviderLabel, usageProviderTitle } from "./providerLabel";
 
@@ -760,7 +759,7 @@ export function UsageDashboard({
       </DropdownMenu>
     ) : tab === "providers" || tab === "models" ? (
       <span className="text-caption text-fg-3">
-        {t("usage.sortedByRequests")}
+        {t(tab === "models" ? "usage.sortedByModelRequests" : "usage.sortedByRequests")}
       </span>
     ) : null;
 
@@ -903,24 +902,14 @@ export function UsageDashboard({
           compact={compact}
         />
 
-        {/* 「全部」看长期分布用热力图；短范围趋势按显示设置选择柱形图或曲线面积图 */}
-        {range.preset === "all" ? (
-          <UsageHeatmap
-            appType={appType}
-            providerName={providerName}
-            model={model}
-            refreshIntervalMs={0}
-          />
-        ) : (
-          <UsageTrendChart
+        <UsageChartPanel
             range={range}
             rangeLabel={rangeLabel}
             appType={appType}
             providerName={providerName}
             model={model}
             refreshIntervalMs={0}
-          />
-        )}
+        />
 
         {tabsSection}
       </div>

@@ -11,7 +11,7 @@ export interface TokenUsage {
 export interface RequestLog {
   requestMetadata?: {
     serviceTier?: string;
-    serviceTierSource?: "thread_settings" | "turn_context";
+    serviceTierSource?: "thread_settings" | "turn_context" | "claude_usage";
     reasoningEffort?: string;
   } | null;
   nativeProvider?: string | null;
@@ -46,6 +46,8 @@ export interface RequestLog {
   costMultiplier: string;
   inputTokens: number;
   outputTokens: number;
+  /** Subset of outputTokens; never add this to the total again. */
+  reasoningTokens?: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
   inputCostUsd: string;
@@ -202,6 +204,9 @@ export interface ProviderStats {
 }
 
 export interface ModelStats {
+  rowKey?: string;
+  /** Grouping only; model keeps the original name for pricing and filtering. */
+  requestMode?: "standard" | "fast" | "unknown" | (string & {}) | null;
   costConverted?: boolean;
   model: string;
   requestCount: number;
@@ -222,6 +227,7 @@ export interface ModelStats {
   /** 首字时间中位数，口径同 ProviderStats 的那两个字段 */
   firstTokenMedianMs?: number | null;
   estFirstTokenMedianMs?: number | null;
+  estFirstTokenSampleCount?: number;
 }
 
 export interface LogFilters {

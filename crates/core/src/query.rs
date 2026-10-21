@@ -133,6 +133,7 @@ fn timing_stats(records: &[Row]) -> Value {
 }
 fn log(r: &UsageRecord, timing: Option<&UsageTiming>) -> Value {
     let mut v = json!({"requestId":format!("{}|{}",r.device_id,r.id),"providerId":provider(r),"providerName":provider(r),"appType":r.harness,"model":r.model,"requestModel":r.model,"pricingModel":r.cost.pricing_model,"costMultiplier":"1","inputTokens":r.tokens.input,"outputTokens":r.tokens.output,"cacheReadTokens":r.tokens.cache_read,"cacheCreationTokens":r.tokens.cache_write,"inputCostUsd":"0","outputCostUsd":"0","cacheReadCostUsd":"0","cacheCreationCostUsd":"0","totalCostUsd":r.cost.amount_usd,"isStreaming":false,"latencyMs":null,"firstTokenMs":null,"durationMs":null,"statusCode":r.status_code,"createdAt":r.occurred_at,"dataSource":"harness_scope","deviceId":r.device_id,"costSource":r.cost.method,"priceSource":r.cost.price_source,"pricingSnapshot":r.cost.snapshot,"recordSource":r.record_source});
+    v["reasoningTokens"] = json!(r.tokens.reasoning);
     if let Some(t) = timing.filter(|_| r.grain == "event" && r.record_source == "session") {
         v["latencyMs"] = json!(t.duration_ms);
         v["durationMs"] = json!(t.duration_ms);
@@ -311,8 +312,12 @@ pub fn query(store: &Store, kind: &str, args: &Value) -> Result<Value> {
     if kind == "firstDate" {
         return first_date(store, &selection, start, end, timezone);
     }
-    let selected: Vec<Row> = selection
-        .rows(store, matches!(kind, "models" | "providers"))?
+    let rows = if kind == "models" {
+        selection.model_rows(store)?
+    } else {
+        selection.rows(store, kind == "providers")?
+    };
+    let selected: Vec<Row> = rows
         .into_iter()
         .filter(|r| {
             legacy_allowed(
@@ -328,12 +333,80 @@ pub fn query(store: &Store, kind: &str, args: &Value) -> Result<Value> {
     match kind{
         "summary"|"todaySummary"=>Ok(summary_rows(&selected)),
         "summaryByApp"=>{let mut groups:BTreeMap<String,Vec<Row>>=BTreeMap::new();for r in selected{groups.entry(r.harness.clone()).or_default().push(r)}Ok(json!(groups.into_iter().map(|(app,rs)|json!({"appType":app,"summary":summary_rows(&rs)})).collect::<Vec<_>>()))},
-        "models"|"providers"=>{let mut groups:BTreeMap<String,Vec<Row>>=BTreeMap::new();for r in selected{groups.entry(if kind=="models"{r.model.clone()}else{r.provider_name()}).or_default().push(r)}Ok(json!(groups.into_iter().map(|(key,rs)|{let s=summary_rows(&rs);let mut row=json!({"model":key,"providerId":key,"providerName":key,"appType":if rs.iter().all(|r|r.harness==rs[0].harness){rs[0].harness.as_str()}else{"all"},"requestCount":s["totalRequests"],"totalTokens":s["realTotalTokens"],"totalCost":s["totalCost"],"costConverted":s["costConverted"],"successRate":s["successRate"],"avgLatencyMs":0,"avgCostPerRequest":if s["totalRequests"].as_u64().unwrap_or(0)>0{(rs.iter().map(amount).sum::<Decimal>()/Decimal::from(s["totalRequests"].as_u64().unwrap())).normalize().to_string()}else{"0".into()}});row.as_object_mut().unwrap().extend(timing_stats(&rs).as_object().unwrap().clone());row}).collect::<Vec<_>>()))},
+        "models"|"providers"=>Ok(grouped_stats(selected, kind == "models")),
         "trends"=>trends(selected,start,end,timezone),
         "sources"=>{let mut groups:BTreeMap<String,Vec<Row>>=BTreeMap::new();for r in selected{groups.entry(r.record_source.clone()).or_default().push(r)}Ok(json!(groups.into_iter().map(|(source,rs)|{let s=summary_rows(&rs);json!({"dataSource":source,"requestCount":s["totalRequests"],"totalCostUsd":s["totalCost"],"costConverted":s["costConverted"]})}).collect::<Vec<_>>()))},
         "heatmap"=>Ok(json!(selected.iter().filter_map(|r|timezone.timestamp_opt(r.occurred_at,0).single().map(|d|json!({"date":d.format("%Y-%m-%d").to_string(),"weekday":d.weekday().num_days_from_monday(),"count":r.count}))).collect::<Vec<_>>())),
         _=>anyhow::bail!("Unknown usage query: {kind}")
     }
+}
+
+fn openai_model(row: &Row) -> bool {
+    let model = row
+        .model
+        .rsplit('/')
+        .next()
+        .unwrap_or(&row.model)
+        .to_ascii_lowercase();
+    row.harness == "codex"
+        || row.provider.as_deref() == Some("openai")
+        || model.starts_with("gpt-")
+        || ["o1", "o3", "o4"]
+            .iter()
+            .any(|name| model == *name || model.starts_with(&format!("{name}-")))
+}
+
+fn request_mode(row: &Row) -> String {
+    // A GPT model name alone cannot establish a request's configured tier.
+    row.request_metadata
+        .as_ref()
+        .filter(|m| {
+            row.harness == "codex"
+                && m.service_tier_source
+                    .as_deref()
+                    .is_some_and(|s| ["thread_settings", "turn_context"].contains(&s))
+        })
+        .and_then(|m| m.service_tier.as_deref())
+        .map(|tier| match tier {
+            "default" => "standard",
+            "priority" | "fast" => "fast",
+            other => other,
+        })
+        .unwrap_or("unknown")
+        .into()
+}
+
+fn grouped_stats(records: Vec<Row>, models: bool) -> Value {
+    let split: std::collections::HashSet<_> = records
+        .iter()
+        .filter(|r| models && openai_model(r))
+        .map(|r| r.model.clone())
+        .collect();
+    let mut groups: BTreeMap<(String, Option<String>), Vec<Row>> = BTreeMap::new();
+    for row in records {
+        let mode = split.contains(&row.model).then(|| request_mode(&row));
+        let key = if models {
+            row.model.clone()
+        } else {
+            row.provider_name()
+        };
+        groups.entry((key, mode)).or_default().push(row);
+    }
+    json!(groups.into_iter().map(|((key, mode), rows)| {
+        let s = summary_rows(&rows);
+        let requests = s["totalRequests"].as_u64().unwrap_or(0);
+        let mut row = json!({"model":key,"providerId":key,"providerName":key,
+            "appType":if rows.iter().all(|r|r.harness==rows[0].harness){rows[0].harness.as_str()}else{"all"},
+            "requestCount":requests,"totalTokens":s["realTotalTokens"],"totalCost":s["totalCost"],
+            "costConverted":s["costConverted"],"successRate":s["successRate"],
+            "avgCostPerRequest":if requests>0{(rows.iter().map(amount).sum::<Decimal>()/Decimal::from(requests)).normalize().to_string()}else{"0".into()}});
+        if models {
+            row["rowKey"] = json!(json!([key, mode]).to_string());
+            row["requestMode"] = json!(mode);
+        }
+        row.as_object_mut().unwrap().extend(timing_stats(&rows).as_object().unwrap().clone());
+        row
+    }).collect::<Vec<_>>())
 }
 
 fn legacy_allowed(

@@ -69,6 +69,8 @@ pub struct Account {
     pub id: String,
     pub provider: String,
     pub name: String,
+    #[serde(default = "default_show_in_sidebar")]
+    pub show_in_sidebar: bool,
     pub links: Vec<Link>,
     pub subscription: Subscription,
     #[serde(default)]
@@ -82,6 +84,8 @@ struct Save {
     id: Option<String>,
     provider: String,
     name: String,
+    #[serde(default)]
+    show_in_sidebar: Option<bool>,
     #[serde(default)]
     links: Vec<Link>,
     #[serde(default)]
@@ -108,8 +112,59 @@ struct Stored {
 fn load(store: &Store) -> Result<Vec<Stored>> {
     Ok(store.meta(META)?.unwrap_or_default())
 }
+fn default_show_in_sidebar() -> bool {
+    true
+}
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WeeklyUsageWindow {
+    start_date: i64,
+    resets_at: i64,
+    bucket: Option<String>,
+}
+fn weekly_usage_window(item: &Stored, now: i64) -> Option<WeeklyUsageWindow> {
+    let data = item.snapshot.as_ref()?.get("data")?;
+    let (windows, bucket) = match item.account.provider.as_str() {
+        "openai-codex" if data["kind"] == "codexQuota" => {
+            let buckets = data["buckets"].as_array()?;
+            // Use the standard Codex bucket; an alternative is safe only when
+            // it is the sole bucket, so unrelated model quotas are not guessed.
+            let bucket = buckets
+                .iter()
+                .find(|b| b["id"] == "codex")
+                .or_else(|| (buckets.len() == 1).then(|| &buckets[0]))?;
+            (
+                bucket["windows"].as_array()?,
+                bucket["id"].as_str().map(str::to_owned),
+            )
+        }
+        "opencode-go" if data["kind"] == "quota" => (data["windows"].as_array()?, None),
+        _ => return None,
+    };
+    let mut weekly = windows.iter().filter(|window| {
+        if item.account.provider == "openai-codex" {
+            window["durationMinutes"] == 10080
+        } else {
+            window["id"] == "weekly"
+        }
+    });
+    let window = weekly.next()?;
+    if weekly.next().is_some() {
+        return None;
+    }
+    let resets_at = window["resetsAt"].as_i64()?;
+    let start_date = resets_at.checked_sub(7 * 86400)?;
+    if resets_at <= now || start_date > now {
+        return None;
+    }
+    Some(WeeklyUsageWindow {
+        start_date,
+        resets_at,
+        bucket,
+    })
+}
 fn view(engine: &Engine, item: &Stored, vault: &Vault) -> Value {
-    json!({"account":item.account,"keyConfigured":vault.exists(&item.account.id),"snapshot":item.snapshot,"lastAttemptAt":item.last_attempt_at,"error":item.error,"refreshing":engine.account_polling.is_refreshing(&item.account.id)})
+    json!({"account":item.account,"keyConfigured":vault.exists(&item.account.id),"snapshot":item.snapshot,"lastAttemptAt":item.last_attempt_at,"error":item.error,"refreshing":engine.account_polling.is_refreshing(&item.account.id),"weeklyUsageWindow":weekly_usage_window(item, Utc::now().timestamp())})
 }
 fn id(args: &Value) -> Result<&str> {
     let id = args["id"].as_str().context("Missing provider account ID")?;
@@ -307,6 +362,7 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
                 id: account_id.clone(),
                 provider: input.provider.clone(),
                 name: String::new(),
+                show_in_sidebar: true,
                 links: vec![],
                 subscription: Subscription::default(),
                 refresh: RefreshPolicy::default(),
@@ -322,6 +378,9 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
         id: account_id.clone(),
         provider: input.provider,
         name: input.name,
+        show_in_sidebar: input
+            .show_in_sidebar
+            .unwrap_or(item.account.show_in_sidebar),
         links: input.links,
         subscription: input.subscription,
         refresh: input.refresh,
@@ -552,13 +611,22 @@ fn linked_usage(engine: &Engine, id: &str, range: &str) -> Result<Value> {
         let timezone: chrono_tz::Tz = store.config()?.timezone.parse()?;
         let now = Utc::now(); let today = now.with_timezone(&timezone).date_naive();
         let month = NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap();
-        let start_day = match range {
-            "today" => today,
-            "month" => month,
-            "subscription" => item.account.subscription.period_start.as_deref().map(|v| NaiveDate::parse_from_str(v, "%Y-%m-%d")).transpose()?.unwrap_or(month),
-            _ => anyhow::bail!("Invalid usage range"),
+        let weekly_window = if range == "weekly" {
+            Some(weekly_usage_window(&item, now.timestamp()).context("Weekly quota window unavailable; refresh official quota")?)
+        } else {
+            None
         };
-        let start = midnight(timezone, start_day)?;
+        let start = if let Some(window) = &weekly_window {
+            window.start_date
+        } else {
+            let start_day = match range {
+                "today" => today,
+                "month" => month,
+                "subscription" => item.account.subscription.period_start.as_deref().map(|v| NaiveDate::parse_from_str(v, "%Y-%m-%d")).transpose()?.unwrap_or(month),
+                _ => anyhow::bail!("Invalid usage range"),
+            };
+            midnight(timezone, start_day)?
+        };
         let mut end = now.timestamp();
         if range == "subscription" {
             if let Some(date) = &item.account.subscription.renewal_date {
@@ -581,7 +649,7 @@ fn linked_usage(engine: &Engine, id: &str, range: &str) -> Result<Value> {
         let mut models = models.into_iter().map(|(model,rows)| json!({"model":model,"summary":crate::query::summary_rows(&rows)})).collect::<Vec<_>>();
         models.sort_by_key(|v| std::cmp::Reverse(v["summary"]["totalRequests"].as_u64().unwrap_or(0)));
         models.truncate(8);
-        Ok(json!({"linked":!item.account.links.is_empty(),"startDate":start,"endDate":end,"timezone":timezone.name(),"summary":summary,"models":models}))
+        Ok(json!({"linked":!item.account.links.is_empty(),"startDate":start,"endDate":end,"timezone":timezone.name(),"summary":summary,"models":models,"weeklyUsageWindow":weekly_window}))
     })
 }
 

@@ -105,7 +105,10 @@ impl Engine {
                 );
                 c.accent_color.make_ascii_lowercase();
                 anyhow::ensure!(
-                    matches!(c.interface_skin.as_str(), "none" | "deepseek"),
+                    matches!(
+                        c.interface_skin.as_str(),
+                        "none" | "deepseek" | "claude" | "gpt"
+                    ),
                     "Unsupported interface skin"
                 );
                 anyhow::ensure!(
@@ -678,7 +681,13 @@ impl Engine {
                     if parsed.occurred_at<cutoff{continue}
                     active.insert(parsed.id.clone());let old=s.record(&parsed.id)?;
                     if parsed.provider.is_none() { parsed.provider = old.as_ref().and_then(|r| r.provider.clone()); }
-                    let metadata_upgrade=old.as_ref().filter(|r|harness=="codex" && r.parser_version!="codex-v5-request-settings" && r.model==parsed.model && r.tokens==parsed.tokens && r.provider==parsed.provider);
+                    let metadata_upgrade=old.as_ref().filter(|r| {
+                        let mut billing_tokens = parsed.tokens.clone();
+                        if harness=="claude" { billing_tokens.reasoning=r.tokens.reasoning; }
+                        let upgrading=(harness=="codex" && r.parser_version!="codex-v5-request-settings")
+                            || (harness=="claude" && r.parser_version!=descriptor.parser_version);
+                        upgrading && r.model==parsed.model && r.tokens==billing_tokens && r.provider==parsed.provider
+                    });
                     let mut cost=if let Some(old)=metadata_upgrade { old.cost.clone() } else { pricing::resolve_with_settings(&parsed,old.as_ref(),&prices,&pricing_settings)? };
                     if let Some(old)=old.as_ref().filter(|r|harness=="codex" && r.model==parsed.model && r.tokens==parsed.tokens && r.provider==parsed.provider) {
                         // Overlapping log copies may visit the upgraded record again.
@@ -935,9 +944,9 @@ impl Engine {
         let result = self.sync_inner();
         let s = self.lock()?;
         match &result {
-            Ok(_) => {
+            Ok(report) => {
                 s.set_meta("last_sync_at", &chrono::Utc::now().timestamp_millis())?;
-                s.set_meta("last_sync_error", &Option::<String>::None)?
+                s.set_meta("last_sync_error", &report["warning"].as_str())?
             }
             Err(e) => s.set_meta("last_sync_error", &format!("{e:#}"))?,
         }
@@ -974,6 +983,9 @@ impl Engine {
             .error_for_status()?
             .json()?;
         anyhow::ensure!(health["protocolVersion"].as_u64().is_some_and(|v| v >= 4), "Sync server must be upgraded to protocol v4 to preserve timing and request metadata; pending records have been retained");
+        let claude_metadata = health["recordCapabilities"]
+            .as_array()
+            .is_some_and(|caps| caps.iter().any(|v| v == "claude_request_timing_v2"));
         let mut cursor = self.lock()?.meta::<i64>("download_cursor")?.unwrap_or(0);
         let mut first: ChangesResponse = client
             .get(format!("{base}/v1/changes"))
@@ -1011,7 +1023,7 @@ impl Engine {
         sync::apply_changes(&*self.lock()?, &first)?;
         let mut uploaded = 0;
         loop {
-            let records = self.lock()?.pending()?;
+            let records = self.lock()?.pending_compatible(claude_metadata)?;
             if records.is_empty() {
                 break;
             }
@@ -1071,7 +1083,15 @@ impl Engine {
                 break;
             }
         }
-        Ok(json!({"uploaded":uploaded,"downloaded":downloaded}))
+        let deferred = if claude_metadata {
+            0
+        } else {
+            self.lock()?.pending_claude_metadata_count()?
+        };
+        let warning = (deferred > 0).then(|| format!("Sync server needs Claude request metadata support; {deferred} Claude revisions retained locally. Other records continue syncing."));
+        Ok(
+            json!({"uploaded":uploaded,"downloaded":downloaded,"deferredClaude":deferred,"warning":warning}),
+        )
     }
     pub fn start_background(self: &Arc<Self>) {
         crate::accounts::start_background(self);

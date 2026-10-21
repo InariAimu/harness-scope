@@ -39,6 +39,59 @@ describe("accent colors", () => {
     );
   });
 
+  it("uses white on a slightly darker button without changing the selected accent", () => {
+    const palette = createAccentPalette("#5c85ee");
+    expect(palette.base).toBe("#5c85ee");
+    expect(palette.actionLight.background).toBe("#4f71cb");
+    expect(palette.actionLight.foreground).toBe("#ffffff");
+    expect(
+      colorContrast(palette.actionLight.background, "#ffffff"),
+    ).toBeGreaterThanOrEqual(4.6);
+    const variables = accentColorVariables(palette.base);
+    expect(variables["--theme-accent-base"]).toBe(palette.base);
+    expect(variables["--theme-action-light"]).toBe(palette.actionLight.background);
+    expect(variables["--theme-on-action-light-hsl"]).toBe(
+      "0.00 0.00% 100.00%",
+    );
+  });
+
+  it("preserves dark colors with white text and bright colors with black text", () => {
+    for (const color of ["#182663", "#2563eb", "#000000"]) {
+      const action = createAccentPalette(color).actionLight;
+      expect(action.background).toBe(color);
+      expect(action.foreground).toBe("#ffffff");
+    }
+    // These would need more than 18% darkening for white text.
+    for (const color of ["#edb53e", "#8b86fd", "#ffffff", "#ffff00"]) {
+      const action = createAccentPalette(color).actionLight;
+      expect(action.background).toBe(color);
+      expect(action.foreground).toBe("#000000");
+    }
+  });
+
+  it("keeps normal and hover text readable in both themes across the RGB gamut", () => {
+    const channels = [0, 51, 102, 153, 204, 255];
+    const colors = channels.flatMap((r) =>
+      channels.flatMap((g) =>
+        channels.map((b) =>
+          `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`,
+        ),
+      ),
+    );
+    colors.push(...COMMUNITY_ACCENT_PRESETS.map((preset) => preset.color));
+    for (const color of colors) {
+      const palette = createAccentPalette(color);
+      for (const action of [palette.actionLight, palette.actionDark]) {
+        expect(
+          colorContrast(action.background, action.foreground),
+        ).toBeGreaterThanOrEqual(4.6);
+        expect(
+          colorContrast(action.hoverBackground, action.foreground),
+        ).toBeGreaterThanOrEqual(4.6);
+      }
+    }
+  });
+
   it("keeps text legible for bright, dark, saturated and grayscale accents", () => {
     for (const color of [
       "#ffffff",

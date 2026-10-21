@@ -125,17 +125,24 @@ function useDetailSections(request: RequestLog) {
     },
     { key: "model", label: t("usage.model"), value: request.model, mono: true },
   ];
-  if (request.appType === "codex") {
+  if (request.appType === "codex" || request.appType === "claude") {
     const zh = getResolvedLang(i18n).startsWith("zh");
+    const claude = request.appType === "claude";
     basic.push(
       {
         key: "serviceTier",
-        label: zh ? "请求档位（日志设置）" : "Requested tier (log setting)",
+        label: claude
+          ? zh ? "服务档位（日志上报）" : "Service tier (reported in log)"
+          : zh ? "请求档位（日志设置）" : "Requested tier (log setting)",
         value:
           codexRequestMode(request) ??
           request.requestMetadata?.serviceTier ??
           (zh ? "未知" : "Unknown"),
-        title: codexRequestHint(request, zh),
+        title: claude
+          ? zh
+            ? "Claude Code 响应 usage 中的服务档位，不代表供应商、账号或套餐。"
+            : "Service tier from Claude Code response usage; does not identify a provider, account, or plan."
+          : codexRequestHint(request, zh),
       },
       {
         key: "reasoningEffort",
@@ -203,6 +210,16 @@ function useDetailSections(request: RequestLog) {
       value: fmtInt(request.cacheCreationTokens, locale),
     },
   ];
+
+  const reasoningTokens = request.reasoningTokens ?? 0;
+  if (reasoningTokens > 0) {
+    const zh = getResolvedLang(i18n).startsWith("zh");
+    tokens.push({
+      key: "reasoning",
+      label: zh ? "推理 Tokens（包含在输出中）" : "Reasoning tokens (included in output)",
+      value: fmtInt(reasoningTokens, locale),
+    });
+  }
 
   const cost: DetailRow[] = [
     {

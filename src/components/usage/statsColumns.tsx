@@ -20,6 +20,7 @@ export interface SpeedTotals {
   estDecodeSpeedSampleCount?: number;
   firstTokenMedianMs?: number | null;
   estFirstTokenMedianMs?: number | null;
+  estFirstTokenSampleCount?: number;
 }
 
 /** 一行的汇总速度：Σ输出 ÷ Σ生成时间。 */
@@ -83,8 +84,10 @@ export function PerformanceHeaders() {
 /** 「成功率」「速度」「首字」三列的单元格；精确值缺失时用会话日志的估算值，带 ≈。 */
 export function PerformanceCells({
   stat,
+  showSampleCount = false,
 }: {
   stat: SpeedTotals & { successRate: number | null };
+  showSampleCount?: boolean;
 }) {
   const { t } = useTranslation();
   const exactSpeed = getStatsSpeed(stat);
@@ -97,7 +100,9 @@ export function PerformanceCells({
       ? undefined
       : basis === "decode"
         ? `${t("usage.decodeSpeedBasis")} · ${t("usage.speedSampleCount", { count: stat.estDecodeSpeedSampleCount ?? 0 })}${stat.estSpeedSampleCount ? ` · ${t("usage.speedFallbackExcluded", { count: stat.estSpeedSampleCount })}` : ""}`
-        : t("usage.endToEndSpeedBasis");
+        : `${t("usage.endToEndSpeedBasis")}${stat.estSpeedSampleCount != null ? ` · ${t("usage.speedSampleCount", { count: stat.estSpeedSampleCount })}` : ""}`;
+  const sampleCount = exactSpeed != null ? null : basis === "decode"
+    ? stat.estDecodeSpeedSampleCount : stat.estSpeedSampleCount;
   const exactFirstToken = formatFirstTokenSeconds(stat.firstTokenMedianMs);
   const estimatedFirstToken =
     exactFirstToken == null
@@ -129,8 +134,12 @@ export function PerformanceCells({
             )}
           </>
         )}
+        {showSampleCount && sampleCount != null && (
+          <span className="block text-badge text-fg-3">{t("usage.speedSampleCount", { count: sampleCount })}</span>
+        )}
       </td>
-      <td className={cn(usageTable.td, firstToken == null && usageTable.muted)}>
+      <td className={cn(usageTable.td, firstToken == null && usageTable.muted)}
+        title={stat.estFirstTokenSampleCount != null ? t("usage.firstTokenSamples", { count: stat.estFirstTokenSampleCount }) : undefined}>
         {estimatedFirstToken != null && "≈"}
         {firstToken ?? "—"}
       </td>

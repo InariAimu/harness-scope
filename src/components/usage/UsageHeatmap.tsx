@@ -1,14 +1,13 @@
+import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import { useMoneyFormat } from "@/hooks/useMoneyFormat";
-import { Fragment, useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useUsageFirstDate, useUsageTrends } from "@/lib/query/usage";
 import { cn } from "@/lib/utils";
 import type { UsageRangeSelection } from "@/types/usage";
 import {
-  formatTokensShort,
   getLocaleFromLanguage,
   parseFiniteNumber,
 } from "./format";
@@ -16,19 +15,24 @@ import type { UsageTrendStatLike } from "./UsageTrendChart";
 import { UsageTooltipCard } from "./UsageTooltipCard";
 import { usageCalendarDate, usageTimestamp } from "@/lib/usageRange";
 import { useUsageTimezone } from "@/lib/query/usageTimezone";
+import type { UsageChartMetric } from "./composition";
 
 const WEEKS = 53;
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** 0 档用底色，1–4 档是 --heat-1…4（与趋势图同一色相，色阶在 index.css 按深浅色分别定） */
 const LEVELS = [0, 1, 2, 3, 4];
 
-type HeatMetric = "tokens" | "requests" | "cost";
+type HeatMetric = UsageChartMetric;
 
 interface UsageHeatmapProps {
   appType?: string;
   providerName?: string;
   model?: string;
   refreshIntervalMs: number;
+  metric: UsageChartMetric;
+  controls: ReactNode;
+  composition?: ReactNode;
+  title?: string;
 }
 
 interface DayCell {
@@ -247,11 +251,15 @@ export function UsageHeatmap({
   providerName,
   model,
   refreshIntervalMs,
+  metric,
+  controls,
+  composition,
+  title,
 }: UsageHeatmapProps) {
   const { t, i18n } = useTranslation();
+  const formatQuantity = useUsageNumberFormat();
   const { costMoney } = useMoneyFormat();
   const timeZone = useUsageTimezone();
-  const [metric, setMetric] = useState<HeatMetric>("tokens");
   const sectionRef = useRef<HTMLElement>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
   // 默认只画最近 53 周，点「显示更多」才把更早的段全部展开；不记住，每次进来都是收起
@@ -328,26 +336,18 @@ export function UsageHeatmap({
             id="usage-heatmap-title"
             className="m-0 text-body font-semibold text-fg-1"
           >
-            {t("usage.heatmap.title")}
+            {title ?? t("usage.heatmap.title")}
           </h2>
-          <p className="m-0 text-caption text-fg-3">
+          <p className={cn("m-0 text-caption text-fg-3", composition && "invisible")}>
             {t("usage.heatmap.subtitle")}
           </p>
         </div>
-        <div className="flex-1" />
-        <SegmentedControl<HeatMetric>
-          size="sm"
-          aria-label={t("usage.trend.metricLabel")}
-          value={metric}
-          onValueChange={setMetric}
-          items={[
-            { value: "tokens", label: t("usage.trend.tokens") },
-            { value: "requests", label: t("usage.trend.requests") },
-            { value: "cost", label: t("usage.trend.cost") },
-          ]}
-        />
+        {controls}
       </div>
 
+      {/* Retain the heatmap's measured footprint when switching to a distribution. */}
+      <div className="relative">
+      <div className={composition ? "invisible" : undefined}>
       {isLoading ? (
         <div className="flex h-[150px] items-center justify-center">
           <Loader2 className="h-5 w-5 animate-spin text-fg-3" />
@@ -364,8 +364,8 @@ export function UsageHeatmap({
               </h3>
               <span className="text-caption tabular-nums text-fg-3">
                 {t("usage.heatmap.spanSummary", {
-                  tokens: formatTokensShort(span.totals.tokens, language),
-                  requests: formatTokensShort(span.totals.requests, language),
+                  tokens: formatQuantity(span.totals.tokens),
+                  requests: formatQuantity(span.totals.requests),
                   cost: costMoney(
                     span.totals.cost,
                     2,
@@ -426,8 +426,11 @@ export function UsageHeatmap({
           </div>
         ))
       )}
+      </div>
+      {composition && <div className="absolute inset-0 pt-3">{composition}</div>}
+      </div>
 
-      {hover && (
+      {hover && !composition && (
         <div
           role="tooltip"
           className="pointer-events-none absolute z-20"
@@ -459,7 +462,7 @@ export function UsageHeatmap({
         </div>
       )}
 
-      <div className="mt-2 flex items-center gap-1.5 text-badge text-fg-3">
+      <div className={cn("mt-2 flex items-center gap-1.5 text-badge text-fg-3", composition && "invisible")}>
         {!isLoading && earlierCount > 0 && (
           <Button
             type="button"

@@ -2146,6 +2146,16 @@
   "usage": {
     "display": {
       "title": "Display",
+      "numberUnitStyle": "Number units",
+      "numberUnitStyles": {
+        "international": "International (K / M / B)",
+        "chinese": "Chinese (万 / 亿)",
+        "full": "Full numbers"
+      },
+      "numberDecimals": "Decimal places",
+      "numberDecimalOption": "Up to {{digits}}",
+      "numberPreview": "Preview: {{small}} · {{medium}} · {{large}}",
+      "numberFormatHint": "Applies to token and request counts, independently of the interface language. Trailing zeros are omitted.",
       "currency": "Currency",
       "rate": "Exchange rate",
       "rateHint": "Entered by hand and used only for display; costs are still recorded in USD.",
@@ -2436,6 +2446,22 @@
       "less": "Less",
       "more": "More"
     },
+    "chart": {
+      "viewLabel": "Analysis view",
+      "metricLabel": "Metric",
+      "trend": "Trend",
+      "models": "Model share",
+      "providers": "Provider share",
+      "modelsTitle": "Model distribution · {{range}}",
+      "providersTitle": "Provider distribution · {{range}}",
+      "other": "Other",
+      "unknownModel": "Unknown model",
+      "loading": "Loading distribution",
+      "loadFailed": "Could not load distribution",
+      "retry": "Retry",
+      "noCost": "No recorded cost to calculate shares",
+      "summary": "Total {{metric}}: {{total}}. Category shares are listed alongside."
+    },
     "trend": {
       "title": "Usage trend · {{range}}",
       "metricLabel": "Trend metric",
@@ -2452,6 +2478,14 @@
       "pricing": "Pricing"
     },
     "sortedByRequests": "Sorted by requests",
+    "sortedByModelRequests": "Sorted by total model requests",
+    "modelModeUnknown": "Unknown tier",
+    "modelModeHint": "Grouped by the requested tier in the log, not a server-confirmed billing tier. Reasoning effort, context, and task mix still affect speed.",
+    "modelModeUnknownHint": "No verifiable requested tier in the log; excluded from Standard and Fast.",
+    "modelGroupCount": "{{count}} models",
+    "modelGroupCount_one": "{{count}} model",
+    "modelGroupCount_other": "{{count}} models",
+    "firstTokenSamples": "First token samples: {{count}}",
     "app": "App",
     "speed": "Speed",
     "speedValue": "{{value}} tok/s",
@@ -4916,6 +4950,7 @@
     "durationSource": "Duration basis",
     "firstTokenSource": "First token basis",
     "timingSources": {
+      "claude_api_request_blocks": "Claude api-request → last assistant block of the same request (includes client overhead, excludes subsequent tools)",
       "codex_token_usage_record": "Codex request boundary → token_usage_record",
       "codex_model_output_before_tool": "Codex request boundary → last output before tools",
       "codex_token_count": "Codex request boundary → token_count",

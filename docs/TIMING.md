@@ -32,6 +32,14 @@ DSH 的客户端流时间反映片段到达，无法保证等同于模型逐 Tok
 
 API 的 models/providers 用 estDecodeSpeedOutputTokens、estDecodeSpeedGenerationMs、estDecodeSpeedSampleCount 表示输出阶段样本；estSpeedOutputTokens、estSpeedDurationMs、estSpeedSampleCount 仅表示 E2E 回退样本。另返回 estFirstTokenMedianMs、estFirstTokenSampleCount、timingSampleCount。请求列表与详情包含 timingMethod=estimated、timingSource、firstTokenSource，以及查询时派生的 estimatedSpeed（basis、durationMs、eligible、minOutputTokens、minDurationMs）。前端依后端策略显示，避免按不同门槛重算；兼容旧服务未返回策略时使用原 E2E 估算。未知状态码的成功率显示 `—`。
 
+## 模型的 Fast／Standard 对比
+
+模型统计对 OpenAI／Codex 类记录使用 `(原模型, 请求档位)` 分组。已验证的 Codex `thread_settings`／`turn_context` 来源中，`default` 显示 Standard，`priority`／`fast` 显示 Fast；其他显式档位保留原值。没有可信档位的历史记录，以及仅凭模型名识别的其他工具记录，进入「档位未知」，不会并入 Standard。模型名及筛选项保持原值，API 另提供 `rowKey` 与 `requestMode`。
+
+每组独立计算请求、Tokens、费用、加权速度及首字中位数，模型页显示采用的测速样本数，首字提示显示其有效样本数。测速门槛与 E2E／输出阶段口径沿用上述规则。前端按模型合计请求数排序，同一模型依次展示 Standard、Fast、其他档位及未知，整组分页，便于对照。供应商汇总仍按供应商合计；日期、设备、应用、供应商和模型筛选均先于档位分组执行。
+
+这是查询和显示调整，不改写原始模型、费用、用量修订、计时或 outbox，不需要数据库／同步协议升级。历史缺失档位不能从当前设置、速度或价格反推；不同任务、上下文和输出长度仍会影响比较结果。
+
 ## 统一其他 harness 的评估（2026-10-20）
 
 建议统一“明确口径、按同口径汇总、有效窗口过滤”的规则，不能直接从所有日志的总耗时减去当前首字估计。DSH 的起点、流片段与结束属于同一 turn/step，已在本机 App 0.2.1-rc.2 的实际会话逐请求验证，适合启用输出阶段估算。
@@ -41,7 +49,7 @@ API 的 models/providers 用 estDecodeSpeedOutputTokens、estDecodeSpeedGenerati
 | DSH | step/start、首个非空流 delta、assistant/message 组成完整边界，重试首输出保持 | 启用输出阶段估算，保留 ≈ 与短窗口过滤 |
 | Codex | 首字来自输出项 started_at_ms，约 19% 本机历史请求有该字段；它是 item 生命周期开始，缺失时上游还可回退完成时刻，不是流 Token 到达事件 | 保留 E2E。要采用输出阶段口径，需要验证 item 与具体请求的对应关系及实际首输出语义，或采集请求级流式首字时间，不能将缺失字段补为零 |
 | OpenCode | 首字来自内容创建；仅约 6% 本机记录带独立 streamed 结束字段，其余 completed 可能包含工具执行 | 保留 E2E。可后续仅对具备可靠首次输出和独立流结束的版本启用，旧记录继续回退并明确来源 |
-| Claude Code | 当前原生日志解析没有完整请求起止和首输出边界 | 继续显示未知；不能用相邻消息间隔代替网络或模型生成耗时 |
+| Claude Code | 2.1.306 样本有 `api-request`／`requestRef` 和助手内容块时间，旧日志可能没有；缺少真实首 Token 时间 | 同一请求唯一关联时显示日志 E2E 耗时／速度估算；首字保持未知，不扣除思考块耗时。规则见 [Claude 兼容说明](CLAUDE.md) |
 
 上述比例为本机只读审计快照，不代表这些产品的全部版本能力。Codex 上游可参考 [item 计时实现](https://github.com/openai/codex/blob/main/codex-rs/core/src/session/mod.rs)。后续适配集中在后端计时来源策略，不需要改变 Token、费用或同步身份。
 
