@@ -21,7 +21,7 @@ export function UsageChartPanel(props: UsageChartPanelProps) {
     <div className="ms-auto flex flex-wrap items-center justify-end gap-2.5">
       <SegmentedControl<UsageChartView> size="sm" aria-label={t("usage.chart.viewLabel")}
         value={view} onValueChange={setView}
-        items={["trend", "models", "providers"].map(value => ({
+        items={["trend", "models", "providers", "harnesses"].map(value => ({
           value: value as UsageChartView, label: t(`usage.chart.${value}`),
         }))} />
       <span aria-hidden="true" className="h-4 w-px bg-border" />

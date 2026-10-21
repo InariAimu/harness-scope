@@ -1,7 +1,54 @@
 import { describe, expect, it } from "vitest";
-import { buildUsageComposition, usageCompositionColor } from "./composition";
+import type { UsageSummaryByApp } from "@/types/usage";
+import { buildHarnessComposition, buildUsageComposition, usageCompositionColor } from "./composition";
+
+const harnessSummaries: UsageSummaryByApp[] = [
+  {
+    appType: "codex",
+    summary: {
+      totalRequests: 20, totalCost: "2", totalInputTokens: 10, totalOutputTokens: 20,
+      totalCacheCreationTokens: 30, totalCacheReadTokens: 40, realTotalTokens: 100,
+      cacheHitRate: 0.5, successRate: null,
+    },
+  },
+  {
+    appType: "future-harness",
+    summary: {
+      totalRequests: 5, totalCost: "1", totalInputTokens: 50, totalOutputTokens: 5,
+      totalCacheCreationTokens: 10, totalCacheReadTokens: 235, realTotalTokens: 300,
+      cacheHitRate: 235 / 295, successRate: null, costConverted: true,
+    },
+  },
+];
 
 describe("usage distribution", () => {
+  it("keeps cache-inclusive harness totals, requests, and costs consistent with the summary", () => {
+    const tokens = buildHarnessComposition(harnessSummaries, "tokens", "all");
+    expect(tokens.total).toBe(400);
+    expect(tokens.slices).toMatchObject([
+      { members: ["future-harness"], value: 300, share: 0.75 },
+      { members: ["codex"], value: 100, share: 0.25 },
+    ]);
+    const requests = buildHarnessComposition(harnessSummaries, "requests");
+    expect(requests.total).toBe(25);
+    expect(requests.slices[0]).toMatchObject({ members: ["codex"], value: 20, share: 0.8 });
+    const cost = buildHarnessComposition(harnessSummaries, "cost");
+    expect(cost.total).toBe(3);
+    expect(cost.costConverted).toBe(true);
+    expect(cost.slices[0]).toMatchObject({ members: ["codex"], value: 2, share: 2 / 3 });
+  });
+
+  it("applies the selected harness without dropping unknown harness IDs from All", () => {
+    expect(buildHarnessComposition(harnessSummaries, "tokens", "all"))
+      .toEqual(buildHarnessComposition(harnessSummaries, "tokens"));
+    const selected = buildHarnessComposition(harnessSummaries, "tokens", "future-harness");
+    expect(selected.total).toBe(300);
+    expect(selected.slices).toMatchObject([{ members: ["future-harness"], share: 1 }]);
+    expect(selected.slices).toHaveLength(1);
+    expect(buildHarnessComposition(harnessSummaries, "cost", "missing"))
+      .toMatchObject({ total: 0, slices: [] });
+  });
+
   it("merges model modes or provider apps before selecting the largest categories", () => {
     const result = buildUsageComposition([
       { key: "model-a", value: 30 },

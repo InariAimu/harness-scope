@@ -1,5 +1,8 @@
+import type { UsageSummaryByApp } from "@/types/usage";
+import { parseFiniteNumber } from "./format";
+
 export type UsageChartMetric = "tokens" | "requests" | "cost";
-export type UsageChartView = "trend" | "models" | "providers";
+export type UsageChartView = "trend" | "models" | "providers" | "harnesses";
 
 export interface CompositionValue {
   key: string;
@@ -56,6 +59,22 @@ export function buildUsageComposition(values: readonly CompositionValue[], limit
     costConverted: ranked.some(([, group]) => group.costConverted),
     slices,
   };
+}
+
+/** Use the same cache-inclusive totals and app filter as the summary cards. */
+export function buildHarnessComposition(
+  rows: readonly UsageSummaryByApp[],
+  metric: UsageChartMetric,
+  appType?: string,
+) {
+  return buildUsageComposition(rows
+    .filter(row => !appType || appType === "all" || row.appType === appType)
+    .map(({ appType: key, summary }) => ({
+      key,
+      value: metric === "cost" ? parseFiniteNumber(summary.totalCost)
+        : metric === "tokens" ? summary.realTotalTokens : summary.totalRequests,
+      costConverted: summary.costConverted,
+    })));
 }
 
 /** Category colors remain stable when sorting, filtering, or changing metrics. */

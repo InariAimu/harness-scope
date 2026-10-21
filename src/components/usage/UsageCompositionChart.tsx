@@ -3,15 +3,16 @@ import { useTranslation } from "react-i18next";
 import { Loader2 } from "lucide-react";
 import { useMoneyFormat } from "@/hooks/useMoneyFormat";
 import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
-import { useModelStats, useProviderStats } from "@/lib/query/usage";
+import { useModelStats, useProviderStats, useUsageSummaryByApp } from "@/lib/query/usage";
+import { APP_DISPLAY_NAME } from "@/components/shell/AppGlyph";
 import type { UsageRangeSelection, UsageScopeFilters } from "@/types/usage";
-import { buildUsageComposition, usageCompositionColor, type UsageChartMetric } from "./composition";
+import { buildHarnessComposition, buildUsageComposition, usageCompositionColor, type UsageChartMetric, type UsageChartView } from "./composition";
 import { fmtInt, getLocaleFromLanguage, parseFiniteNumber } from "./format";
 import { getUsageProviderLabel, usageProviderTitle } from "./providerLabel";
 
 interface UsageCompositionChartProps extends UsageScopeFilters {
   range: UsageRangeSelection;
-  dimension: "models" | "providers";
+  dimension: Exclude<UsageChartView, "trend">;
   metric: UsageChartMetric;
   refreshIntervalMs: number;
 }
@@ -26,19 +27,27 @@ export function UsageCompositionChart({
   const options = { refetchInterval: refreshIntervalMs > 0 ? refreshIntervalMs : false as const };
   const models = useModelStats(range, filters, { ...options, enabled: dimension === "models" });
   const providers = useProviderStats(range, filters, { ...options, enabled: dimension === "providers" });
-  const query = dimension === "models" ? models : providers;
+  const harnesses = useUsageSummaryByApp(range, { providerName, model }, { ...options, enabled: dimension === "harnesses" });
+  const query = dimension === "models" ? models : dimension === "providers" ? providers : harnesses;
   const locale = getLocaleFromLanguage(i18n.resolvedLanguage || i18n.language || "en");
   const percent = useMemo(() => new Intl.NumberFormat(locale, {
     style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1,
   }), [locale]);
-  const data = useMemo(() => buildUsageComposition((query.data ?? []).map(row => ({
-    key: "model" in row ? row.model : row.providerName,
-    value: metric === "cost" ? parseFiniteNumber(row.totalCost)
-      : metric === "tokens" ? row.totalTokens : row.requestCount,
-    costConverted: row.costConverted,
-  }))), [query.data, metric]);
-  const name = (key: string) => dimension === "models"
-    ? key || t("usage.chart.unknownModel") : getUsageProviderLabel(key, t).label;
+  const data = useMemo(() => {
+    if (dimension === "harnesses") return buildHarnessComposition(harnesses.data ?? [], metric, appType);
+    const rows = dimension === "models" ? models.data : providers.data;
+    return buildUsageComposition((rows ?? []).map(row => ({
+      key: "model" in row ? row.model : row.providerName,
+      value: metric === "cost" ? parseFiniteNumber(row.totalCost)
+        : metric === "tokens" ? row.totalTokens : row.requestCount,
+      costConverted: row.costConverted,
+    })));
+  }, [dimension, models.data, providers.data, harnesses.data, metric, appType]);
+  const name = (key: string) => {
+    if (dimension === "models") return key || t("usage.chart.unknownModel");
+    if (dimension === "harnesses") return APP_DISPLAY_NAME[key] || key || t("usage.chart.unknownHarness");
+    return getUsageProviderLabel(key, t).label;
+  };
   const metricLabel = t(`usage.trend.${metric}`);
   const shareLabel = (share: number) => share < 0.001
     ? `<${percent.format(0.001)}` : percent.format(share);

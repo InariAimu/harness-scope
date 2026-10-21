@@ -91,7 +91,7 @@ impl Engine {
                 let token = !s.config()?.server_token.is_empty();
                 config["serverToken"] = json!("");
                 Ok(
-                    json!({"deviceId":s.device_id()?,"config":config,"usageVersion":s.usage_version()?,"tokenConfigured":token,"harnesses":self.registry.descriptors(),"pending":s.pending_count()?,"devices":s.meta::<Vec<Value>>("devices")?.unwrap_or_default(),"lastScanAt":s.meta::<i64>("last_scan_at")?,"lastScan":s.meta::<ScanReport>("last_scan")?,"lastSyncAt":s.meta::<i64>("last_sync_at")?,"lastSyncError":s.meta::<Option<String>>("last_sync_error")?.flatten(),"migrations":s.meta::<Vec<Value>>("migration_manifests")?.unwrap_or_default()}),
+                    json!({"deviceId":s.device_id()?,"config":config,"usageVersion":s.usage_version()?,"localSchemaVersion":s.schema_version()?,"remoteSchemaVersion":s.meta::<Option<u32>>("remote_schema_version")?.flatten(),"remoteSchemaCheckedAt":s.meta::<Option<i64>>("remote_schema_checked_at")?.flatten(),"tokenConfigured":token,"harnesses":self.registry.descriptors(),"pending":s.pending_count()?,"devices":s.meta::<Vec<Value>>("devices")?.unwrap_or_default(),"lastScanAt":s.meta::<i64>("last_scan_at")?,"lastScan":s.meta::<ScanReport>("last_scan")?,"lastSyncAt":s.meta::<i64>("last_sync_at")?,"lastSyncError":s.meta::<Option<String>>("last_sync_error")?.flatten(),"migrations":s.meta::<Vec<Value>>("migration_manifests")?.unwrap_or_default()}),
                 )
             }
             "save_config" => {
@@ -153,6 +153,8 @@ impl Engine {
                         s.conn.execute("DELETE FROM remote_records", [])?;
                         s.set_meta("download_cursor", &0i64)?;
                         s.set_meta("remote_instance_id", &String::new())?;
+                        s.set_meta("remote_schema_version", &Option::<u32>::None)?;
+                        s.set_meta("remote_schema_checked_at", &Option::<i64>::None)?;
                         s.requeue_all()
                     })?
                 }
@@ -982,6 +984,24 @@ impl Engine {
             .send()?
             .error_for_status()?
             .json()?;
+        {
+            let s = self.lock()?;
+            // A server URL change during the request must not label the new server
+            // with the previous server's schema. Older servers leave it unknown.
+            if s.config()?.server_url == config.server_url {
+                let schema = health["schemaVersion"]
+                    .as_u64()
+                    .and_then(|v| u32::try_from(v).ok())
+                    .filter(|v| *v > 0);
+                s.transaction(|| {
+                    s.set_meta("remote_schema_version", &schema)?;
+                    s.set_meta(
+                        "remote_schema_checked_at",
+                        &chrono::Utc::now().timestamp_millis(),
+                    )
+                })?;
+            }
+        }
         anyhow::ensure!(health["protocolVersion"].as_u64().is_some_and(|v| v >= 4), "Sync server must be upgraded to protocol v4 to preserve timing and request metadata; pending records have been retained");
         let claude_metadata = health["recordCapabilities"]
             .as_array()

@@ -18,7 +18,7 @@ async fn claude_capability_defers_only_unsupported_revisions_and_resumes_without
     let flag = capable.clone();
     let router = axum::Router::new().route("/health", axum::routing::get(move || {
         let flag = flag.clone();
-        async move { axum::Json(json!({"protocolVersion":4,"recordCapabilities":if flag.load(Ordering::SeqCst){vec!["claude_request_timing_v2"]}else{vec![]}})) }
+        async move { axum::Json(json!({"schemaVersion":if flag.load(Ordering::SeqCst){Some(4)}else{None},"protocolVersion":4,"recordCapabilities":if flag.load(Ordering::SeqCst){vec!["claude_request_timing_v2"]}else{vec![]}})) }
     })).fallback_service(server_router(server.clone(), TOKEN.into()).unwrap());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -63,6 +63,9 @@ async fn claude_capability_defers_only_unsupported_revisions_and_resumes_without
             .unwrap()
             .contains("retained locally"));
         assert_eq!(run.lock().unwrap().pending_count().unwrap(), 2);
+        let snapshot = run.execute("snapshot", json!({})).unwrap();
+        assert_eq!(snapshot["localSchemaVersion"], 4);
+        assert!(snapshot["remoteSchemaVersion"].is_null());
     })
     .await
     .unwrap();
@@ -83,6 +86,9 @@ async fn claude_capability_defers_only_unsupported_revisions_and_resumes_without
         assert_eq!(report["uploaded"], 2);
         assert!(report["warning"].is_null());
         assert_eq!(run.lock().unwrap().pending_count().unwrap(), 0);
+        let snapshot = run.execute("snapshot", json!({})).unwrap();
+        assert_eq!(snapshot["remoteSchemaVersion"], 4);
+        assert!(snapshot["remoteSchemaCheckedAt"].as_i64().unwrap() > 0);
         assert!(run
             .lock()
             .unwrap()
@@ -103,7 +109,54 @@ async fn claude_capability_defers_only_unsupported_revisions_and_resumes_without
             .unwrap(),
         3
     );
+    let reopened = Engine::open(&dir.path().join("client.db")).unwrap();
+    assert_eq!(
+        reopened.execute("snapshot", json!({})).unwrap()["remoteSchemaVersion"],
+        4
+    );
+    let mut config = reopened.lock().unwrap().config().unwrap();
+    config.server_url = "http://127.0.0.1:1".into();
+    reopened
+        .execute("save_config", json!({"config":config}))
+        .unwrap();
+    let snapshot = reopened.execute("snapshot", json!({})).unwrap();
+    assert!(snapshot["remoteSchemaVersion"].is_null());
+    assert!(snapshot["remoteSchemaCheckedAt"].is_null());
     handle.abort();
+}
+
+#[tokio::test]
+async fn health_reports_database_schema_separately_from_protocol() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(Engine::open(&dir.path().join("server.db")).unwrap());
+    // Read the database value; do not accidentally substitute protocolVersion.
+    engine
+        .lock()
+        .unwrap()
+        .conn
+        .pragma_update(None, "user_version", 3)
+        .unwrap();
+    let router = server_router(engine, TOKEN.into()).unwrap();
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let health: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(health["schemaVersion"], 3);
+    assert_eq!(health["protocolVersion"], 4);
+    assert!(health["recordCapabilities"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("claude_request_timing_v2")));
 }
 
 fn gzip(data: &[u8]) -> Vec<u8> {

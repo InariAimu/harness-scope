@@ -285,6 +285,7 @@ export function useUsageSummaryByApp(
 ) {
   const timeZone = useUsageTimezone();
   return useQuery({
+    enabled: options?.enabled ?? true,
     queryKey: [
       ...usageKeys.summaryByApp(
         range.preset,

@@ -41,11 +41,12 @@ pub fn server_router(engine: Arc<Engine>, token: String) -> anyhow::Result<Route
         token.len() >= 24,
         "Set a server token of at least 24 characters"
     );
+    let schema_version = engine.lock()?.schema_version()?;
     Ok(Router::new()
         .route(
             "/health",
-            get(|| async {
-                Json(json!({"status":"ok","protocolVersion":4,"supportedProtocolVersions":[1,2,3,4],"requestEncodings":["identity","gzip"],"recordCapabilities":["claude_request_timing_v2"]}))
+            get(move || async move {
+                Json(json!({"status":"ok","schemaVersion":schema_version,"protocolVersion":4,"supportedProtocolVersions":[1,2,3,4],"requestEncodings":["identity","gzip"],"recordCapabilities":["claude_request_timing_v2"]}))
             }),
         )
         .route("/v1/push", post(push))

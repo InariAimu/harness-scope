@@ -4,6 +4,7 @@ import { Fragment, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { HelpTip } from "@/components/ui/help-tip";
 import { useUsageFirstDate, useUsageTrends } from "@/lib/query/usage";
 import { cn } from "@/lib/utils";
 import type { UsageRangeSelection } from "@/types/usage";
@@ -330,17 +331,19 @@ export function UsageHeatmap({
       aria-labelledby="usage-heatmap-title"
       className="relative shrink-0 rounded-panel border border-border bg-surface px-4 py-3"
     >
-      <div className="flex flex-wrap items-start gap-x-3.5 gap-y-1">
-        <div>
+      <div className="flex min-h-7 flex-wrap items-center gap-x-3.5 gap-y-1">
+        <div className="flex items-center gap-1">
           <h2
             id="usage-heatmap-title"
-            className="m-0 text-body font-semibold text-fg-1"
+            className="m-0 whitespace-nowrap text-body font-semibold text-fg-1"
           >
             {title ?? t("usage.heatmap.title")}
           </h2>
-          <p className={cn("m-0 text-caption text-fg-3", composition && "invisible")}>
-            {t("usage.heatmap.subtitle")}
-          </p>
+          {!composition && (
+            <HelpTip icon="info" title={t("usage.heatmap.title")}>
+              {t("usage.heatmap.subtitle")}
+            </HelpTip>
+          )}
         </div>
         {controls}
       </div>

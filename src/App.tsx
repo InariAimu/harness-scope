@@ -57,6 +57,9 @@ export interface Config {
 }
 export interface Snapshot {
   usageVersion: number;
+  localSchemaVersion: number;
+  remoteSchemaVersion: number | null;
+  remoteSchemaCheckedAt: number | null;
   deviceId: string;
   config: Config;
   tokenConfigured: boolean;
@@ -312,12 +315,21 @@ export default function App() {
                             </option>
                           ))}
                       </OptionSelect>
-                      <span className="flex-1" />
-                      <span className="text-caption text-fg-3">
-                        {data.pending} {label("条待同步", "pending")}
-                        {device !== "local" &&
-                          ` · ${label("远端为最近同步缓存", "remote data is cached")}`}
-                      </span>
+                      <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1 text-caption text-fg-3">
+                        <span>
+                          {data.pending} {label("条待同步", "pending")}
+                          {device !== "local" &&
+                            ` · ${label("远端为最近同步缓存", "remote data is cached")}`}
+                        </span>
+                        <span className="whitespace-nowrap" title={
+                          data.remoteSchemaCheckedAt
+                            ? `${label("远端 schema 最近获取于", "Remote schema last checked at")} ${new Date(data.remoteSchemaCheckedAt).toLocaleString(i18n.language)}`
+                            : label("远端 schema 尚未获取；旧服务端可能未提供该字段", "Remote schema is unknown; older servers may not report it")
+                        }>
+                          {label("本地", "Local")} schema {data.localSchemaVersion != null ? `v${data.localSchemaVersion}` : label("未知", "unknown")}
+                          {" · "}{label("远端", "Remote")} schema {data.remoteSchemaVersion != null ? `v${data.remoteSchemaVersion}` : label("未知", "unknown")}
+                        </span>
+                      </div>
                     </div>
                   }
                 />

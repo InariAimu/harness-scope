@@ -20,6 +20,11 @@ impl Store {
                 r.get(0)
             })?)
     }
+    pub fn schema_version(&self) -> Result<u32> {
+        Ok(self
+            .conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))?)
+    }
     pub fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?

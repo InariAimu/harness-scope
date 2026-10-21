@@ -1,6 +1,6 @@
 import * as React from "react";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
-import { CircleHelp } from "lucide-react";
+import { CircleHelp, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -128,8 +128,9 @@ function HelpCard({
 }
 
 export interface HelpTipProps {
-  /** 卡片标题，同时是「?」按钮的无障碍名字。写成问题或名词。 */
+  /** 卡片标题，同时是说明按钮的无障碍名字。写成问题或名词。 */
   title: string;
+  icon?: "help" | "info";
   /** 正文，一句话，≤ 80 字。 */
   children: React.ReactNode;
   side?: "top" | "bottom";
@@ -140,6 +141,7 @@ export interface HelpTipProps {
 /** 放在被解释的词后面的「?」按钮。 */
 export function HelpTip({
   title,
+  icon = "help",
   children,
   side,
   align,
@@ -148,6 +150,7 @@ export function HelpTip({
   const id = React.useId();
   const descId = `${id}-desc`;
   const hover = useHoverCard();
+  const Icon = icon === "info" ? Info : CircleHelp;
 
   return (
     <PopoverPrimitive.Root open={hover.open} onOpenChange={hover.onOpenChange}>
@@ -173,7 +176,7 @@ export function HelpTip({
             className,
           )}
         >
-          <CircleHelp className="h-3.5 w-3.5" strokeWidth={1.5} />
+          <Icon className="h-3.5 w-3.5" strokeWidth={1.5} />
         </button>
       </PopoverPrimitive.Trigger>
       <HelpCard
