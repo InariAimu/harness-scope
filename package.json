@@ -1,12 +1,15 @@
 {
   "name": "harness-scope",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "license": "MIT",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && vite build",
+    "build": "node scripts/version.mjs --check && tsc --noEmit && vite build",
+    "version:check": "node scripts/version.mjs --check",
+    "version:sync": "node scripts/version.mjs --sync",
+    "test:version": "node --test scripts/version.test.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "desktop": "tauri dev",

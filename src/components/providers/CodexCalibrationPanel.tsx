@@ -163,8 +163,8 @@ export function CodexCalibrationPanel({
       </div>
       <p className="text-caption text-fg-3">
         {l(
-          "按共用订阅计算，采样包含所有已同步设备的关联路由。假设额度变化主要来自这些日志；尚未同步的用量、服务端延迟、缓存组成或模型切换会影响归因。账号、窗口重置或额度下降后重新采样。目标倍率相对原始采样速率，不随强度滑档改变；多个窗口需同时满足，不能把各窗口或模型额度相加。",
-          "Assumes a shared subscription and includes linked routes from all synced devices. Unsynced usage, billing lag, cache mix or model switches affect attribution. Account/window changes or decreases restart sampling. Target multipliers are relative to the original sampled pace. All windows constrain usage; quotas are not additive.",
+          "按共用订阅计算，采样包含所有已同步设备的关联路由。假设额度变化主要来自这些日志；尚未同步的用量、服务端延迟、缓存组成或模型切换会影响归因。账号或窗口重置后重新采样；同一窗口内额度回退的读数会被筛除。目标倍率相对原始采样速率，不随强度滑档改变；多个窗口需同时满足，不能把各窗口或模型额度相加。",
+          "Assumes a shared subscription and includes linked routes from all synced devices. Unsynced usage, billing lag, cache mix or model switches affect attribution. Account/window changes restart sampling; regressing counters within a window are filtered out. Target multipliers are relative to the original sampled pace. All windows constrain usage; quotas are not additive.",
         )}
       </p>
     </section>

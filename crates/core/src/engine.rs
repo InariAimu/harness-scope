@@ -17,6 +17,17 @@ use std::{
     time::Duration,
 };
 
+fn validated_device_name(value: &str) -> Result<String> {
+    let name = value.trim();
+    anyhow::ensure!(!name.is_empty(), "Device name cannot be empty");
+    anyhow::ensure!(name.len() <= 128, "Device name too long");
+    anyhow::ensure!(
+        !name.chars().any(char::is_control),
+        "Device name cannot contain control characters"
+    );
+    Ok(name.to_owned())
+}
+
 pub struct Engine {
     pub store: Mutex<Store>,
     pub registry: Registry,
@@ -77,6 +88,9 @@ impl Engine {
             | "test_network_settings"
             | "fetch_models_dev" => crate::network::execute(self, name, args),
             "provider_accounts"
+            | "shared_subscriptions"
+            | "provider_sidebar_order"
+            | "save_provider_sidebar_order"
             | "provider_account_history"
             | "provider_account_estimate"
             | "provider_account_test_query"
@@ -99,8 +113,17 @@ impl Engine {
                 let token = !s.config()?.server_token.is_empty();
                 config["serverToken"] = json!("");
                 Ok(
-                    json!({"deviceId":s.device_id()?,"config":config,"usageVersion":s.usage_version()?,"localSchemaVersion":s.schema_version()?,"remoteSchemaVersion":s.meta::<Option<u32>>("remote_schema_version")?.flatten(),"remoteSchemaCheckedAt":s.meta::<Option<i64>>("remote_schema_checked_at")?.flatten(),"tokenConfigured":token,"harnesses":self.registry.descriptors(),"pending":s.pending_count()?,"devices":s.meta::<Vec<Value>>("devices")?.unwrap_or_default(),"lastScanAt":s.meta::<i64>("last_scan_at")?,"lastScan":s.meta::<ScanReport>("last_scan")?,"lastSyncAt":s.meta::<i64>("last_sync_at")?,"lastSyncError":s.meta::<Option<String>>("last_sync_error")?.flatten(),"migrations":s.meta::<Vec<Value>>("migration_manifests")?.unwrap_or_default()}),
+                    json!({"appBuild":crate::build_info::current(),"syncProtocolVersion":4,"deviceId":s.device_id()?,"config":config,"usageVersion":s.usage_version()?,"localSchemaVersion":s.schema_version()?,"remoteSchemaVersion":s.meta::<Option<u32>>("remote_schema_version")?.flatten(),"remoteSchemaCheckedAt":s.meta::<Option<i64>>("remote_schema_checked_at")?.flatten(),"tokenConfigured":token,"harnesses":self.registry.descriptors(),"pending":s.pending_count()?,"devices":s.meta::<Vec<Value>>("devices")?.unwrap_or_default(),"lastScanAt":s.meta::<i64>("last_scan_at")?,"lastScan":s.meta::<ScanReport>("last_scan")?,"lastSyncAt":s.meta::<i64>("last_sync_at")?,"lastSyncError":s.meta::<Option<String>>("last_sync_error")?.flatten(),"migrations":s.meta::<Vec<Value>>("migration_manifests")?.unwrap_or_default()}),
                 )
+            }
+            "rename_device" => {
+                let name =
+                    validated_device_name(args["name"].as_str().context("Missing device name")?)?;
+                let s = self.lock()?;
+                let mut config = s.config()?;
+                config.device_name = name.clone();
+                s.set_meta("config", &config)?;
+                Ok(json!(name))
             }
             "save_config" => {
                 let mut c: Config = serde_json::from_value(args["config"].clone())?;
@@ -128,7 +151,7 @@ impl Engine {
                     c.scan_interval_seconds >= 5 && c.scan_interval_seconds <= 86400,
                     "Scan interval must be 5–86400 seconds"
                 );
-                anyhow::ensure!(c.device_name.len() <= 128, "Device name too long");
+                c.device_name = validated_device_name(&c.device_name)?;
                 let mut ids = HashSet::new();
                 for source in &c.sources {
                     self.registry.get(&source.harness)?;
@@ -519,11 +542,9 @@ impl Engine {
         }
         let mut index = TimelineIndex::new();
         let mut unavailable = HashSet::new();
-        for source in config
-            .sources
-            .iter()
-            .filter(|s| s.enabled && s.harness != "codex" && selected.is_none_or(|h| h == s.harness))
-        {
+        for source in config.sources.iter().filter(|s| {
+            s.enabled && s.harness != "codex" && selected.is_none_or(|h| h == s.harness)
+        }) {
             let adapter = self.registry.get(&source.harness)?;
             let found = match adapter.discover(Path::new(&source.root)) {
                 Ok(xs) => xs,
@@ -1103,9 +1124,14 @@ impl Engine {
         }
         sync::apply_changes(&*self.lock()?, &first)?;
         let mut uploaded = 0;
+        // Publish a renamed (or new) device even when there are no usage records to upload.
+        let mut publish_name = !first.devices.iter().any(|d| {
+            d["id"].as_str() == Some(device.as_str())
+                && d["name"].as_str() == Some(config.device_name.as_str())
+        });
         loop {
             let records = self.lock()?.pending_compatible(claude_metadata)?;
-            if records.is_empty() {
+            if records.is_empty() && !publish_name {
                 break;
             }
             let expected: HashSet<_> = records.iter().map(|r| (r.id.clone(), r.revision)).collect();
@@ -1139,6 +1165,7 @@ impl Engine {
             );
             uploaded += response.accepted.len();
             self.lock()?.ack(&response.accepted)?;
+            publish_name = false;
         }
         let mut downloaded = first.changes.len();
         loop {
@@ -1169,9 +1196,32 @@ impl Engine {
         } else {
             self.lock()?.pending_claude_metadata_count()?
         };
-        let warning = (deferred > 0).then(|| format!("Sync server needs Claude request metadata support; {deferred} Claude revisions retained locally. Other records continue syncing."));
+        let subscription_capable = health["recordCapabilities"].as_array().is_some_and(|caps| {
+            caps.iter()
+                .any(|v| v == crate::accounts::sharing::CAPABILITY)
+        });
+        let subscription_sync = if subscription_capable {
+            crate::accounts::sharing::sync(
+                self,
+                &client,
+                base,
+                &config.server_token,
+                &first.server_instance_id,
+            )?
+        } else {
+            Value::Null
+        };
+        let subscription_pending = crate::accounts::sharing::pending_count(&*self.lock()?)?;
+        let mut warnings = Vec::new();
+        if deferred > 0 {
+            warnings.push(format!("Sync server needs Claude request metadata support; {deferred} Claude revisions retained locally. Other records continue syncing."));
+        }
+        if !subscription_capable && subscription_pending > 0 {
+            warnings.push("Sync server needs subscription_history_v1 support; subscription history retained locally. Upgrade the server and proxy routes.".into());
+        }
+        let warning = (!warnings.is_empty()).then(|| warnings.join(" "));
         Ok(
-            json!({"uploaded":uploaded,"downloaded":downloaded,"deferredClaude":deferred,"warning":warning}),
+            json!({"uploaded":uploaded,"downloaded":downloaded,"deferredClaude":deferred,"warning":warning,"subscriptionSync":subscription_sync,"subscriptionPending":subscription_pending}),
         )
     }
     pub fn start_background(self: &Arc<Self>) {

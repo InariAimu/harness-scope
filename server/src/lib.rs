@@ -4,6 +4,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use harness_scope_core::accounts::sharing;
 use harness_scope_core::{model::PushRequest, sync, Engine};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -46,11 +47,13 @@ pub fn server_router(engine: Arc<Engine>, token: String) -> anyhow::Result<Route
         .route(
             "/health",
             get(move || async move {
-                Json(json!({"status":"ok","schemaVersion":schema_version,"protocolVersion":4,"supportedProtocolVersions":[1,2,3,4],"requestEncodings":["identity","gzip"],"recordCapabilities":["claude_request_timing_v2"]}))
+                Json(json!({"status":"ok","appBuild":harness_scope_core::build_info::current(),"schemaVersion":schema_version,"protocolVersion":4,"supportedProtocolVersions":[1,2,3,4],"requestEncodings":["identity","gzip"],"recordCapabilities":["claude_request_timing_v2",sharing::CAPABILITY]}))
             }),
         )
         .route("/v1/push", post(push))
         .route("/v1/changes", get(changes))
+        .route("/v1/subscriptions/push", post(push_subscriptions))
+        .route("/v1/subscriptions/changes", get(subscription_changes))
         .layer(DefaultBodyLimit::max(5 * 1024 * 1024))
         .layer(RequestDecompressionLayer::new().gzip(true))
         .layer(CompressionLayer::new().gzip(true))
@@ -58,6 +61,36 @@ pub fn server_router(engine: Arc<Engine>, token: String) -> anyhow::Result<Route
             engine,
             token: Arc::new(token),
         }))
+}
+async fn push_subscriptions(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+    Json(request): Json<sharing::Push>,
+) -> ApiResult {
+    auth(&headers, &state.token)?;
+    tokio::task::spawn_blocking(move || {
+        sharing::push(&*state.engine.lock()?, request)
+            .and_then(|v| serde_json::to_value(v).map_err(Into::into))
+    })
+    .await
+    .map_err(error)?
+    .map(Json)
+    .map_err(error)
+}
+async fn subscription_changes(
+    State(state): State<ServerState>,
+    headers: HeaderMap,
+    Query(query): Query<ChangeQuery>,
+) -> ApiResult {
+    auth(&headers, &state.token)?;
+    tokio::task::spawn_blocking(move || {
+        sharing::changes(&*state.engine.lock()?, query.after, query.limit)
+            .and_then(|v| serde_json::to_value(v).map_err(Into::into))
+    })
+    .await
+    .map_err(error)?
+    .map(Json)
+    .map_err(error)
 }
 async fn push(
     State(state): State<ServerState>,

@@ -364,7 +364,7 @@ fn historical_collision_repair_preserves_ids_costs_and_syncs_revisions_without_d
         .unwrap();
     drop(e);
     let e = Engine::open(&dir.path().join("scope.db")).unwrap();
-    assert_eq!(e.lock().unwrap().schema_version().unwrap(), 5);
+    assert_eq!(e.lock().unwrap().schema_version().unwrap(), 6);
     let r = scan(&e, false);
     assert_eq!(r.imported, 1);
     assert_eq!(r.updated, 3);

@@ -22,6 +22,7 @@ import {
   historyEstimateReason,
   historyMetrics,
   historyPoints,
+  historyPlotPoints,
   type HistoryMetric,
   type HistoryPoint,
 } from "@/lib/providerHistory";
@@ -61,6 +62,7 @@ export function ProviderHistoryPanel({
       view.account.id,
       days,
       view.snapshot?.fetchedAt,
+      view.historyVersion,
     ],
     initialPageParam: undefined as number | undefined,
     queryFn: ({ pageParam }) =>
@@ -111,12 +113,18 @@ export function ProviderHistoryPanel({
     () => points.filter((p) => p.sample && p.value != null),
     [points],
   );
+  const chartPoints = useMemo(
+    () => metric ? historyPlotPoints(points, metric, since) : [],
+    [points, metric, since],
+  );
+  const resetAnchors = chartPoints.filter((p) => p.resetAnchor).length;
   const selected = pair ?? defaultHistoryPair(points);
+  const ignoredSamples = observations.length - points.filter((p) => p.sample).length;
   const first = samples.find((p) => p.sequence === selected[0]);
   const last = samples.find((p) => p.sequence === selected[1]);
   const effectiveTab = quota ? tab : "trend";
   const pairValid =
-    !!first && !!last && first.sequence < last.sequence && first.at < last.at;
+    !!first && !!last && first.sequence !== last.sequence && first.at < last.at;
   const estimate = useQuery({
     queryKey: [
       "usage",
@@ -126,6 +134,7 @@ export function ProviderHistoryPanel({
       selected,
       view.snapshot?.fetchedAt,
       usageVersion,
+      view.historyVersion,
     ],
     queryFn: () =>
       api.estimate({
@@ -196,7 +205,8 @@ export function ProviderHistoryPanel({
       setPicking(point.sequence);
       setPair([point.sequence]);
     } else if (picking !== point.sequence) {
-      setPair([picking, point.sequence].sort((a, b) => a - b));
+      setPair([picking, point.sequence].sort((a, b) =>
+        (samples.find((p) => p.sequence === a)?.at ?? 0) - (samples.find((p) => p.sequence === b)?.at ?? 0)));
       setPicking(null);
       setTab("estimate");
     }
@@ -206,12 +216,20 @@ export function ProviderHistoryPanel({
     props: { cx?: number; cy?: number; payload?: HistoryPoint },
     radius: number,
   ) => (
+    !(props.payload?.sample || props.payload?.resetAnchor) ||
+    props.payload.value == null ||
+    !Number.isFinite(props.cx) ||
+    !Number.isFinite(props.cy)
+  ) ? <g /> : (
     <circle
-      key={props.payload?.sequence}
+      key={props.payload.resetAnchor ? `reset-${props.payload.at}` : props.payload.sequence}
       cx={props.cx}
       cy={props.cy}
       r={radius}
-      fill="var(--chart-1)"
+      fill={props.payload.resetAnchor ? "var(--bg-card)" : "var(--chart-1)"}
+      stroke="var(--chart-1)"
+      strokeWidth={props.payload.resetAnchor ? 1.5 : 0}
+      data-history-point={props.payload.resetAnchor ? "reset" : "sample"}
       onClick={(event) => {
         event.stopPropagation();
         pick(props.payload);
@@ -261,6 +279,10 @@ export function ProviderHistoryPanel({
       </div>
       {expanded && (
         <div id={`${prefix}-body`} className="space-y-3">
+          {view.account.sharedSubscriptionId && <p className="text-caption text-fg-3">
+            {l("已合并此订阅各终端的同步历史。同一重置窗口内，剩余额度回升的异常采样不参与趋势和测算；尚未同步的用量不计入测算。", "Includes synchronized history from all devices. Samples with increasing remaining quota within a reset window are excluded from trends and estimates; unsynced usage is not included.")}
+            {!!view.subscriptionSyncPending && l(` 本机有 ${view.subscriptionSyncPending} 项订阅数据待同步。`, ` ${view.subscriptionSyncPending} subscription items pending on this device.`)}
+          </p>}
           {quota && (
             <PageTabs
               value={effectiveTab}
@@ -327,11 +349,16 @@ export function ProviderHistoryPanel({
                     >
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart
-                          data={points}
+                          data={chartPoints}
                           margin={{ top: 12, right: 18, bottom: 8, left: 5 }}
-                          onClick={(state) =>
-                            pick(points[Number(state.activeTooltipIndex)])
-                          }
+                          onClick={(state) => {
+                            if (state.activeTooltipIndex != null) {
+                              const index = Number(state.activeTooltipIndex);
+                              const point = chartPoints[index];
+                              const next = chartPoints[index + 1];
+                              pick(point?.value == null && next?.at === point?.at ? next : point);
+                            }
+                          }}
                         >
                           <CartesianGrid
                             strokeDasharray="3 3"
@@ -359,15 +386,21 @@ export function ProviderHistoryPanel({
                             tick={{ fontSize: 12, fill: "var(--text-3)" }}
                           />
                           <Tooltip
+                            filterNull={false}
                             content={({ active, payload }) => {
-                              const point = payload?.[0]?.payload as
+                              const hovered = payload?.[0]?.payload as
                                 HistoryPoint | undefined;
-                              return active && point?.sample ? (
+                              // The reset separator and its 100% point share one time.
+                              const point = hovered?.value == null
+                                ? chartPoints.find((p) => p.at === hovered?.at && p.value != null)
+                                : hovered;
+                              return active && (point?.sample || point?.resetAnchor) ? (
                                 <div className="rounded-control border border-border bg-popover px-3 py-2 text-caption shadow-v7-md">
                                   <p>{date(point.at)}</p>
                                   <p className="font-medium tabular-nums">
                                     {valueText(point.value)}
                                   </p>
+                                  {point.resetAnchor && <p>{l("周期重置起点（按重置时间与周期长度推算）", "Cycle start (derived from reset time and duration)")}</p>}
                                 </div>
                               ) : null;
                             }}
@@ -377,11 +410,8 @@ export function ProviderHistoryPanel({
                             dataKey="value"
                             stroke="var(--chart-1)"
                             strokeWidth={2}
-                            dot={
-                              samples.length < 100
-                                ? (props) => sampleDot(props, 3)
-                                : false
-                            }
+                            dot={(props) => samples.length < 100 || props.payload?.resetAnchor
+                              ? sampleDot(props, 3) : <g />}
                             activeDot={(props) => sampleDot(props, 5)}
                             connectNulls={false}
                             isAnimationActive={false}
@@ -397,7 +427,7 @@ export function ProviderHistoryPanel({
                                   y={p.value!}
                                   r={5}
                                   fill="var(--chart-1)"
-                                  stroke="var(--bg-surface)"
+                                  stroke="var(--bg-card)"
                                 />
                               ))}
                         </LineChart>
@@ -406,6 +436,8 @@ export function ProviderHistoryPanel({
                     <p className="text-caption text-fg-3" aria-live="polite">
                       {samples.length} {l("次真实采样", "actual observations")}{" "}
                       · {date(samples[0].at)} → {date(samples.at(-1)!.at)}
+                      {ignoredSamples > 0 && ` · ${l(`已筛除 ${ignoredSamples} 次额度回退采样`, `Excluded ${ignoredSamples} regressing quota samples`)}`}
+                      {resetAnchors > 0 && ` · ${l("空心点为周期重置的 100% 起点", "Hollow points mark 100% at cycle resets")}`}
                       {quota &&
                         ` · ${picking != null ? l("已选起点，请点击另一个采样点", "Start selected; click another observation") : l("点击两个采样点可查看区间测算，也可在测算页选择时间", "Click two observations to estimate, or select times in the estimate tab")}`}
                     </p>

@@ -19,6 +19,8 @@ export interface HistoryPoint {
   value: number | null;
   segment: string;
   sample?: ProviderAccountObservation;
+  /** Display-only start of a known quota cycle; never an observation for estimates. */
+  resetAnchor?: true;
 }
 
 function numeric(value: unknown) {
@@ -120,6 +122,7 @@ export function observationPoint(
       (w.startsAt == null || w.startsAt * 1000 <= sample.observedAtMs)
     )
       value = numeric(w.remainingPercent);
+    if (value != null && (value < 0 || value > 100)) value = null;
     const custom =
       data.kind === "customUsage"
         ? data.items.find((i) => i.id === metric.id)
@@ -147,8 +150,8 @@ export function observationPoint(
     boundary = [item?.resetsAt, item?.windowType];
   }
   const segment = JSON.stringify([
-    sample.provider,
-    sample.accountRevision,
+    sample.subscriptionId ? (sample.provider.startsWith("custom") ? "custom" : sample.provider) : sample.provider,
+    sample.subscriptionId ?? sample.accountRevision,
     data.identity,
     data.identitySource,
     data.kind === "codexQuota" ? data.planType : null,
@@ -163,18 +166,36 @@ export function observationPoint(
   };
 }
 
-/** Keep real observations, including equal timestamps; null separators prevent invented continuity. */
+/** Preserve raw samples; omit stale quota readings only within known fixed reset windows. */
 export function historyPoints(
   samples: ProviderAccountObservation[],
   metric: HistoryMetric,
   maxGapMs: number,
 ) {
   const ordered = [...samples].sort(
-    (a, b) => a.observedAtMs - b.observedAtMs || a.sequence - b.sequence,
+    (a, b) => a.observedAtMs - b.observedAtMs || a.refreshId.localeCompare(b.refreshId),
   );
   const points: HistoryPoint[] = [];
+  const revisions = new Map<string, string>();
+  const remainingFloor = new Map<string, number>();
+  let epoch = 0;
   for (const sample of ordered) {
     const point = observationPoint(sample, metric);
+    if (sample.subscriptionId) {
+      const source = sample.deviceId ?? "local";
+      const previousRevision = revisions.get(source);
+      if (previousRevision != null && previousRevision !== sample.accountRevision) epoch++;
+      revisions.set(source, sample.accountRevision);
+      point.segment = `${point.segment}:${epoch}`;
+    }
+    const w = sample.windows.find((w) => w.bucketId === metric.bucketId && w.windowId === metric.id);
+    const fixed = metric.kind === "quota" && w?.resetsAt != null &&
+      (sample.data.kind !== "customUsage" || sample.data.items.find((i) => i.id === metric.id)?.windowType === "fixed");
+    if (fixed && point.value != null) {
+      const floor = remainingFloor.get(point.segment);
+      if (floor != null && point.value > floor) continue;
+      remainingFloor.set(point.segment, point.value);
+    }
     const previous = points.at(-1);
     if (
       previous &&
@@ -190,6 +211,50 @@ export function historyPoints(
     points.push(point);
   }
   return points;
+}
+
+/** Join display gaps; only a known 100% cycle start begins a new line. */
+export function historyPlotPoints(
+  points: HistoryPoint[],
+  metric: HistoryMetric,
+  startAtMs: number,
+): HistoryPoint[] {
+  const samples = points.filter((p) => p.sample && p.value != null);
+  const anchors = new Map<number, HistoryPoint>();
+  if (metric.kind === "quota") {
+    for (const point of samples) {
+      const w = point.sample!.windows.find(
+        (w) => w.bucketId === metric.bucketId && w.windowId === metric.id,
+      );
+      const anchor = w?.fullQuotaAnchor;
+      if (
+        !anchor || !w.activeAtSample || w.resetsAt == null ||
+        w.durationMinutes == null || w.durationMinutes <= 0 ||
+        anchor.at !== w.startsAt || anchor.at !== w.resetsAt - w.durationMinutes * 60
+      ) continue;
+      const at = anchor.at * 1000;
+      if (!Number.isSafeInteger(at) || at < 0 || at < startAtMs || at > point.at) continue;
+      anchors.set(at, { at, value: 100, sequence: 0, segment: `reset:${at}`, resetAnchor: true });
+    }
+  }
+  // Keep a real 100% reading at the exact reset time instead of drawing it twice.
+  const observedFull = new Set(samples.filter((p) => p.value === 100).map((p) => p.at));
+  const ordered = [
+    ...samples,
+    ...[...anchors.values()].filter((p) => !observedFull.has(p.at)),
+  ].sort((a, b) => a.at - b.at || Number(!!b.resetAnchor) - Number(!!a.resetAnchor));
+  const result: HistoryPoint[] = [];
+  const breaks = new Set<number>();
+  for (const point of ordered) {
+    if (anchors.has(point.at) && !breaks.has(point.at)) {
+      if (result.length) {
+        result.push({ at: point.at, value: null, sequence: 0, segment: `reset:${point.at}` });
+      }
+      breaks.add(point.at);
+    }
+    result.push(point);
+  }
+  return result;
 }
 
 export function defaultHistoryPair(points: HistoryPoint[]) {
@@ -255,8 +320,8 @@ export function historyEstimateReason(reason: string | null, zh: boolean) {
       "Quota is outside 0–100%; capacity cannot be inferred reliably.",
     ],
     quota_decreased: [
-      "区间内出现额度恢复或回补，请选择变化连续的区间。",
-      "Quota recovered within the interval. Choose an interval without replenishment.",
+      "结束点的额度读数已回退，请选择未被筛除的最新采样点。",
+      "The ending quota reading regressed. Choose a latest sample that has not been filtered out.",
     ],
     invalid_time: [
       "区间内的采样时钟不连续，请重新选择采样点。",

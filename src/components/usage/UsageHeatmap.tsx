@@ -277,7 +277,8 @@ function HeatmapMonths({ months, locale }: { months: (number | null)[]; locale: 
     {months.map((month, w) => (
       <span key={`m${w}`} className="h-4 overflow-visible whitespace-nowrap text-badge leading-4 text-fg-3">
         {month != null && <span data-heatmap-month={w}
-          style={{ visibility: visible == null || visible.has(w) ? "visible" : "hidden" }}>
+          // A shown label must still inherit the heatmap's hidden state in distribution views.
+          style={{ visibility: visible == null || visible.has(w) ? "inherit" : "hidden" }}>
           {new Date(2024, month - 1, 1).toLocaleDateString(locale, { month: "short" })}
         </span>}
       </span>

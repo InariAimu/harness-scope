@@ -43,8 +43,10 @@ fn group(sample: &Value, w: &Value) -> Value {
         .and_then(|b| b.iter().find(|b| b["id"] == w["bucketId"]))
         .map(|b| b["planType"].clone());
     json!([
-        sample["provider"],
-        sample["accountRevision"],
+        sharing::family(sample["provider"].as_str().unwrap_or("")),
+        sample
+            .get("subscriptionId")
+            .unwrap_or(&sample["accountRevision"]),
         sample["data"]["identity"],
         sample["data"]["identitySource"],
         sample["data"]["planType"],
@@ -61,7 +63,9 @@ pub(super) fn estimate(engine: &Engine, args: Value) -> Result<Value> {
     let query: Query = serde_json::from_value(args)?;
     uuid::Uuid::parse_str(&query.id).context("Invalid account ID")?;
     anyhow::ensure!(
-        query.first_sequence > 0 && query.last_sequence > query.first_sequence,
+        query.first_sequence > 0
+            && query.last_sequence > 0
+            && query.first_sequence != query.last_sequence,
         "Choose two ordered observations"
     );
     let store = engine.read_lock()?;
@@ -74,22 +78,28 @@ fn calculate(store: &Store, query: &Query) -> Result<Value> {
         .find(|i| i.account.id == query.id)
         .context("Provider account no longer exists")?;
     let get = |seq| -> Result<Value> {
+        let subscription = sharing::subscription_for(store, &query.id)?;
         let payload: String = store
             .conn
             .query_row(
-                "SELECT payload FROM provider_account_observations WHERE account_id=?1 AND seq=?2",
-                params![query.id, seq],
+                &format!(
+                    "SELECT payload FROM provider_account_observations o WHERE {} AND seq=?3",
+                    history::MEMBERSHIP
+                ),
+                params![query.id, subscription, seq],
                 |r| r.get(0),
             )
             .context("Observation no longer exists")?;
-        Ok(serde_json::from_str(&payload)?)
+        let mut row = serde_json::from_str(&payload)?;
+        history::decorate(store, &mut row)?;
+        Ok(row)
     };
     let first = get(query.first_sequence)?;
     let last = get(query.last_sequence)?;
     let now = Utc::now().timestamp();
     let mut result = json!({"status":"unavailable","reason":null,"basis":"observedMix","firstSequence":query.first_sequence,
         "lastSequence":query.last_sequence,"sampleStartMs":first["observedAtMs"],"sampleEndMs":last["observedAtMs"],
-        "pricingAt":now,"requests":0,"unpricedRequests":0,"modelCount":0,"models":[]});
+        "pricingAt":now,"requests":0,"unpricedRequests":0,"modelCount":0,"models":[],"ignoredObservations":0});
     let outcome = (|| -> Result<()> {
         let start = first["observedAtMs"].as_i64().context("invalid_time")?;
         let end = last["observedAtMs"].as_i64().context("invalid_time")?;
@@ -97,7 +107,13 @@ fn calculate(store: &Store, query: &Query) -> Result<Value> {
             end - start >= 60_000 && end <= now * 1000 + 999,
             "insufficient_span"
         );
-        anyhow::ensure!(last["accountRevision"] == item.revision, "account_changed");
+        let own = store.device_id()?;
+        if last["deviceId"].as_str().is_none_or(|v| v == own) {
+            anyhow::ensure!(
+                last["accountRevision"] == measurement_revision(&item),
+                "account_changed"
+            );
+        }
         let a = window(&first, query).context("missing_window")?;
         let b = window(&last, query).context("missing_window")?;
         let expected = group(&first, a);
@@ -120,15 +136,18 @@ fn calculate(store: &Store, query: &Query) -> Result<Value> {
         }
         let reset = b["resetsAt"].as_i64().context("missing_reset")?;
         anyhow::ensure!(reset > end / 1000, "expired_sample");
-        let mut stmt = store.conn.prepare_cached("SELECT payload FROM provider_account_observations WHERE account_id=?1 AND seq>=?2 AND seq<=?3 ORDER BY seq")?;
-        let samples = stmt.query_map(
-            params![query.id, query.first_sequence, query.last_sequence],
-            |r| r.get::<_, String>(0),
-        )?;
+        let samples = history::between(store, &query.id, start, end)?;
+        let mut revisions = BTreeMap::new();
         let mut previous = None;
         let mut previous_at = None;
         for sample in samples {
-            let sample: Value = serde_json::from_str(&sample?)?;
+            let source = sample["deviceId"].as_str().unwrap_or(&own);
+            let revision = sample["accountRevision"]
+                .as_str()
+                .context("account_changed")?;
+            if let Some(previous) = revisions.insert(source.to_owned(), revision.to_owned()) {
+                anyhow::ensure!(previous == revision, "different_window");
+            }
             if custom::is_provider(&item.account.provider) {
                 let definition = sample["data"]["items"]
                     .as_array()
@@ -156,7 +175,15 @@ fn calculate(store: &Store, query: &Query) -> Result<Value> {
                 used >= Decimal::ZERO && used <= Decimal::from(100),
                 "quota_out_of_range"
             );
-            anyhow::ensure!(previous.is_none_or(|p| used >= p), "quota_decreased");
+            if previous.is_some_and(|p| used < p) {
+                // Devices can see delayed provider counters. Keep the raw sample, but
+                // exclude the regression from this fixed window's derived estimate.
+                // Never silently substitute a user-selected endpoint.
+                anyhow::ensure!(sample["refreshId"] != last["refreshId"], "quota_decreased");
+                result["ignoredObservations"] =
+                    json!(result["ignoredObservations"].as_u64().unwrap() + 1);
+                continue;
+            }
             previous = Some(used);
             previous_at = Some(at);
         }

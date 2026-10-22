@@ -12,7 +12,7 @@ use std::{
     path::Path,
 };
 
-pub const VERSION: &str = "codex-v6-rollout";
+pub const VERSION: &str = "codex-v7-request-settings";
 type Counters = [u64; 5]; // total input, output, cache read, cache write, reasoning
 
 #[derive(Clone, Debug)]
@@ -470,7 +470,7 @@ fn parse_complete(path: &Path, lines: &[Value], index: &TimelineIndex) -> Result
                     provider.clone(),
                     c,
                 )?;
-                usage.request_metadata = settings.metadata();
+                usage.request_metadata = settings.metadata(v, &model);
                 pending = Some((c, usage));
             }
         }
@@ -555,7 +555,7 @@ fn parse_complete(path: &Path, lines: &[Value], index: &TimelineIndex) -> Result
             delta,
         )?;
         usage.timing = timing;
-        usage.request_metadata = settings.metadata();
+        usage.request_metadata = settings.metadata(v, &model);
         out.usage.push(usage);
     }
     Ok(out)

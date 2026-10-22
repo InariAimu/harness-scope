@@ -275,7 +275,7 @@ fn repeated_commit_identity_is_idempotent_and_existing_v4_database_installs_hist
         let store = engine.lock().unwrap();
         let item = load(&store).unwrap().remove(0);
         super::super::history::record(&store, &item, Utc::now(), "UTC").unwrap();
-        assert_eq!(store.schema_version().unwrap(), 5);
+        assert_eq!(store.schema_version().unwrap(), 6);
     }
     assert_eq!(
         history(&engine, id)["observations"]

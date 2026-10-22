@@ -1,6 +1,6 @@
 FROM rust:1.91-bookworm AS build
 WORKDIR /app
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock package.json package-lock.json ./
 COPY crates ./crates
 COPY server ./server
 COPY src-tauri ./src-tauri

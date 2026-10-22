@@ -63,7 +63,7 @@ bash /opt/harness-scope/src/server/deploy/install.sh
 bash /opt/harness-scope/src/server/deploy/enable-https.sh
 ```
 
-使用已有 Certbot 的 webroot 插件签发独立证书，续期成功后检查并重载 Nginx。Nginx 仅转发 `/health`、`/v1/push`、`/v1/changes`，请求体上限 5 MiB、每 IP 限流 20 次/秒并允许短时突发，其他路径返回 404。
+使用已有 Certbot 的 webroot 插件签发独立证书，续期成功后检查并重载 Nginx。Nginx 仅转发 `/health`、`/v1/push`、`/v1/changes`、`/v1/subscriptions/push` 和 `/v1/subscriptions/changes`，请求体上限 5 MiB、每 IP 限流 20 次/秒并允许短时突发，其他路径返回 404。
 
 桌面设置中填写 `https://hs.amu.moe` 和 `server.env` 内的令牌值。`/health` 无需认证，用量接口要求 Bearer token；当前是单用户共享令牌模型。
 
@@ -85,9 +85,15 @@ cargo run --locked -p harness-scope-service --example sync_probe -- --url https:
 
 ## 备份与恢复
 
+### v6 订阅历史同步
+
+先备份数据库，部署新版服务及 `deploy/nginx.conf` 中两条 `/v1/subscriptions/*` 路由，再升级各客户端。`/health` 的 `recordCapabilities` 包含 `subscription_history_v1` 才支持此功能。两个接口沿用同一 Bearer token、gzip 及解压后的请求上限；请求用量的 v4 接口保持兼容。订阅采样为不可变记录，同一 ID 的不同内容会被拒绝，不采用覆盖合并。共享订阅目录只包含 ID、供应商类型和初次创建时的显示名称，不包含凭据或查询脚本。
+
+客户端明确关联共享订阅后补传已有真实采样。允许多台设备同时使用并独立采样；按采样时间合并，同一身份、套餐、额度桶和重置窗口内已用比例回退的读数不参与趋势和测算，原始记录保留。请求 Token 仍按设备、事件 ID 和修订精确同步，不参与额度筛选；未上传数据无法计入。服务器恢复时更换 `server_instance_id`，各来源设备下一次连接会补传其本机采样和订阅目录；已下载的历史在客户端保留。原有请求记录的恢复规则不变。v6 升级为追加表及索引，不改写已有请求或价格事实；在独立副本运行新版 `--compact` 后，使用 `python3 server/deploy/audit_v6.py BEFORE AFTER` 逐表验证原始数据、元信息和游标完全一致。`audit_v4.py` 是旧 v4 计时迁移专用工具，不用于验证本次升级。
+
 ### v4 升级及空间回收
 
-数据库和同步协议均为 v4。先部署服务器，再升级每台客户端；v4 计时来自来源设备，服务器无法凭 Token 数反推历史耗时。客户端首次启动自动补传已有计时，保留用量和冻结费用。
+当前数据库为 v6，请求用量同步协议仍为 v4。先部署服务器，再升级每台客户端；v4 计时来自来源设备，服务器无法凭 Token 数反推历史耗时。客户端首次启动自动补传已有计时，保留用量和冻结费用。
 
 变更表只保存每条记录最新的 `(seq, device_id, id)`，关联当前记录生成下载页，不再保存每次修订的完整 JSON。旧游标仍可追赶最新修订，新设备从零下载全部当前记录和删除墓碑，不需重置设备身份或重新上传全部事实。只有实际接受的新修订才推进序号，重试和低修订记录不产生日志。墓碑及每条记录的最新位置不能按日期直接删除。
 

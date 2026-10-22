@@ -16,6 +16,7 @@ import { toast } from "@/lib/toast";
 import { discardUnsavedChanges, hasUnsavedChanges } from "@/lib/unsavedChanges";
 import { UsageDashboard } from "@/components/usage/UsageDashboard";
 import { SidebarToday } from "@/components/shell/SidebarToday";
+import { SidebarDevice } from "@/components/shell/SidebarDevice";
 import { SidebarSubscriptions } from "@/components/shell/SidebarSubscriptions";
 import { ApplicationsPage } from "@/pages/ApplicationsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
@@ -33,6 +34,7 @@ import { WindowControls } from "@/components/shell/WindowControls";
 import { AccentThemeProvider } from "@/components/theme/AccentThemeProvider";
 import { InterfaceSkinBackdrop } from "@/components/theme/InterfaceSkinBackdrop";
 import type { InterfaceSkinId } from "@/lib/interfaceSkins";
+import type { AppBuildInfo } from "@/lib/appBuild";
 
 export interface Source {
   id: string;
@@ -56,6 +58,8 @@ export interface Config {
   modelsDevSync: unknown;
 }
 export interface Snapshot {
+  appBuild?: AppBuildInfo;
+  syncProtocolVersion?: number;
   usageVersion: number;
   localSchemaVersion: number;
   remoteSchemaVersion: number | null;
@@ -221,11 +225,7 @@ export default function App() {
               <Settings size={16} className="shrink-0" aria-hidden="true" />
               {!collapsed && <span className="shrink-0 whitespace-nowrap">{label("设置", "Settings")}</span>}
             </button>
-            {!collapsed && (
-              <div className="px-3 pt-3 pb-2 text-caption text-fg-3">
-                v0.1.0 · {data?.config.deviceName || "Local"}
-              </div>
-            )}
+            {data && <SidebarDevice snapshot={data} collapsed={collapsed} zh={i18n.language.startsWith("zh")} />}
           </div>
         </aside>
         <main className="scope-main">
@@ -311,7 +311,7 @@ export default function App() {
                           .filter((d) => d.id !== data.deviceId)
                           .map((d) => (
                             <option key={d.id} value={d.id}>
-                              {d.name}
+                              {d.name || d.id} · {d.id.slice(0, 8)}
                             </option>
                           ))}
                       </OptionSelect>

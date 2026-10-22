@@ -19,6 +19,8 @@ mod custom;
 mod go_usage;
 mod history;
 mod polling;
+pub mod sharing;
+mod sidebar_order;
 pub(crate) use polling::Polling;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -70,6 +72,8 @@ impl Default for Subscription {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Account {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared_subscription_id: Option<String>,
     pub provider: String,
     pub name: String,
     #[serde(default = "default_show_in_sidebar")]
@@ -87,6 +91,8 @@ pub struct Account {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Save {
     id: Option<String>,
+    /// Omitted keeps the binding. "new" creates a shared subscription on first save.
+    shared_subscription_id: Option<String>,
     provider: String,
     name: String,
     #[serde(default)]
@@ -110,6 +116,8 @@ struct Save {
 struct Stored {
     account: Account,
     revision: String,
+    #[serde(default)]
+    measurement_revision: Option<String>,
     snapshot: Option<Value>,
     last_attempt_at: Option<i64>,
     error: Option<String>,
@@ -118,6 +126,11 @@ struct Stored {
 }
 fn load(store: &Store) -> Result<Vec<Stored>> {
     Ok(store.meta(META)?.unwrap_or_default())
+}
+fn measurement_revision(item: &Stored) -> &str {
+    item.measurement_revision
+        .as_deref()
+        .unwrap_or(&item.revision)
 }
 fn default_show_in_sidebar() -> bool {
     true
@@ -170,8 +183,13 @@ fn weekly_usage_window(item: &Stored, now: i64) -> Option<WeeklyUsageWindow> {
         bucket,
     })
 }
-fn view(engine: &Engine, item: &Stored, vault: &Vault) -> Value {
-    json!({"account":item.account,"keyConfigured":vault.exists(&item.account.id),"canRefresh":can_refresh(&item.account,vault),"snapshot":item.snapshot,"lastAttemptAt":item.last_attempt_at,"error":item.error,"refreshing":engine.account_polling.is_refreshing(&item.account.id),"weeklyUsageWindow":weekly_usage_window(item, Utc::now().timestamp())})
+fn view(engine: &Engine, item: &Stored, vault: &Vault, store: &Store) -> Result<Value> {
+    let mut value = json!({"account":item.account,"keyConfigured":vault.exists(&item.account.id),"canRefresh":can_refresh(&item.account,vault),"snapshot":item.snapshot,"lastAttemptAt":item.last_attempt_at,"error":item.error,"refreshing":engine.account_polling.is_refreshing(&item.account.id),"weeklyUsageWindow":weekly_usage_window(item, Utc::now().timestamp())});
+    if item.account.shared_subscription_id.is_some() {
+        value["historyVersion"] = json!(sharing::history_version(store)?);
+        value["subscriptionSyncPending"] = json!(sharing::pending_count(store)?);
+    }
+    Ok(value)
 }
 fn can_refresh(account: &Account, vault: &Vault) -> bool {
     if let Some(settings) = &account.custom {
@@ -289,10 +307,16 @@ fn validate(input: &Save) -> Result<()> {
 }
 pub(crate) fn execute(engine: &Engine, vault: &Vault, name: &str, args: Value) -> Result<Value> {
     match name {
-        "provider_accounts" => Ok(json!(load(&*engine.read_lock()?)?
-            .iter()
-            .map(|a| view(engine, a, vault))
-            .collect::<Vec<_>>())),
+        "provider_accounts" => {
+            let store = engine.read_lock()?;
+            Ok(json!(load(&store)?
+                .iter()
+                .map(|a| view(engine, a, vault, &store))
+                .collect::<Result<Vec<_>>>()?))
+        }
+        "shared_subscriptions" => Ok(json!(sharing::list(&*engine.read_lock()?)?)),
+        "provider_sidebar_order" => sidebar_order::get(&*engine.read_lock()?),
+        "save_provider_sidebar_order" => sidebar_order::save(engine, args),
         "provider_account_history" => history::query(&*engine.read_lock()?, args),
         "provider_account_estimate" => analysis::estimate(engine, args),
         "provider_account_test_query" => custom::test_query(engine, vault, args),
@@ -407,6 +431,7 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
         .unwrap_or_else(|| Stored {
             account: Account {
                 id: account_id.clone(),
+                shared_subscription_id: None,
                 provider: input.provider.clone(),
                 name: String::new(),
                 show_in_sidebar: true,
@@ -417,13 +442,25 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
                 custom: None,
             },
             revision: String::new(),
+            measurement_revision: None,
             snapshot: None,
             last_attempt_at: None,
             error: None,
             request_id: None,
         });
+    let previous_measurement = measurement_revision(&item).to_owned();
+    let measurement_changed = new
+        || provider_changed
+        || connection_changed
+        || new_key.is_some()
+        || input.clear_api_key
+        || item.account.links != input.links
+        || item.account.codex != input.codex
+        || item.account.subscription.plan_name != input.subscription.plan_name;
+    let previous_shared = item.account.shared_subscription_id.clone();
     item.account = Account {
         id: account_id.clone(),
+        shared_subscription_id: previous_shared.clone(),
         provider: input.provider,
         name: input.name,
         show_in_sidebar: input
@@ -436,6 +473,11 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
         custom: input.custom,
     };
     item.revision = uuid::Uuid::new_v4().to_string();
+    item.measurement_revision = if measurement_changed {
+        None
+    } else {
+        Some(previous_measurement)
+    };
     if new_key.is_some() || input.clear_api_key || provider_changed || connection_changed {
         item.snapshot = None;
         item.error = None;
@@ -447,21 +489,28 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
     } else if input.clear_api_key {
         vault.restore(&account_id, None)?;
     }
-    if let Some(i) = position {
-        items[i] = item.clone();
-    } else {
-        items.push(item.clone());
-    }
     if let Err(error) = store.transaction(|| {
+        item.account.shared_subscription_id = sharing::configure(
+            &store,
+            &item.account,
+            previous_shared.as_deref(),
+            input.shared_subscription_id.as_deref(),
+        )?;
+        if let Some(i) = position {
+            items[i] = item.clone();
+        } else {
+            items.push(item.clone());
+        }
         if connection_changed || provider_changed {
             codex::calibration::clear(&store, &account_id)?;
         }
-        store.set_meta(META, &items)
+        store.set_meta(META, &items)?;
+        sharing::prepare(&store)
     }) {
         vault.restore(&account_id, old_key.as_deref())?;
         return Err(error);
     }
-    Ok(view(engine, &item, vault))
+    view(engine, &item, vault, &store)
 }
 fn refresh_with(
     engine: &Engine,
@@ -519,7 +568,7 @@ fn refresh_with(
             }
             Err(error) => item.error = Some(error.to_string()),
         }
-        let result = view(engine, item, vault);
+        let mut result = view(engine, item, vault, &store)?;
         let observed = succeeded.then(|| item.clone());
         store.transaction(|| {
             if let Some(observed) = observed.as_ref() {
@@ -535,9 +584,13 @@ fn refresh_with(
             }
             store.set_meta(META, &items)
         })?;
+        if result.get("historyVersion").is_some() {
+            result["historyVersion"] = json!(sharing::history_version(&store)?);
+            result["subscriptionSyncPending"] = json!(sharing::pending_count(&store)?);
+        }
         Ok(result)
     } else {
-        Ok(view(engine, item, vault))
+        view(engine, item, vault, &store)
     }
 }
 fn fetch(engine: &Engine, provider: &str, key: &str) -> Result<Value> {

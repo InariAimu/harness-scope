@@ -37,9 +37,12 @@ fn row(model: &str) -> Row {
     }
 }
 fn compute(e: &Engine, snapshot: &Value, rows: &[&Row], pace: i64) -> Value {
+    compute_for(e, "fixture", snapshot, rows, pace)
+}
+fn compute_for(e: &Engine, id: &str, snapshot: &Value, rows: &[&Row], pace: i64) -> Value {
     let c = catalog::defaults();
     let input = Input {
-        id: "fixture",
+        id,
         snapshot: Some(snapshot),
         bucket: "codex",
         catalog: &c,
@@ -61,6 +64,74 @@ fn compute(e: &Engine, snapshot: &Value, rows: &[&Row], pace: i64) -> Value {
         }
     })
     .unwrap()
+}
+
+#[test]
+fn shared_observations_calibrate_after_handoff_without_the_old_local_cache() {
+    use crate::accounts::{history, sharing};
+    let dir = tempfile::tempdir().unwrap();
+    let e = Engine::open(&dir.path().join("shared.db")).unwrap();
+    let view=e.execute("provider_account_save",json!({"provider":"openai-codex","name":"Shared","sharedSubscriptionId":"new","codex":{"plan":"plus"}})).unwrap();
+    let id = view["account"]["id"].as_str().unwrap();
+    let shared = view["account"]["sharedSubscriptionId"].as_str().unwrap();
+    let first = snapshot(NOW - 3600, 10);
+    let last = snapshot(NOW, 20);
+    {
+        let s = e.lock().unwrap();
+        let mut item = crate::accounts::load(&s).unwrap().remove(0);
+        item.snapshot = Some(last.clone());
+        item.request_id = Some(uuid::Uuid::new_v4().to_string());
+        history::record(
+            &s,
+            &item,
+            chrono::DateTime::from_timestamp(NOW, 0).unwrap(),
+            "UTC",
+        )
+        .unwrap();
+        let remote = sharing::Observation {
+            id: uuid::Uuid::new_v4().to_string(),
+            subscription_id: shared.into(),
+            device_id: "previous-device".into(),
+            account_id: uuid::Uuid::new_v4().to_string(),
+            account_revision: "previous-revision".into(),
+            account_name: "Previous".into(),
+            provider: "openai-codex".into(),
+            observed_at_ms: (NOW - 3600) * 1000,
+            time_zone: "UTC".into(),
+            data: first["data"].clone(),
+        };
+        sharing::apply(
+            &s,
+            &sharing::Changes {
+                server_instance_id: "fixture".into(),
+                subscriptions: sharing::list(&s).unwrap(),
+                observations: vec![
+                    (1, remote.clone()),
+                    (
+                        2,
+                        sharing::Observation {
+                            id: uuid::Uuid::new_v4().to_string(),
+                            observed_at_ms: (NOW - 1800) * 1000,
+                            data: snapshot(NOW - 1800, 5)["data"].clone(),
+                            ..remote
+                        },
+                    ),
+                ],
+                next_cursor: 2,
+                has_more: false,
+            },
+        )
+        .unwrap();
+        assert!(s.meta::<Value>(&key(id)).unwrap().is_none());
+    }
+    let sol = row("gpt-6.1-sol");
+    let astra = row("gpt-6-astra");
+    let result = compute_for(&e, id, &last, &[&sol, &astra], 1);
+    assert_eq!(result["windows"][0]["status"], "ready", "{result}");
+    close(&result["windows"][0]["calibrationFactor"], "0.5");
+    assert_eq!(result["windows"][0]["observations"], 2);
+    assert_eq!(result["windows"][0]["ignoredObservations"], 1);
+    assert_eq!(result["historyPoints"], 3);
 }
 fn close(value: &Value, expected: &str) {
     let n = Decimal::from_str(value.as_str().unwrap()).unwrap();
@@ -111,7 +182,7 @@ fn mixed_fast_and_standard_calibration_normalizes_tiers_once_and_unknown_tiers_b
     assert!(unknown["currentWindowTarget"].is_null());
 }
 #[test]
-fn account_switch_reset_and_decrease_never_mix_observations_and_plateaus_keep_idle_time() {
+fn account_switch_and_reset_stay_isolated_while_regressions_keep_valid_history() {
     let (_d, e, _) = fixture();
     let decrease = snapshot(NOW + 60, 2);
     record(&e.lock().unwrap(), "fixture", None, &decrease).unwrap();
@@ -121,8 +192,9 @@ fn account_switch_reset_and_decrease_never_mix_observations_and_plateaus_keep_id
         .meta(&key("fixture"))
         .unwrap()
         .unwrap();
-    assert_eq!(h.len(), 1);
-    assert_eq!(h[0].used, "2");
+    assert_eq!(h.len(), 2);
+    assert_eq!(h[0].used, "10");
+    assert_eq!(h[1].used, "20");
     let mut changed = snapshot(NOW + 120, 3);
     changed["data"]["identity"] = json!("b".repeat(64));
     record(&e.lock().unwrap(), "fixture", Some(&decrease), &changed).unwrap();

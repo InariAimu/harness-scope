@@ -64,6 +64,10 @@ export function nativeMoney(
 }
 export function accountError(message: string, zh: boolean) {
   if (!zh) return message;
+  if (message.includes("This account is already linked")) return "此账号已关联共享订阅；使用另一份订阅时请添加新账号。";
+  if (message.includes("Shared subscription already linked")) return "此共享订阅已关联本机其他账号。";
+  if (message.includes("Shared subscription provider")) return "共享订阅的供应商类型不匹配。";
+  if (message.includes("Sync first to download")) return "请先同步以下载这份共享订阅。";
   if (message.includes("Custom query script failed")) return "查询脚本执行失败，请检查语法、同步返回值，或是否超出执行限制。";
   if (message.includes("configured base URL origin")) return "请求地址必须与 Base URL 使用相同的协议、域名和端口。";
   if (message.includes("Custom query reports an invalid")) return "查询结果报告账号无效或不可用。";

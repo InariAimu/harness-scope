@@ -18,6 +18,7 @@ export function codexReferenceQuery(
       revision,
       view.account.links,
       view.snapshot?.fetchedAt,
+      view.historyVersion,
     ],
     queryFn: () => providerAccountsApi.codexEstimate(args),
     staleTime: 15_000,

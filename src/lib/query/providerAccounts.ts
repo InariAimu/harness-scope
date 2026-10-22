@@ -11,3 +11,12 @@ export function useProviderAccounts(enabled = true) {
     refetchInterval: enabled ? 2_000 : false,
   });
 }
+
+export function useProviderSidebarOrder(enabled = true) {
+  return useQuery({
+    queryKey: ["provider-sidebar-order"],
+    queryFn: providerAccountsApi.sidebarOrder,
+    staleTime: 30_000,
+    enabled,
+  });
+}

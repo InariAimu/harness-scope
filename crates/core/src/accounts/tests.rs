@@ -3,6 +3,7 @@ use crate::model::{Cost, Tokens, UsageRecord};
 
 mod custom_provider;
 mod observation_history;
+mod sidebar_order;
 mod sidebar_visibility;
 mod weekly_usage;
 

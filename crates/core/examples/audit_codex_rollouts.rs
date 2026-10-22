@@ -17,6 +17,7 @@ fn main() -> Result<()> {
     let second = engine.scan_harness("codex", true)?;
     let final_records = engine.lock()?.local_records()?;
     let report = json!({
+        "appBuild": harness_scope_core::build_info::current(),
         "first": first, "second": second,
         "beforeActive": before.iter().filter(|r| !r.deleted).count(),
         "afterActive": after.iter().filter(|r| !r.deleted).count(),

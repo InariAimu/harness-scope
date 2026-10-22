@@ -173,12 +173,16 @@ fn cross_device_usage_counts_once_and_unpriced_usage_blocks_the_result() {
 }
 
 #[test]
-fn rejects_boundaries_and_hidden_replenishment_even_when_endpoints_appear_compatible() {
+fn skips_regressing_counters_but_still_rejects_account_boundaries() {
     let f = Fixture::new();
     let a = f.append(0, 20);
     f.append(300, 15);
     let b = f.append(1800, 30);
-    assert_eq!(f.estimate(a, b)["reason"], "quota_decreased");
+    f.usage("inside", 600, 5_000_000, 0);
+    let result = f.estimate(a, b);
+    assert_eq!(result["status"], "ready", "{result}");
+    assert_eq!(result["ignoredObservations"], 1);
+    assert_eq!(result["totalEquivalentUsd"], "50");
     f.patch_observation(a, |v| v["accountRevision"] = json!("old"));
     assert_eq!(f.estimate(a, b)["reason"], "different_window");
 }

@@ -101,7 +101,8 @@ pub(crate) fn record(
             }
             let before = Decimal::from_str(&history[last].used).unwrap_or_default();
             if value < before {
-                history.retain(|p| !same(p, &point));
+                // This cache is derived; the complete observation remains in history.
+                continue;
             } else if history[last].at == point.at {
                 history[last] = point;
                 continue;
@@ -154,7 +155,32 @@ pub(super) fn calculate(
     events: &[&Row],
     quote: impl Fn(&Row) -> Option<Decimal>,
 ) -> Result<Value> {
-    let history: Vec<Observation> = store.meta(&key(input.id))?.unwrap_or_default();
+    let mut history: Vec<Observation> = store.meta(&key(input.id))?.unwrap_or_default();
+    // Existing installations retain their old calibration cache as a fallback. Once real
+    // observations exist, both local and synchronized samples use one source of truth.
+    let raw = crate::accounts::history::between(
+        store,
+        input.id,
+        (input.now - 8 * 86400) * 1000,
+        input.now * 1000 + 999,
+    )?;
+    if !raw.is_empty() {
+        history.clear();
+        let mut revisions = std::collections::BTreeMap::new();
+        for sample in raw {
+            let source = sample["deviceId"].as_str().unwrap_or("local").to_owned();
+            let revision = sample["accountRevision"].clone();
+            if revisions
+                .insert(source, revision.clone())
+                .is_some_and(|old| old != revision)
+            {
+                history.clear();
+            }
+            history.extend(points(&json!({"fetchedAt":sample["observedAtMs"].as_i64().unwrap_or(0)/1000,"data":sample["data"]})));
+        }
+        history.sort_by_key(|p| p.at);
+        history.dedup();
+    }
     let snapshot = input.snapshot;
     let data = snapshot.map(|s| &s["data"]);
     let who = data.and_then(identity);
@@ -187,13 +213,19 @@ pub(super) fn calculate(
                 })
                 .collect();
             samples.sort_by_key(|p| p.at);
-            let mut start = 0;
-            for i in 1..samples.len() {
-                if Decimal::from_str(&samples[i].used)? < Decimal::from_str(&samples[i - 1].used)? {
-                    start = i;
+            let count = samples.len();
+            let mut high_water = Decimal::ZERO;
+            samples.retain(|p| {
+                let Ok(used) = Decimal::from_str(&p.used) else {
+                    return false;
+                };
+                if used < high_water || used > Decimal::from(100) {
+                    return false;
                 }
-            }
-            let samples = &samples[start..];
+                high_water = used;
+                true
+            });
+            result["ignoredObservations"] = json!(count - samples.len());
             result["observations"] = json!(samples.len());
             anyhow::ensure!(samples.len() >= 2, "insufficient_quota_history");
             let first = samples[0];
@@ -299,7 +331,7 @@ pub(super) fn calculate(
                 Decimal::from(100),
             )?;
             anyhow::ensure!(projected > Decimal::ZERO, "zero_rate");
-            let remaining = (Decimal::from(100) - Decimal::from_str(&point.used)?)
+            let remaining = (Decimal::from(100) - Decimal::from_str(&point.used)?.max(high_water))
                 .clamp(Decimal::ZERO, Decimal::from(100));
             let until = Decimal::from(point.reset - input.now);
             let lifetime = div(remaining, projected)?;

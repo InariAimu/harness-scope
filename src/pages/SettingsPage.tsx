@@ -28,6 +28,7 @@ import {
   skinPercentage,
 } from "@/lib/skinAppearance";
 import { toast } from "@/lib/toast";
+import { APP_BUILD, buildDescription } from "@/lib/appBuild";
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="scope-field">
@@ -54,6 +55,11 @@ export function SettingsPage({
     skinMaskStrength: skinPercentage(snapshot.config.skinMaskStrength, DEFAULT_SKIN_MASK_STRENGTH),
   }));
   const [accentValid, setAccentValid] = useState(true);
+  const build = snapshot.appBuild ?? APP_BUILD;
+  // A rename from the sidebar must not be reverted by an already-open settings draft.
+  useEffect(() => {
+    setConfig((current) => ({ ...current, deviceName: snapshot.config.deviceName }));
+  }, [snapshot.config.deviceName]);
   const setThemePreview = useAccentThemePreview();
   useEffect(() => {
     setThemePreview({
@@ -309,8 +315,8 @@ export function SettingsPage({
               </Field>
               <p className="text-body text-fg-2 mb-4">
                 {l(
-                  "仅同步用量、费用来源和设备标识。会话正文、项目路径和工具内容留在本机。",
-                  "Only usage, cost provenance and device identities are synchronized. Transcripts, project paths and tool content stay local.",
+                  "同步用量、费用来源、设备标识，以及已关联共享订阅的额度／余额历史。凭据、会话正文、项目路径和工具内容留在本机。",
+                  "Syncs usage, cost provenance, device identities and history for linked shared subscriptions. Credentials, transcripts, project paths and tool content stay local.",
                 )}
               </p>
               <div className="flex gap-2">
@@ -323,10 +329,11 @@ export function SettingsPage({
                       const result = await command<{
                         uploaded: number;
                         downloaded: number;
+                        warning?: string | null;
+                        subscriptionSync?: { uploaded: number; downloaded: number } | null;
                       }>("sync");
-                      toast.success(
-                        `${result.uploaded} ↑ · ${result.downloaded} ↓`,
-                      );
+                      if (result.warning) toast.warning(result.warning);
+                      else toast.success(`${result.uploaded + (result.subscriptionSync?.uploaded ?? 0)} ↑ · ${result.downloaded + (result.subscriptionSync?.downloaded ?? 0)} ↓`);
                     })
                   }
                 >
@@ -439,7 +446,17 @@ export function SettingsPage({
           {section === "about" && (
             <section className="scope-card">
               <h2 className="text-lg font-semibold">Harness Scope</h2>
-              <p className="mt-2 text-fg-2">v0.1.0 · MIT</p>
+              <p className="mt-2 break-all text-fg-2" title={buildDescription(build, i18n.language.startsWith("zh"))}>v{build.displayVersion} · MIT</p>
+              <dl className="mt-4 space-y-2 text-caption text-fg-2">
+                {[
+                  [l("构建类型", "Build channel"), build.channel === "release" ? l("正式版", "Release") : l("开发构建", "Development")],
+                  [l("构建时间", "Built at"), new Date(build.builtAt).toLocaleString(i18n.language, { timeZone: snapshot.config.timezone })],
+                  [l("Git 提交", "Git commit"), build.gitCommit ?? l("未知", "Unavailable")],
+                  [l("代码状态", "Source status"), build.dirty === true ? l("含未提交修改", "Uncommitted changes") : build.dirty === false ? l("工作区干净", "Clean checkout") : l("未知", "Unavailable")],
+                  [l("数据库版本", "Database schema"), snapshot.localSchemaVersion == null ? l("未知", "Unavailable") : `v${snapshot.localSchemaVersion}`],
+                  [l("同步协议", "Sync protocol"), snapshot.syncProtocolVersion == null ? l("未知", "Unavailable") : `v${snapshot.syncProtocolVersion}`],
+                ].map(([label, value]) => <div key={label} className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3"><dt>{label}</dt><dd className="break-all select-text">{value}</dd></div>)}
+              </dl>
               <p className="mt-4">
                 {l(
                   "模块化的本机用量统计与会话浏览器。",

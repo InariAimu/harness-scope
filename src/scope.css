@@ -77,6 +77,7 @@ body,
 .scope-provider-row .scope-provider-link:hover {
   background: transparent;
 }
+.scope-subscriptions-sort,
 .scope-subscriptions-refresh,
 .scope-subscriptions-disclosure {
   display: flex;
@@ -88,6 +89,7 @@ body,
   border-radius: 5px;
   color: var(--text-3);
 }
+.scope-subscriptions-sort:hover,
 .scope-subscriptions-refresh:hover,
 .scope-subscriptions-disclosure:hover {
   background: var(--bg-subtle);
@@ -95,6 +97,12 @@ body,
 }
 .scope-subscriptions-refresh:disabled {
   cursor: wait;
+}
+.scope-subscriptions-sort:disabled {
+  opacity: 0.4;
+}
+.scope-subscriptions-sort[aria-pressed="true"] {
+  color: var(--action-text);
 }
 .scope-subscriptions-list {
   padding: 4px 0 8px;
@@ -122,7 +130,11 @@ body,
   border-radius: var(--sidebar-item-radius);
   transition: background-color 120ms ease, box-shadow 120ms ease;
 }
-.scope-subscription-account:hover,
+.scope-subscription-account:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.scope-subscription-account:hover:not(:disabled),
 .scope-subscription-account:focus-visible {
   background: color-mix(in srgb, var(--bg-subtle) 70%, var(--bg-selected));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border-strong) 55%, transparent);
@@ -154,6 +166,33 @@ body,
   font-size: 10.5px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+.scope-provider-group.is-sorting .scope-subscription-account-heading {
+  padding-inline-end: 48px;
+}
+.scope-subscription-sort-controls {
+  position: absolute;
+  inset-inline-end: var(--sidebar-item-inset);
+  top: 4px;
+  display: flex;
+  gap: 2px;
+  height: 20px;
+}
+.scope-subscription-sort-controls button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: var(--text-3);
+}
+.scope-subscription-sort-controls button:hover:not(:disabled) {
+  background: var(--bg-subtle);
+  color: var(--text-1);
+}
+.scope-subscription-sort-controls button:disabled {
+  opacity: 0.3;
 }
 .scope-subscription-quota {
   display: grid;

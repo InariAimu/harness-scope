@@ -18,6 +18,7 @@ import type {
 } from "@/types/providerAccounts";
 
 export const providerAccountsApi = {
+  sharedSubscriptions: () => command<{ id: string; provider: string; name: string }[]>("shared_subscriptions"),
   testQuery: (args: { id?: string; settings: CustomQuerySettings; apiKey?: string; clearApiKey?: boolean }) =>
     command<CustomUsage>("provider_account_test_query", args),
   sessionSources: (harness: string, sessionId: string) =>
@@ -32,6 +33,9 @@ export const providerAccountsApi = {
     pace: string;
   }) => command<CodexReference>("codex_subscription_estimate", args),
   list: () => command<ProviderAccountView[]>("provider_accounts"),
+  sidebarOrder: () => command<string[]>("provider_sidebar_order"),
+  saveSidebarOrder: (ids: string[]) =>
+    command<string[]>("save_provider_sidebar_order", { ids }),
   history: (args: ProviderAccountHistoryQuery) =>
     command<ProviderAccountHistory>("provider_account_history", args),
   estimate: (args: ProviderAccountEstimateQuery) =>

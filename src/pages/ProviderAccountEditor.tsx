@@ -106,6 +106,12 @@ export function ProviderAccountEditor({
     queryFn: api.routes,
     staleTime: 30_000,
   });
+  const sharedSubscriptions = useQuery({
+    queryKey: ["shared-subscriptions"],
+    queryFn: api.sharedSubscriptions,
+    staleTime: 0,
+    refetchInterval: 5_000,
+  });
   const selected = new Set(form.links.map(routeKey));
   const codexRules = useQuery({
     queryKey: ["codex-allowances"],
@@ -286,6 +292,32 @@ export function ProviderAccountEditor({
                 />
                 {l("在左侧供应商列表中显示", "Show in sidebar providers")}
               </label>
+              <Field label={l("跨终端订阅历史", "Subscription history across devices")}>
+                <OptionSelect
+                  aria-label={l("跨终端订阅历史", "Subscription history across devices")}
+                  value={form.sharedSubscriptionId ?? ""}
+                  disabled={!!initial?.account.sharedSubscriptionId}
+                  onValueChange={(value) => {
+                    tracker.onChangeCapture();
+                    dirty.current = true;
+                    setForm((v) => ({ ...v, sharedSubscriptionId: value || undefined }));
+                  }}
+                  className="w-full"
+                >
+                  <option value="">{l("仅保存在本机", "Keep on this device")}</option>
+                  <option value="new">{l("创建共享订阅并同步已有历史", "Create shared subscription and sync existing history")}</option>
+                  {(sharedSubscriptions.data ?? []).filter((s) =>
+                    s.provider === (isCustomProvider(form.provider) ? "custom" : form.provider) &&
+                    !accounts.some((a) => a.account.id !== initial?.account.id && a.account.sharedSubscriptionId === s.id)
+                  ).map((s) => <option key={s.id} value={s.id}>{s.name} · {s.id.slice(0, 8)}</option>)}
+                  {initial?.account.sharedSubscriptionId && !sharedSubscriptions.data?.some((s) => s.id === initial.account.sharedSubscriptionId) &&
+                    <option value={initial.account.sharedSubscriptionId}>{initial.account.sharedSubscriptionId}</option>}
+                </OptionSelect>
+              </Field>
+              <p className="text-caption text-fg-3">
+                {l("第一台终端创建共享订阅；其他终端同步后选择同一项。关联会补传本账号已有历史，请确认它们属于同一订阅。各终端可同时使用；保持同步以合并用量，额度回退的异常采样会被筛除。凭据和查询配置各端单独设置。", "Create a shared subscription on the first device; sync and select it on the next. Linking uploads this account’s existing history, so verify it belongs to that subscription. Devices can run concurrently; sync to merge usage. Regressing quota samples are filtered out. Credentials and query settings stay local.")}
+                {initial?.account.sharedSubscriptionId && l(" 已关联的账号不能改绑；使用另一份订阅时请添加新账号。", " This binding is fixed; add a new account for another subscription.")}
+              </p>
               {form.provider === "openai-codex" ? (
                 <section className="rounded-control border border-border p-3 space-y-3">
                   <p className="text-caption text-fg-3">

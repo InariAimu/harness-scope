@@ -32,6 +32,7 @@ const PAYLOAD: Projection = Fields(&[
     ("model_provider", All),
     ("id", All),
     ("thread_id", All),
+    ("turn_id", All),
     ("threadId", All),
     ("response_id", All),
     ("history_mode", All),

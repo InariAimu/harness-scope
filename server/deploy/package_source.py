@@ -22,7 +22,7 @@ def main():
         return info
 
     with tarfile.open(args.output, "w:gz") as archive:
-        for name in ("Cargo.toml", "Cargo.lock", "LICENSE", "crates/core", "server", "src-tauri", "tests", "third_party"):
+        for name in ("Cargo.toml", "Cargo.lock", "package.json", "package-lock.json", "LICENSE", "crates/core", "server", "src-tauri", "tests", "third_party"):
             archive.add(root / name, arcname=name, filter=include)
     print(f"Source archive: {args.output} ({args.output.stat().st_size} bytes)")
 

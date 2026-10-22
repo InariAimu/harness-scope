@@ -191,6 +191,7 @@ pub(crate) fn scan(engine: &Engine, force: bool, report: &mut ScanReport) -> Res
         }
     }
     let mut groups: BTreeMap<String, Group> = BTreeMap::new();
+    let mut runtime = crate::codex_runtime::Reader::default();
     for input in inputs {
         let key = input.path.to_string_lossy().to_string();
         let id = match codex::identity(&input.path, &input.context) {
@@ -217,10 +218,12 @@ pub(crate) fn scan(engine: &Engine, force: bool, report: &mut ScanReport) -> Res
                 json!([id, value])
             })
             .collect::<Vec<_>>();
+        let evidence = runtime.read(engine, &input.path, &id.session)?;
         let fingerprint = format!(
-            "{}:{}",
+            "{}:{}:{}",
             input.fingerprint,
-            files::hash(serde_json::to_string(&deps)?.as_bytes())
+            files::hash(serde_json::to_string(&deps)?.as_bytes()),
+            evidence.fingerprint()
         );
         let previous: Option<(String, String)> = engine
             .lock()?
@@ -235,7 +238,7 @@ pub(crate) fn scan(engine: &Engine, force: bool, report: &mut ScanReport) -> Res
             report.skipped += 1;
             continue;
         }
-        let lines = if let Some(lines) = input.lines {
+        let mut lines = if let Some(lines) = input.lines {
             lines
         } else {
             let (lines, _, errors, complete) = match Codex.read_usage_source(&input.path) {
@@ -255,6 +258,7 @@ pub(crate) fn scan(engine: &Engine, force: bool, report: &mut ScanReport) -> Res
             }
             lines
         };
+        evidence.enrich(&mut lines);
         let result = Codex.parse(&input.path, &lines, &index)?;
         report.errors.extend(result.diagnostics);
         if !result.complete {

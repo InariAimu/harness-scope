@@ -50,6 +50,7 @@ export interface AccountSubscription {
 }
 export interface ProviderAccount {
   id: string;
+  sharedSubscriptionId?: string;
   provider: AccountProvider;
   name: string;
   showInSidebar: boolean;
@@ -100,6 +101,8 @@ export interface CodexQuota {
   }[];
 }
 export interface ProviderAccountView {
+  historyVersion?: number;
+  subscriptionSyncPending?: number;
   account: ProviderAccount;
   keyConfigured: boolean;
   canRefresh?: boolean;
@@ -111,6 +114,8 @@ export interface ProviderAccountView {
 }
 /** Actual successful refreshes. Window/reset/anchor timestamps use Unix seconds. */
 export interface ProviderAccountObservation {
+  subscriptionId?: string;
+  deviceId?: string;
   version: 1;
   sequence: number;
   refreshId: string;
@@ -191,6 +196,7 @@ export interface WeeklyUsageWindow {
 }
 export interface AccountSave {
   id?: string;
+  sharedSubscriptionId?: string;
   provider: AccountProvider;
   name: string;
   showInSidebar?: boolean;

@@ -133,7 +133,7 @@ pub(super) fn refresh_managed(
             .into_iter()
             .find(|a| a.account.id == id)
             .context("Provider account no longer exists")?;
-        return Ok(view(engine, &item, vault));
+        return view(engine, &item, vault, &store);
     };
     let mut result = refresh_with(engine, vault, id, fetch);
     drop(guard);
