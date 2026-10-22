@@ -158,6 +158,31 @@ export interface ProviderAccountHistory {
   observations: ProviderAccountObservation[];
   nextCursor: number | null;
 }
+export interface ProviderAccountEstimateQuery {
+  id: string;
+  firstSequence: number;
+  lastSequence: number;
+  bucketId: string | null;
+  windowId: string;
+}
+export interface ProviderAccountEstimate {
+  status: "ready" | "unavailable";
+  reason: string | null;
+  basis: "observedMix";
+  firstSequence: number;
+  lastSequence: number;
+  sampleStartMs: number;
+  sampleEndMs: number;
+  pricingAt: number;
+  deltaPercent?: string;
+  linkedUsd?: string;
+  totalEquivalentUsd?: string;
+  remainingEquivalentUsd?: string;
+  requests: number;
+  unpricedRequests: number;
+  modelCount: number;
+  models: { model: string; requests: number; costUsd: string }[];
+}
 export type AccountUsageRange = "today" | "month" | "subscription" | "weekly";
 export interface WeeklyUsageWindow {
   startDate: number;

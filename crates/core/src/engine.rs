@@ -78,6 +78,7 @@ impl Engine {
             | "fetch_models_dev" => crate::network::execute(self, name, args),
             "provider_accounts"
             | "provider_account_history"
+            | "provider_account_estimate"
             | "provider_account_test_query"
             | "provider_session_sources"
             | "provider_account_routes"

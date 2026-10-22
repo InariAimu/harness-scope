@@ -44,6 +44,7 @@ import { codexWindowLabel } from "@/lib/codexSubscription";
 import { cn } from "@/lib/utils";
 import { useProviderAccounts } from "@/lib/query/providerAccounts";
 import { CustomUsagePanel } from "@/components/providers/CustomUsagePanel";
+import { ProviderHistoryPanel } from "@/components/providers/ProviderHistoryPanel";
 
 function QuotaCard({
   window,
@@ -155,7 +156,7 @@ export function ProvidersPage({
   const selected = visible.find((v) => v.account.id === id) ?? visible[0];
   const account = selected?.account;
   useProviderActivity(account?.id);
-  const updateView = (view: ProviderAccountView) =>
+  const updateView = (view: ProviderAccountView) => {
     client.setQueryData<ProviderAccountView[]>(
       ["provider-accounts"],
       (previous) =>
@@ -163,6 +164,8 @@ export function ProvidersPage({
           v.account.id === view.account.id ? view : v,
         ),
     );
+    void client.invalidateQueries({ queryKey: ["provider-history", view.account.id] });
+  };
   const remote = useMutation({
     mutationFn: api.refresh,
     onSuccess: updateView,
@@ -567,6 +570,7 @@ export function ProvidersPage({
                 )}
               </div>
             )}
+            <ProviderHistoryPanel key={`history:${account!.id}`} view={selected} zh={zh} locale={locale} timezone={snapshot.config.timezone} usageVersion={snapshot.usageVersion} />
             <section className="scope-card !p-4">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="font-semibold">
@@ -847,6 +851,9 @@ export function ProvidersPage({
             setEditing(undefined);
             void client.invalidateQueries({
               queryKey: ["usage", "provider-account", view.account.id],
+            });
+            void client.invalidateQueries({
+              queryKey: ["usage", "provider-estimate", view.account.id],
             });
           }}
         />

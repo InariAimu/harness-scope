@@ -8,6 +8,8 @@ import type {
   ProviderAccountView,
   ProviderAccountHistory,
   ProviderAccountHistoryQuery,
+  ProviderAccountEstimate,
+  ProviderAccountEstimateQuery,
   CodexReference,
   CodexPlan,
   CustomQuerySettings,
@@ -32,6 +34,8 @@ export const providerAccountsApi = {
   list: () => command<ProviderAccountView[]>("provider_accounts"),
   history: (args: ProviderAccountHistoryQuery) =>
     command<ProviderAccountHistory>("provider_account_history", args),
+  estimate: (args: ProviderAccountEstimateQuery) =>
+    command<ProviderAccountEstimate>("provider_account_estimate", args),
   routes: () => command<AccountRoute[]>("provider_account_routes"),
   save: (account: AccountSave) =>
     command<ProviderAccountView>("provider_account_save", account),

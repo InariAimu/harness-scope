@@ -13,6 +13,7 @@ use std::{
 };
 
 const META: &str = "provider_accounts_v1";
+mod analysis;
 pub(crate) mod codex;
 mod custom;
 mod go_usage;
@@ -293,6 +294,7 @@ pub(crate) fn execute(engine: &Engine, vault: &Vault, name: &str, args: Value) -
             .map(|a| view(engine, a, vault))
             .collect::<Vec<_>>())),
         "provider_account_history" => history::query(&*engine.read_lock()?, args),
+        "provider_account_estimate" => analysis::estimate(engine, args),
         "provider_account_test_query" => custom::test_query(engine, vault, args),
         "provider_session_sources" => custom::session_sources(engine, args),
         "provider_account_routes" => {
