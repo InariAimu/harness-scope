@@ -86,7 +86,7 @@ fn settings_switches_bind_to_turns_without_rewriting_models_or_guessing_missing_
         Some("turn_context")
     );
     for (i, r) in parsed.iter().enumerate() {
-        assert_eq!(r.id, format!("codex:settings-fixture:token:{}", i + 1));
+        assert_eq!(r.id, format!("codex:v6:settings-fixture:token:{}", i + 1));
         assert_eq!(r.model, if i == 6 { "gpt-6-astra" } else { "gpt-6.1-sol" });
         assert_eq!(r.tokens.total(), 110);
     }

@@ -182,9 +182,11 @@ fn parent_arrival_and_changes_invalidate_only_dependent_children() {
     let parent = vec![
         json!({"type":"session_meta","timestamp":"2026-10-16T02:00:00Z","payload":{"id":"parent"}}),
         json!({"type":"event_msg","timestamp":"2026-10-16T02:00:01Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":10}}}}),
+        json!({"type":"event_msg","timestamp":"2026-10-16T02:01:00Z","payload":{"type":"task_complete"}}),
     ];
     let child = vec![
         json!({"type":"session_meta","timestamp":"2026-10-16T02:01:00Z","payload":{"id":"child","source":{"subagent":{"thread_spawn":{"parent_thread_id":"parent"}}}}}),
+        parent[1].clone(),
         json!({"type":"event_msg","timestamp":"2026-10-16T02:01:01Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":150,"output_tokens":15}}}}),
     ];
     let encode = |v: &[Value]| {
@@ -206,7 +208,7 @@ fn parent_arrival_and_changes_invalidate_only_dependent_children() {
     let child_record = || {
         e.lock()
             .unwrap()
-            .record("codex:child:token:1")
+            .record("codex:v6:child:token:2")
             .unwrap()
             .unwrap()
     };
@@ -223,11 +225,11 @@ fn parent_arrival_and_changes_invalidate_only_dependent_children() {
         .unwrap();
     fs::write(
         &pp,
-        encode(&parent).replace("\"input_tokens\":100", "\"input_tokens\":120"),
+        format!("{}{}\n", encode(&parent), json!({"type":"event_msg","timestamp":"2026-10-16T02:02:00Z","payload":{"type":"task_complete"}})),
     )
     .unwrap();
-    assert_eq!(e.scan(false).unwrap().updated, 2);
-    assert_eq!(child_record().tokens.input, 30);
+    assert_eq!(e.scan(false).unwrap().updated, 0);
+    assert_eq!(child_record().tokens.input, 50);
     let new_fp: String = e
         .lock()
         .unwrap()
@@ -241,13 +243,13 @@ fn parent_arrival_and_changes_invalidate_only_dependent_children() {
     assert_eq!(unrelated_fp, new_fp);
     fs::write(&pp, format!("{}{{", encode(&parent))).unwrap();
     assert_eq!(e.scan(false).unwrap().deferred_files, 2);
-    assert_eq!(child_record().tokens.input, 30);
+    assert_eq!(child_record().tokens.input, 50);
     fs::write(&pp, encode(&parent)).unwrap();
     e.scan(false).unwrap();
     assert_eq!(child_record().tokens.input, 50);
     fs::remove_file(&pp).unwrap();
     assert_eq!(e.scan(false).unwrap().deferred_files, 0); // retained baseline
-    assert_eq!(files::read(&cp).unwrap().0.len(), 2);
+    assert_eq!(files::read(&cp).unwrap().0.len(), 3);
 }
 
 #[test]
@@ -259,8 +261,14 @@ fn upgrade_retains_legacy_baselines_after_parent_transcript_deletion() {
         .lines()
         .map(|s| serde_json::from_str(s).unwrap())
         .collect();
-    let child = json!({"type":"session_meta","timestamp":"2026-10-16T03:00:00Z","payload":{"id":"child","parent_thread_id":"codex-fixture"}});
-    fs::write(root.join("child.jsonl"), format!("{child}\n{}\n",json!({"type":"event_msg","timestamp":"2026-10-16T03:00:01Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":160,"output_tokens":45}}}}))).unwrap();
+    let mut child = parent.clone();
+    child[0] = json!({"type":"session_meta","timestamp":"2026-10-16T02:00:05Z","payload":{"id":"child","parent_thread_id":"codex-fixture"}});
+    child.push(json!({"type":"event_msg","timestamp":"2026-10-16T03:00:01Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":160,"cached_input_tokens":30,"output_tokens":45,"reasoning_output_tokens":8}}}}));
+    fs::write(
+        root.join("child.jsonl"),
+        child.iter().map(|v| format!("{v}\n")).collect::<String>(),
+    )
+    .unwrap();
     let e = Engine::open(&tmp.path().join("scope.db")).unwrap();
     configure(&e, &root, "codex");
     e.lock()
@@ -274,7 +282,7 @@ fn upgrade_retains_legacy_baselines_after_parent_transcript_deletion() {
     let record = e
         .lock()
         .unwrap()
-        .record("codex:child:token:1")
+        .record("codex:v6:child:token:3")
         .unwrap()
         .unwrap();
     assert_eq!(record.tokens.total(), 15);

@@ -56,8 +56,8 @@ describe("continuous trend chart categories", () => {
   it("distinguishes repeated DST hours by category and tooltip offset", () => {
     const points = buildUsageTrendChartData(
       [
-        stat("2026-11-01T01:00:00-04:00", 1),
-        stat("2026-11-01T01:00:00-05:00", 1),
+        { ...stat("2026-11-01T01:00:00-04:00", 1), modelBreakdown: [{ model: "first", requestCount: 1, totalTokens: 12, totalCost: "0" }] },
+        { ...stat("2026-11-01T01:00:00-05:00", 1), modelBreakdown: [{ model: "second", requestCount: 1, totalTokens: 12, totalCost: "0" }] },
       ],
       {
         isHourly: true,
@@ -69,5 +69,7 @@ describe("continuous trend chart categories", () => {
     );
     expect(points[0].xKey).not.toBe(points[1].xKey);
     expect(points[0].tooltipLabel).not.toBe(points[1].tooltipLabel);
+    expect(points[0].modelBreakdown?.[0].model).toBe("first");
+    expect(points[1].modelBreakdown?.[0].model).toBe("second");
   });
 });

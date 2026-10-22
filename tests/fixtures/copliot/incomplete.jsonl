@@ -1,0 +1,2 @@
+{"kind":0,"v":{"version":3,"sessionId":"synthetic-copliot-incomplete","creationDate":1792500000000,"requests":[{"requestId":"incomplete-known","timestamp":1792500001000,"modelId":"copilot/auto","modelState":{"value":1,"completedAt":1792500002000}}]}}
+{"kind":1,"k":["requests",0,"copilotCredits"],"v":

@@ -239,7 +239,19 @@ fn trends(records: Vec<Row>, start: i64, end: i64, timezone: chrono_tz::Tz) -> R
         };
         let records = groups.remove(&bucket).unwrap_or_default();
         let s = summary_rows(&records);
-        rows.push(json!({"date":date,"requestCount":s["totalRequests"],"totalCost":s["totalCost"],"costConverted":s["costConverted"],"totalTokens":s["realTotalTokens"],"totalInputTokens":s["totalInputTokens"],"totalOutputTokens":s["totalOutputTokens"],"totalCacheCreationTokens":s["totalCacheCreationTokens"],"totalCacheReadTokens":s["totalCacheReadTokens"]}));
+        // Reuse the exact selected bucket, including its filters and legacy-day guard.
+        let mut models: BTreeMap<String, Vec<Row>> = BTreeMap::new();
+        for record in records {
+            models.entry(record.model.clone()).or_default().push(record);
+        }
+        let model_breakdown: Vec<Value> = models
+            .into_iter()
+            .map(|(model, records)| {
+                let s = summary_rows(&records);
+                json!({"model":model,"requestCount":s["totalRequests"],"totalTokens":s["realTotalTokens"],"totalCost":s["totalCost"],"costConverted":s["costConverted"]})
+            })
+            .collect();
+        rows.push(json!({"date":date,"requestCount":s["totalRequests"],"totalCost":s["totalCost"],"costConverted":s["costConverted"],"totalTokens":s["realTotalTokens"],"totalInputTokens":s["totalInputTokens"],"totalOutputTokens":s["totalOutputTokens"],"totalCacheCreationTokens":s["totalCacheCreationTokens"],"totalCacheReadTokens":s["totalCacheReadTokens"],"modelBreakdown":model_breakdown}));
     }
     Ok(json!(rows))
 }
@@ -341,21 +353,6 @@ pub fn query(store: &Store, kind: &str, args: &Value) -> Result<Value> {
     }
 }
 
-fn openai_model(row: &Row) -> bool {
-    let model = row
-        .model
-        .rsplit('/')
-        .next()
-        .unwrap_or(&row.model)
-        .to_ascii_lowercase();
-    row.harness == "codex"
-        || row.provider.as_deref() == Some("openai")
-        || model.starts_with("gpt-")
-        || ["o1", "o3", "o4"]
-            .iter()
-            .any(|name| model == *name || model.starts_with(&format!("{name}-")))
-}
-
 fn request_mode(row: &Row) -> String {
     // A GPT model name alone cannot establish a request's configured tier.
     row.request_metadata
@@ -377,14 +374,9 @@ fn request_mode(row: &Row) -> String {
 }
 
 fn grouped_stats(records: Vec<Row>, models: bool) -> Value {
-    let split: std::collections::HashSet<_> = records
-        .iter()
-        .filter(|r| models && openai_model(r))
-        .map(|r| r.model.clone())
-        .collect();
     let mut groups: BTreeMap<(String, Option<String>), Vec<Row>> = BTreeMap::new();
     for row in records {
-        let mode = split.contains(&row.model).then(|| request_mode(&row));
+        let mode = (models && row.harness == "codex").then(|| request_mode(&row));
         let key = if models {
             row.model.clone()
         } else {

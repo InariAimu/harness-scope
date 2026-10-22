@@ -96,8 +96,8 @@ export default function App() {
   });
   const [page, setPage] = useState("usage");
   const [collapsed, setCollapsed] = useState(false);
-  const [accountToEdit, setAccountToEdit] = useState<string>();
-  const accountOpened = useCallback(() => setAccountToEdit(undefined), []);
+  const [accountToSelect, setAccountToSelect] = useState<string>();
+  const accountSelected = useCallback(() => setAccountToSelect(undefined), []);
   const [device, setDevice] = useState("local");
   const data = state.data;
   const usageVersion = useRef<number | undefined>();
@@ -207,7 +207,7 @@ export default function App() {
                 enabled={!!data}
                 onNavigate={() => navigate("providers")}
                 onAccountClick={(id) => {
-                  if (navigate("providers")) setAccountToEdit(id);
+                  if (navigate("providers")) setAccountToSelect(id);
                 }}
               />
             </nav>
@@ -352,8 +352,8 @@ export default function App() {
               {page === "providers" && (
                 <ProvidersPage
                   snapshot={data}
-                  accountToEdit={accountToEdit}
-                  onAccountOpened={accountOpened}
+                  accountToSelect={accountToSelect}
+                  onAccountSelected={accountSelected}
                 />
               )}
             </>

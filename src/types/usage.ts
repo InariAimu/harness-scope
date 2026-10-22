@@ -161,6 +161,14 @@ export interface UsageSummaryByApp {
   summary: UsageSummary;
 }
 
+export interface TrendModelStats {
+  model: string;
+  requestCount: number;
+  totalTokens: number;
+  totalCost: string;
+  costConverted?: boolean;
+}
+
 export interface DailyStats {
   costConverted?: boolean;
   date: string;
@@ -171,6 +179,8 @@ export interface DailyStats {
   totalOutputTokens: number;
   totalCacheCreationTokens: number;
   totalCacheReadTokens: number;
+  /** Models in this exact time bucket; absent on older local services. */
+  modelBreakdown?: TrendModelStats[];
 }
 
 export interface ProviderStats {
@@ -204,8 +214,9 @@ export interface ProviderStats {
 }
 
 export interface ModelStats {
+  appType?: string;
   rowKey?: string;
-  /** Grouping only; model keeps the original name for pricing and filtering. */
+  /** Codex-only grouping; model keeps its original name for pricing and filtering. */
   requestMode?: "standard" | "fast" | "unknown" | (string & {}) | null;
   costConverted?: boolean;
   model: string;

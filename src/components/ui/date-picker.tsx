@@ -16,6 +16,7 @@ interface DatePickerProps
   type?: "date" | "datetime-local";
   value: string;
   onValueChange: (value: string) => void;
+  onNow?: () => void;
   step?: number | string;
   today?: Date;
 }
@@ -24,6 +25,7 @@ export function DatePicker({
   type = "date",
   value,
   onValueChange,
+  onNow,
   step = 60,
   today = new Date(),
   className,
@@ -128,6 +130,19 @@ export function DatePicker({
           >
             {t("common.clear")}
           </Button>
+          {withTime && onNow && (
+            <Button
+              type="button"
+              variant="quiet"
+              size="compact"
+              onClick={() => {
+                onNow();
+                setOpen(false);
+              }}
+            >
+              NOW
+            </Button>
+          )}
           <Button
             type="button"
             variant="quiet"

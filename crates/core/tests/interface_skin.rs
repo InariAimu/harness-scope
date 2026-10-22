@@ -48,7 +48,7 @@ fn skin_survives_restart_and_can_be_disabled_without_changing_accent() {
 #[test]
 fn community_skins_survive_restart_and_skin_switching_preserves_appearance() {
     let tmp = tempfile::tempdir().unwrap();
-    for initial_skin in ["claude", "gpt"] {
+    for initial_skin in ["claude", "gpt", "gemini", "grok"] {
         let path = tmp.path().join(format!("{initial_skin}.db"));
         {
             let engine = Engine::open(&path).unwrap();
@@ -63,7 +63,7 @@ fn community_skins_survive_restart_and_skin_switching_preserves_appearance() {
         let engine = Engine::open(&path).unwrap();
         let snapshot = engine.execute("snapshot", json!({})).unwrap();
         assert_eq!(snapshot["config"]["interfaceSkin"], initial_skin);
-        for skin in ["deepseek", "claude", "gpt", "none"] {
+        for skin in ["deepseek", "claude", "gpt", "gemini", "grok", "none"] {
             let mut config = engine.lock().unwrap().config().unwrap();
             assert_eq!(config.skin_transparency, 32);
             assert_eq!(config.skin_mask_strength, 71);

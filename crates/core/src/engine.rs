@@ -72,7 +72,14 @@ impl Engine {
     }
     pub fn execute(&self, name: &str, args: Value) -> Result<Value> {
         match name {
+            "network_settings"
+            | "save_network_settings"
+            | "test_network_settings"
+            | "fetch_models_dev" => crate::network::execute(self, name, args),
             "provider_accounts"
+            | "provider_account_history"
+            | "provider_account_test_query"
+            | "provider_session_sources"
             | "provider_account_routes"
             | "provider_account_save"
             | "provider_account_delete"
@@ -107,7 +114,7 @@ impl Engine {
                 anyhow::ensure!(
                     matches!(
                         c.interface_skin.as_str(),
-                        "none" | "deepseek" | "claude" | "gpt"
+                        "none" | "deepseek" | "claude" | "gpt" | "gemini" | "grok"
                     ),
                     "Unsupported interface skin"
                 );
@@ -217,24 +224,29 @@ impl Engine {
             "models_needing_prices" => {
                 let s = self.read_lock()?;
                 let prices = s.prices()?;
-                let mut stmt=s.conn.prepare_cached("SELECT model,provider,MAX(amount_usd IS NULL) FROM usage_index WHERE origin='local' AND deleted=0 AND record_source='session' AND cost_method<>'reported' GROUP BY model,provider")?;
+                let mut stmt=s.conn.prepare_cached("SELECT model,provider,MAX(amount_usd IS NULL),harness,MAX(input_tokens+output_tokens+cache_read+cache_write)>0 FROM usage_index WHERE origin='local' AND deleted=0 AND record_source='session' AND cost_method<>'reported' AND (harness NOT IN ('copliot-deprecated','copliot') OR input_tokens+output_tokens+cache_read+cache_write>0) GROUP BY model,provider,harness")?;
                 let rows = stmt
                     .query_map([], |r| {
                         Ok((
                             r.get::<_, String>(0)?,
                             r.get::<_, Option<String>>(1)?,
                             r.get::<_, bool>(2)?,
+                            r.get::<_, String>(3)?,
+                            r.get::<_, bool>(4)?,
                         ))
                     })?
                     .collect::<Result<Vec<_>, _>>()?;
                 let models: std::collections::BTreeSet<_> = rows
                     .into_iter()
-                    .filter(|(model, provider, unknown)| {
+                    .filter(|(_, _, _, harness, has_tokens)| {
+                        self.permits_price_estimates(harness, *has_tokens)
+                    })
+                    .filter(|(model, provider, unknown, _, _)| {
                         *unknown
                             || pricing::find_for_provider(&prices, model, provider.as_deref())
                                 .is_none()
                     })
-                    .map(|(model, _, _)| model)
+                    .map(|(model, _, _, _, _)| model)
                     .collect();
                 Ok(json!(models))
             }
@@ -250,13 +262,20 @@ impl Engine {
                     settings.updated_at = chrono::Utc::now().timestamp();
                     pricing::validate_settings(&settings)?;
                     s.set_meta("pricing_settings", &settings)?;
-                    Self::reprice(&s, false, None)?;
+                    self.reprice(&s, false, None, None)?;
                     Ok(json!(settings))
                 })
             }
             "reprice_usage" => {
                 let s = self.lock()?;
-                s.transaction(|| Ok(json!(Self::reprice(&s, true, args["model"].as_str())?)))
+                s.transaction(|| {
+                    Ok(json!(self.reprice(
+                        &s,
+                        true,
+                        args["model"].as_str(),
+                        args["harness"].as_str()
+                    )?))
+                })
             }
             "save_prices" => self.save_prices(args, false),
             "save_prices_detailed" => self.save_prices(args, true),
@@ -477,14 +496,33 @@ impl Engine {
         self.scan_unlocked(force)
     }
     fn scan_unlocked(&self, force: bool) -> Result<ScanReport> {
+        self.scan_selected(force, None)
+    }
+    /// Import one configured harness without scanning unrelated logs.
+    pub fn scan_harness(&self, harness: &str, force: bool) -> Result<ScanReport> {
+        self.registry.get(harness)?;
+        let _guard = self
+            .scan_lock
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Scan lock poisoned"))?;
+        self.scan_selected(force, Some(harness))
+    }
+    fn scan_selected(&self, force: bool, selected: Option<&str>) -> Result<ScanReport> {
         let config = self.lock()?.config()?;
         let mut report = ScanReport::default();
         let mut inputs = Vec::new();
         let mut paths = HashSet::new();
         crate::scan_cache::migrate_contexts(&*self.lock()?)?;
+        if selected.is_none_or(|h| h == "codex") {
+            crate::codex_scan::scan(self, force, &mut report)?;
+        }
         let mut index = TimelineIndex::new();
         let mut unavailable = HashSet::new();
-        for source in config.sources.iter().filter(|s| s.enabled) {
+        for source in config
+            .sources
+            .iter()
+            .filter(|s| s.enabled && s.harness != "codex" && selected.is_none_or(|h| h == s.harness))
+        {
             let adapter = self.registry.get(&source.harness)?;
             let found = match adapter.discover(Path::new(&source.root)) {
                 Ok(xs) => xs,
@@ -567,7 +605,11 @@ impl Engine {
                             stamp,
                         ));
                     }
-                    Err(e) => report.errors.push(format!("{}: {e}", path.display())),
+                    Err(e) => {
+                        report.files_scanned += 1;
+                        report.deferred_files += 1;
+                        report.errors.push(format!("{}: {e}", path.display()));
+                    }
                 }
             }
         }
@@ -690,7 +732,8 @@ impl Engine {
                             || (harness=="claude" && r.parser_version!=descriptor.parser_version);
                         upgrading && r.model==parsed.model && r.tokens==billing_tokens && r.provider==parsed.provider
                     });
-                    let mut cost=if let Some(old)=metadata_upgrade { old.cost.clone() } else { pricing::resolve_with_settings(&parsed,old.as_ref(),&prices,&pricing_settings)? };
+                    let mut cost=if !adapter.allows_price_estimates(parsed.tokens.total()>0) { Cost { rule_version:"unknown".into(), ..Default::default() } } else if let Some(old)=metadata_upgrade { old.cost.clone() } else { pricing::resolve_with_settings(&parsed,old.as_ref(),&prices,&pricing_settings)? };
+                    if matches!(harness.as_str(), "copliot-deprecated" | "copliot") && cost.method=="estimated" { cost.billing_basis=Some("model_reference".into()); }
                     if let Some(old)=old.as_ref().filter(|r|harness=="codex" && r.model==parsed.model && r.tokens==parsed.tokens && r.provider==parsed.provider) {
                         // Overlapping log copies may visit the upgraded record again.
                         // A quote's timestamp alone is not a new price.
@@ -793,7 +836,7 @@ impl Engine {
                 saved += 1;
             }
             s.set_meta("prices", &prices)?;
-            let usage_changed = Self::reprice(&s, false, None)?;
+            let usage_changed = self.reprice(&s, false, None, None)?;
             Ok(if detailed {
                 json!({"saved":saved,"usageChanged":usage_changed})
             } else {
@@ -802,12 +845,26 @@ impl Engine {
         })
     }
     /// Local session estimates only. Reported amounts, migrations and remote facts are immutable here.
-    fn reprice(s: &Store, include_estimated: bool, model: Option<&str>) -> Result<u64> {
+    fn permits_price_estimates(&self, harness: &str, has_tokens: bool) -> bool {
+        self.registry
+            .get(harness)
+            .map(|a| a.allows_price_estimates(has_tokens))
+            .unwrap_or(true)
+    }
+    fn reprice(
+        &self,
+        s: &Store,
+        include_estimated: bool,
+        model: Option<&str>,
+        harness: Option<&str>,
+    ) -> Result<u64> {
         let prices = s.prices()?;
         let settings = s.pricing_settings()?;
         let mut changed = 0;
         for mut r in s.local_records()?.into_iter().filter(|r| {
             !r.deleted
+                && harness.is_none_or(|h| r.harness == h)
+                && self.permits_price_estimates(&r.harness, r.tokens.total() > 0)
                 && r.record_source == "session"
                 && r.grain == "event"
                 && r.cost.method != "reported"
@@ -818,7 +875,12 @@ impl Engine {
             if let Some(price) =
                 pricing::find_for_provider(&prices, &r.model, r.provider.as_deref())
             {
-                let cost = pricing::estimate_at(&r.tokens, price, r.occurred_at, &settings)?;
+                let mut cost = pricing::estimate_at(&r.tokens, price, r.occurred_at, &settings)?;
+                if matches!(r.harness.as_str(), "copliot-deprecated" | "copliot")
+                    && cost.method == "estimated"
+                {
+                    cost.billing_basis = Some("model_reference".into());
+                }
                 // Do not erase a known estimate when a rate or historical calendar is missing.
                 if r.cost.amount_usd.is_some() && cost.amount_usd.is_none() {
                     continue;
@@ -974,10 +1036,8 @@ impl Engine {
             "Use HTTPS for remote sync servers"
         );
         let base = config.server_url.trim_end_matches('/');
-        let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(15))
-            .redirect(reqwest::redirect::Policy::none())
-            .build()?;
+        let network = crate::network::load(&*self.read_lock()?)?;
+        let client = network.client()?;
         let health: Value = client
             .get(format!("{base}/health"))
             .bearer_auth(&config.server_token)

@@ -39,6 +39,7 @@ export interface UsageProviderLabel {
 export function getUsageProviderLabel(
   name: string | undefined,
   t: TFunction,
+  customName?: string,
 ): UsageProviderLabel {
   if (!name) {
     const label = t("usage.unknownProvider");
@@ -53,8 +54,8 @@ export function getUsageProviderLabel(
         ? t("scope.provider.deepseekOfficial", "DeepSeek 官方")
         : (PROVIDER_LABELS[name] ?? name);
     return {
-      label,
-      shortLabel: label,
+      label: customName ?? label,
+      shortLabel: customName ?? label,
       hint: t("scope.provider.routeHint", {
         defaultValue:
           "日志中的供应商 ID：{{id}}；代表配置的路由，不保证上游身份。",

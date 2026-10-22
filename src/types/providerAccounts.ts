@@ -4,7 +4,33 @@ import type {
   ResolvedCodexCapacity,
 } from "./codexAllowances";
 
-export type AccountProvider = "deepseek" | "opencode-go" | "openai-codex";
+export type AccountProvider = "deepseek" | "opencode-go" | "openai-codex" | "custom" | `custom:${string}`;
+export interface CustomQuerySettings {
+  enabled: boolean;
+  baseUrl: string;
+  script: string;
+  timeoutSeconds: number;
+}
+export interface CustomUsageItem {
+  id: string;
+  planName: string | null;
+  unit: string | null;
+  remaining: string | null;
+  used: string | null;
+  total: string | null;
+  usedPercent: string | null;
+  resetsAt: number | null;
+  durationMinutes: number | null;
+  windowType: "fixed" | "rolling" | null;
+}
+export interface CustomUsage { kind: "customUsage"; items: CustomUsageItem[] }
+export interface ProviderSessionSource {
+  providerId: string | null;
+  providerName: string | null;
+  accountId: string | null;
+  model: string;
+  requests: number;
+}
 export type CodexPlan = "plus" | "pro100" | "pro200" | "pro500";
 export interface CodexSettings {
   plan: CodexPlan;
@@ -31,6 +57,7 @@ export interface ProviderAccount {
   subscription: AccountSubscription;
   refresh: RefreshPolicy;
   codex?: CodexSettings;
+  custom?: CustomQuerySettings;
 }
 export interface RefreshPolicy {
   foregroundSeconds: number;
@@ -55,6 +82,7 @@ export type ProviderData =
       }[];
     }
   | { kind: "quota"; windows: QuotaWindow[] }
+  | CustomUsage
   | CodexQuota;
 export interface CodexQuota {
   kind: "codexQuota";
@@ -74,11 +102,61 @@ export interface CodexQuota {
 export interface ProviderAccountView {
   account: ProviderAccount;
   keyConfigured: boolean;
+  canRefresh?: boolean;
   snapshot: { fetchedAt: number; data: ProviderData } | null;
   lastAttemptAt: number | null;
   error: string | null;
   refreshing: boolean;
   weeklyUsageWindow?: WeeklyUsageWindow | null;
+}
+/** Actual successful refreshes. Window/reset/anchor timestamps use Unix seconds. */
+export interface ProviderAccountObservation {
+  version: 1;
+  sequence: number;
+  refreshId: string;
+  accountId: string;
+  accountName: string;
+  accountRevision: string;
+  provider: AccountProvider;
+  observedAtMs: number;
+  observedAtLocal: string;
+  timeZone: string;
+  utcOffsetSeconds: number;
+  source: "refresh";
+  data: ProviderData & { identity?: string | null; identitySource?: string };
+  windows: {
+    bucketId: string | null;
+    windowId: string;
+    usedPercent: number;
+    remainingPercent: string | null;
+    status: QuotaWindow["status"];
+    durationMinutes: number | null;
+    durationSource: "provider" | "providerRule" | "customQuery" | null;
+    resetsAt: number | null;
+    resetsAtLocal: string | null;
+    startsAt: number | null;
+    startsAtLocal: string | null;
+    activeAtSample: boolean;
+    fullQuotaAnchor: {
+      at: number;
+      atLocal: string;
+      remainingPercent: "100";
+      source: "resetMinusDuration";
+      observed: false;
+    } | null;
+  }[];
+}
+export interface ProviderAccountHistoryQuery {
+  id: string;
+  /** Inclusive start / exclusive end, in Unix milliseconds. */
+  startAtMs?: number;
+  endAtMs?: number;
+  beforeSequence?: number;
+  limit?: number;
+}
+export interface ProviderAccountHistory {
+  observations: ProviderAccountObservation[];
+  nextCursor: number | null;
 }
 export type AccountUsageRange = "today" | "month" | "subscription" | "weekly";
 export interface WeeklyUsageWindow {
@@ -97,6 +175,7 @@ export interface AccountSave {
   clearApiKey?: boolean;
   refresh: RefreshPolicy;
   codex?: CodexSettings;
+  custom?: CustomQuerySettings;
 }
 
 export interface CodexReferenceWindow {

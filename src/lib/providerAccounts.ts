@@ -1,10 +1,35 @@
-import type { QuotaWindow } from "@/types/providerAccounts";
+import type { QuotaWindow, ProviderAccountView, AccountProvider, CustomUsageItem } from "@/types/providerAccounts";
 
 export const ACCOUNT_PROVIDER_NAMES = {
   deepseek: "DeepSeek",
   "opencode-go": "OpenCode Go",
   "openai-codex": "OpenAI / Codex",
 };
+export const isCustomProvider = (provider: string) => provider === "custom" || provider.startsWith("custom:");
+export function accountProviderName(provider: AccountProvider, accounts: ProviderAccountView[] = [], zh = true) {
+  if (isCustomProvider(provider)) return accounts.find(v => v.account.provider === provider)?.account.name ?? (zh ? "自定义供应商" : "Custom provider");
+  return ACCOUNT_PROVIDER_NAMES[provider as keyof typeof ACCOUNT_PROVIDER_NAMES];
+}
+export function accountCanRefresh(view: ProviderAccountView) {
+  return view.canRefresh ?? (view.account.custom
+    ? view.account.custom.enabled && (!view.account.custom.script.includes("{{apiKey}}") || view.keyConfigured)
+    : view.account.provider === "openai-codex" || view.keyConfigured);
+}
+export function customUsageValue(value: string | null, unit: string | null, locale: string) {
+  if (value == null) return "—";
+  if (unit && /^[A-Z]{3}$/.test(unit)) return nativeMoney(value, unit, locale);
+  return `${Number(value).toLocaleString(locale, { maximumFractionDigits: 8 })}${unit ? ` ${unit}` : ""}`;
+}
+export function customRemainingPercent(item: CustomUsageItem, now: number) {
+  if (item.usedPercent == null || (item.resetsAt != null && item.resetsAt <= now)) return null;
+  return Math.max(0, Math.min(100, 100 - Number(item.usedPercent)));
+}
+/** Raw IDs stay the filter keys. Cross-tool aggregates only alias an unambiguous name. */
+export function customProviderName(accounts: ProviderAccountView[], provider: string | undefined, harness?: string) {
+  if (!provider) return undefined;
+  const matches = accounts.filter(v => isCustomProvider(v.account.provider) && v.account.links.some(l => l.provider === provider && (!harness || harness === "all" || l.harness === harness)));
+  return matches.length === 1 ? matches[0].account.name : undefined;
+}
 export const routeKey = (route: { harness: string; provider: string }) =>
   JSON.stringify([route.harness, route.provider]);
 
@@ -39,6 +64,14 @@ export function nativeMoney(
 }
 export function accountError(message: string, zh: boolean) {
   if (!zh) return message;
+  if (message.includes("Custom query script failed")) return "查询脚本执行失败，请检查语法、同步返回值，或是否超出执行限制。";
+  if (message.includes("configured base URL origin")) return "请求地址必须与 Base URL 使用相同的协议、域名和端口。";
+  if (message.includes("Custom query reports an invalid")) return "查询结果报告账号无效或不可用。";
+  if (message.includes("Custom query returned no usage values")) return "查询结果没有有效的余额、用量或百分比，请检查提取字段。";
+  if (message.includes("stable id")) return "返回多条结果时，每条必须填写独立且稳定的 id。";
+  if (message.includes("Duplicate custom query item")) return "查询结果中存在重复的 id。";
+  if (message.includes("Invalid custom query amount")) return "用量数值无效，请返回数字或十进制字符串。";
+  if (message.includes("Custom usage query is disabled")) return "此供应商的自定义用量查询已关闭。";
   if (message.includes("Codex executable not found"))
     return "未找到 Codex 程序，请在账号设置中填写 codex.exe 的绝对路径。";
   if (message.includes("Codex home directory not found"))

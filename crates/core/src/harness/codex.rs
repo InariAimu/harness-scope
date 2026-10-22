@@ -1,9 +1,9 @@
 use super::{files, transcript, Descriptor, HarnessAdapter, ParseResult, TimelineIndex};
-use crate::model::{ParsedUsage, Session, Tokens};
+use crate::model::Session;
 use anyhow::Result;
 use serde_json::Value;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     io::{BufRead, BufReader},
     path::Path,
 };
@@ -103,9 +103,6 @@ pub fn session_id(lines: &[Value]) -> Option<&str> {
         .find(|v| v["type"] == "session_meta")
         .and_then(|v| v["payload"]["id"].as_str())
 }
-fn signature(v: &Value) -> String {
-    format!("{}|{}", v["timestamp"], v["payload"]["info"])
-}
 fn parent_id(meta: &Value) -> Option<&str> {
     meta["payload"]["forked_from_id"]
         .as_str()
@@ -115,28 +112,12 @@ fn parent_id(meta: &Value) -> Option<&str> {
                 .and_then(Value::as_str)
         })
 }
-fn is_usage(v: &Value) -> bool {
-    v["type"] == "event_msg"
-        && v["payload"]["type"] == "token_count"
-        && v["payload"]["info"].is_object()
-}
-fn counts(v: &Value) -> [u64; 5] {
-    [
-        files::number(v, "input_tokens"),
-        files::number(v, "output_tokens"),
-        files::number(v, "cached_input_tokens"),
-        v.get("cache_write_input_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or_else(|| files::number(v, "cache_creation_input_tokens")),
-        files::number(v, "reasoning_output_tokens"),
-    ]
-}
 impl HarnessAdapter for Codex {
     fn context_id(&self, events: &[Value]) -> Option<String> {
         session_id(events).map(|id| format!("codex:{id}"))
     }
     fn context_events(&self, events: &[Value]) -> Vec<Value> {
-        events.iter().filter(|v|is_usage(v)).map(|v|serde_json::json!({"type":"event_msg","timestamp":v["timestamp"],"payload":{"type":"token_count","info":v["payload"]["info"]}})).collect()
+        super::codex_usage::context(events)
     }
     fn parent_context(&self, events: &[Value]) -> Option<String> {
         let meta = events.iter().find(|v| v["type"] == "session_meta")?;
@@ -164,7 +145,7 @@ impl HarnessAdapter for Codex {
         Descriptor {
             id: "codex",
             name: "Codex",
-            parser_version: "codex-v5-request-settings",
+            parser_version: super::codex_usage::VERSION,
             default_roots: vec![
                 home.join("sessions").to_string_lossy().into(),
                 home.join("archived_sessions").to_string_lossy().into(),
@@ -175,145 +156,7 @@ impl HarnessAdapter for Codex {
         }
     }
     fn parse(&self, path: &Path, lines: &[Value], index: &TimelineIndex) -> Result<ParseResult> {
-        let mut out = ParseResult {
-            complete: true,
-            ..Default::default()
-        };
-        let Some(session) = session_id(lines) else {
-            anyhow::bail!("{}: missing session_meta.id", path.display())
-        };
-        let meta = lines.iter().find(|v| v["type"] == "session_meta").unwrap();
-        let parent = parent_id(meta);
-        let mut inherited = HashSet::new();
-        let mut baseline: Option<[u64; 5]> = None;
-        if let Some(parent) = parent {
-            let Some(parent_lines) = index.get(&format!("codex:{parent}")) else {
-                out.complete = false;
-                out.diagnostics.push(format!(
-                    "{session}: parent {parent} is missing; usage deferred"
-                ));
-                return Ok(out);
-            };
-            let cutoff = files::timestamp(&meta["timestamp"]);
-            for v in parent_lines.iter().filter(|v| is_usage(v)) {
-                if cutoff
-                    .is_some_and(|at| files::timestamp(&v["timestamp"]).is_some_and(|t| t > at))
-                {
-                    continue;
-                }
-                inherited.insert(signature(v));
-                if v["payload"]["info"]["total_token_usage"].is_object() {
-                    baseline = Some(counts(&v["payload"]["info"]["total_token_usage"]));
-                }
-            }
-        }
-        let mut model = "unknown".to_owned();
-        let mut provider = crate::providers::parse(meta["payload"]["model_provider"].as_str());
-        let mut seen = HashSet::new();
-        let mut ordinal = 0;
-        let mut timer = super::codex_timing::RequestTimer::default();
-        let mut settings = super::codex_settings::Settings::default();
-        for v in lines {
-            timer.observe(v);
-            settings.observe(v);
-            if v["type"] == "turn_context" || v["type"] == "session_meta" {
-                if let Some(id) = crate::providers::parse(v["payload"]["model_provider"].as_str()) {
-                    provider = Some(id);
-                }
-                if let Some(m) = v["payload"]["model"].as_str() {
-                    model = m.into()
-                }
-            }
-            if !is_usage(v) {
-                continue;
-            }
-            ordinal += 1;
-            let sig = signature(v);
-            if !seen.insert(sig.clone()) {
-                continue;
-            }
-            let info = &v["payload"]["info"];
-            if let Some(invalid) = ["total_token_usage", "last_token_usage"]
-                .iter()
-                .filter(|key| info[**key].is_object())
-                .find_map(|key| files::validate_usage(&info[*key]).err())
-            {
-                out.complete = false;
-                out.diagnostics.push(invalid.to_string());
-                continue;
-            }
-            let total = info["total_token_usage"]
-                .is_object()
-                .then(|| counts(&info["total_token_usage"]));
-            if inherited.contains(&sig) {
-                continue;
-            }
-            // Repeated cumulative snapshots are observations, not additional calls.
-            if total.is_some() && total == baseline {
-                continue;
-            }
-            let delta = if info["last_token_usage"].is_object() {
-                counts(&info["last_token_usage"])
-            } else if let Some(current) = total {
-                match baseline {
-                    Some(previous) => {
-                        if current[0] < previous[0] || current[1] < previous[1] {
-                            out.diagnostics.push(format!("{session}:{ordinal}: cumulative counter reset without last_token_usage; deferred"));
-                            out.complete = false;
-                            baseline = Some(current);
-                            continue;
-                        }
-                        std::array::from_fn(|i| current[i].saturating_sub(previous[i]))
-                    }
-                    None => current,
-                }
-            } else {
-                out.complete = false;
-                out.diagnostics
-                    .push(format!("{session}:{ordinal}: unknown usage fields"));
-                continue;
-            };
-            if let Some(total) = total {
-                baseline = Some(total)
-            }
-            let Some(at) = files::timestamp(&v["timestamp"]) else {
-                out.complete = false;
-                out.diagnostics
-                    .push(format!("{session}:{ordinal}: missing timestamp"));
-                continue;
-            };
-            if delta[2] + delta[3] > delta[0] || delta[4] > delta[1] {
-                out.complete = false;
-                out.diagnostics.push(format!(
-                    "{session}:{ordinal}: invalid cache/reasoning subset"
-                ));
-                continue;
-            }
-            let tokens = Tokens {
-                input: delta[0] - delta[2] - delta[3],
-                output: delta[1],
-                cache_read: delta[2],
-                cache_write: delta[3],
-                cache_write1h: 0,
-                reasoning: delta[4],
-            };
-            if tokens.total() == 0 {
-                continue;
-            }
-            out.usage.push(ParsedUsage {
-                request_metadata: settings.metadata(),
-                provider: provider.clone(),
-                id: format!("codex:{session}:token:{ordinal}"),
-                session_id: session.into(),
-                native_event_id: format!("token:{ordinal}"),
-                occurred_at: at,
-                model: model.clone(),
-                tokens,
-                reported_cost: None,
-                timing: timer.finish(v, delta),
-            });
-        }
-        Ok(out)
+        super::codex_usage::parse(path, lines, index)
     }
     fn read_metadata(&self, path: &Path) -> Result<Vec<Session>> {
         let lines = files::metadata_lines(path)?;

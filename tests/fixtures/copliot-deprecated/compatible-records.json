@@ -1,0 +1,110 @@
+[
+  {
+    "deviceId": "synthetic-device",
+    "id": "copliot-session:synthetic-compatible:request-one",
+    "harness": "copliot-deprecated",
+    "parserVersion": "copliot-deprecated-compatible-v1",
+    "sessionId": "synthetic-compatible",
+    "nativeEventId": "request-one",
+    "occurredAt": 1756684801,
+    "model": "unknown",
+    "grain": "event",
+    "count": 1,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "cacheWrite1h": 0,
+      "reasoning": 0
+    },
+    "cost": {
+      "amountUsd": null,
+      "method": "unknown",
+      "priceSource": "unknown",
+      "pricingModel": null,
+      "pricedAt": 0,
+      "ruleVersion": "unknown",
+      "snapshot": null
+    },
+    "recordSource": "session",
+    "revision": 1,
+    "deleted": false,
+    "statusCode": null,
+    "legacyDate": null,
+    "legacyTimezone": null,
+    "provider": "github-copliot"
+  },
+  {
+    "deviceId": "synthetic-device",
+    "id": "copliot-session:synthetic-compatible:request-two",
+    "harness": "copliot-deprecated",
+    "parserVersion": "copliot-deprecated-compatible-v1",
+    "sessionId": "synthetic-compatible",
+    "nativeEventId": "request-two",
+    "occurredAt": 1756684810,
+    "model": "synthetic-model",
+    "grain": "event",
+    "count": 1,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "cacheWrite1h": 0,
+      "reasoning": 0
+    },
+    "cost": {
+      "amountUsd": null,
+      "method": "unknown",
+      "priceSource": "unknown",
+      "pricingModel": null,
+      "pricedAt": 0,
+      "ruleVersion": "unknown",
+      "snapshot": null
+    },
+    "recordSource": "session",
+    "revision": 1,
+    "deleted": false,
+    "statusCode": null,
+    "legacyDate": null,
+    "legacyTimezone": null,
+    "provider": "github-copliot"
+  },
+  {
+    "deviceId": "synthetic-device",
+    "id": "copliot-session:synthetic-compatible:request-three",
+    "harness": "copliot-deprecated",
+    "parserVersion": "copliot-deprecated-compatible-v1",
+    "sessionId": "synthetic-compatible",
+    "nativeEventId": "request-three",
+    "occurredAt": 1756684820,
+    "model": "synthetic-model",
+    "grain": "event",
+    "count": 1,
+    "tokens": {
+      "input": 0,
+      "output": 20,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "cacheWrite1h": 0,
+      "reasoning": 0
+    },
+    "cost": {
+      "amountUsd": null,
+      "method": "unknown",
+      "priceSource": "unknown",
+      "pricingModel": null,
+      "pricedAt": 0,
+      "ruleVersion": "unknown",
+      "snapshot": null
+    },
+    "recordSource": "session",
+    "revision": 1,
+    "deleted": false,
+    "statusCode": null,
+    "legacyDate": null,
+    "legacyTimezone": null,
+    "provider": "github-copliot"
+  }
+]

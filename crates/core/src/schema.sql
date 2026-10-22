@@ -22,3 +22,11 @@ CREATE INDEX IF NOT EXISTS usage_request ON usage_index((device_id||'|'||id)) WH
 CREATE INDEX IF NOT EXISTS usage_price_candidates ON usage_index(model,provider,amount_usd) WHERE origin='local' AND deleted=0 AND record_source='session' AND cost_method<>'reported';
 CREATE TABLE IF NOT EXISTS usage_state(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL);
 INSERT OR IGNORE INTO usage_state VALUES(1,0);
+-- Device-local successful account refreshes; excluded from usage facts and sync.
+CREATE TABLE IF NOT EXISTS provider_account_observations(seq INTEGER PRIMARY KEY AUTOINCREMENT,refresh_id TEXT NOT NULL UNIQUE,account_id TEXT NOT NULL,provider TEXT NOT NULL,observed_at_ms INTEGER NOT NULL,payload TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS provider_observations_account_seq ON provider_account_observations(account_id,seq DESC);
+CREATE INDEX IF NOT EXISTS provider_observations_account_time ON provider_account_observations(account_id,observed_at_ms);
+-- Local rollout observations/aliases never become remote usage facts.
+CREATE TABLE IF NOT EXISTS codex_source_cache(path TEXT PRIMARY KEY,payload TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS codex_event_bindings(event_id TEXT PRIMARY KEY,record_id TEXT NOT NULL UNIQUE);
+CREATE TABLE IF NOT EXISTS codex_event_sources(event_id TEXT NOT NULL,source_path TEXT NOT NULL,PRIMARY KEY(event_id,source_path));

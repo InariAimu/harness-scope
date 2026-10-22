@@ -15,10 +15,12 @@ rust_decimal.workspace = true
 sha2.workspace = true
 uuid.workspace = true
 reqwest.workspace = true
+hyper-util = { version = "0.1", features = ["client-proxy", "client-proxy-system"] }
 flate2.workspace = true
 walkdir = "2"
 dirs = "6"
 zstd = "0.13"
+rquickjs = "0.11"
 
 [dev-dependencies]
 tempfile = "3"

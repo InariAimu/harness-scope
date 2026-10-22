@@ -1,0 +1,52 @@
+{
+  "fixtureKind": "decoded-agent-host-sqlite-query",
+  "description": "Container keys root/child describe synthetic query results; usage contains decoded JSON from the native TEXT column.",
+  "root": {
+    "provider": "copilotcli",
+    "sessionId": "synthetic-sdk-root",
+    "turns": [{ "id": "turn-root", "event_id": "event-user-root" }],
+    "turn_usage": [
+      {
+        "turn_id": "turn-root",
+        "usage": {
+          "model": "synthetic-model-a",
+          "inputTokens": 50,
+          "outputTokens": 3,
+          "cacheReadTokens": 20,
+          "_meta": {
+            "turnTokenTotals": [
+              { "model": "synthetic-model-a", "inputTokens": 1000, "cachedTokens": 600, "outputTokens": 30 },
+              { "model": "synthetic-model-b", "inputTokens": 200, "cachedTokens": 0, "outputTokens": 10 }
+            ],
+            "directTurnTokenTotals": [
+              { "model": "synthetic-model-a", "inputTokens": 1000, "cachedTokens": 600, "outputTokens": 30 }
+            ],
+            "copilotUsage": { "totalNanoAiu": 150000000, "sessionTotalNanoAiu": 450000000 },
+            "directCopilotUsage": { "totalNanoAiu": 100000000 }
+          }
+        }
+      }
+    ]
+  },
+  "child": {
+    "provider": "copilotcli",
+    "sessionId": "synthetic-sdk-child",
+    "fixtureParentTurn": "turn-root",
+    "turn_usage": [
+      {
+        "turn_id": "turn-child",
+        "usage": {
+          "model": "synthetic-model-b",
+          "inputTokens": 200,
+          "outputTokens": 10,
+          "_meta": {
+            "directTurnTokenTotals": [
+              { "model": "synthetic-model-b", "inputTokens": 200, "cachedTokens": 0, "outputTokens": 10 }
+            ],
+            "copilotUsage": { "totalNanoAiu": 50000000 }
+          }
+        }
+      }
+    ]
+  }
+}

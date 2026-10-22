@@ -1,6 +1,6 @@
 import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import { useMoneyFormat } from "@/hooks/useMoneyFormat";
-import { Fragment, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { UsageTooltipCard } from "./UsageTooltipCard";
 import { usageCalendarDate, usageTimestamp } from "@/lib/usageRange";
 import { useUsageTimezone } from "@/lib/query/usageTimezone";
 import type { UsageChartMetric } from "./composition";
+import { monthLabelVisibility } from "./heatmapMonths";
 
 const WEEKS = 53;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -239,12 +240,49 @@ function buildSpan(
 
   // 月份标签：某一列包含当月 1 号（或第一列）时标出月份
   const monthLabels = weeks.map((column, w) => {
-    if (w === 0) return column[0].date.getMonth() + 1;
-    const first = column.find((cell) => cell.date.getDate() === 1);
-    return first ? first.date.getMonth() + 1 : null;
+    const first = column.find((cell) => cell.date.getDate() === 1 && !cell.future);
+    return first ? first.date.getMonth() + 1
+      : w === 0 ? column[0].date.getMonth() + 1 : null;
   });
 
   return { start, end, weeks, monthLabels, totals };
+}
+
+function HeatmapMonths({ months, locale }: { months: (number | null)[]; locale: string }) {
+  const anchor = useRef<HTMLSpanElement>(null);
+  const [visible, setVisible] = useState<Set<number> | null>(null);
+
+  useLayoutEffect(() => {
+    const grid = anchor.current?.parentElement;
+    if (!grid) return;
+    let active = true;
+    const measure = () => {
+      if (!active) return;
+      const labels = [...grid.querySelectorAll<HTMLElement>("[data-heatmap-month]")];
+      const visibility = monthLabelVisibility(labels.map(label => label.getBoundingClientRect()));
+      const next = new Set(labels.filter((_, i) => visibility[i])
+        .map(label => Number(label.dataset.heatmapMonth)));
+      setVisible(previous => previous?.size === next.size && [...next].every(i => previous.has(i))
+        ? previous : next);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(grid);
+    void document.fonts.ready.then(measure);
+    return () => { active = false; observer.disconnect(); };
+  }, [months, locale]);
+
+  return <>
+    <span ref={anchor} />
+    {months.map((month, w) => (
+      <span key={`m${w}`} className="h-4 overflow-visible whitespace-nowrap text-badge leading-4 text-fg-3">
+        {month != null && <span data-heatmap-month={w}
+          style={{ visibility: visible == null || visible.has(w) ? "visible" : "hidden" }}>
+          {new Date(2024, month - 1, 1).toLocaleDateString(locale, { month: "short" })}
+        </span>}
+      </span>
+    ))}
+  </>;
 }
 
 export function UsageHeatmap({
@@ -383,21 +421,7 @@ export function UsageHeatmap({
                 gridTemplateColumns: `max-content repeat(${WEEKS}, minmax(0, 1fr))`,
               }}
             >
-              <span />
-              {span.weeks.map((_, w) => (
-                <span
-                  key={`m${w}`}
-                  className="h-4 overflow-visible whitespace-nowrap text-badge leading-4 text-fg-3"
-                >
-                  {span.monthLabels[w] != null
-                    ? new Date(
-                        2024,
-                        span.monthLabels[w]! - 1,
-                        1,
-                      ).toLocaleDateString(locale, { month: "short" })
-                    : ""}
-                </span>
-              ))}
+              <HeatmapMonths months={span.monthLabels} locale={locale} />
               {weekdayLabels.map((label, d) => (
                 <Fragment key={`r${d}`}>
                   <span className="pe-1.5 text-badge leading-none text-fg-3">

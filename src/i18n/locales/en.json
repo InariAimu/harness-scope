@@ -4906,6 +4906,7 @@
     }
   },
   "scope": {
+    "unpriced": "unpriced",
     "pricing": {
       "settingsSaved": "Pricing settings saved; eligible unknown costs have been priced.",
       "repriced": "Repriced {{count}} local estimated costs",
@@ -4943,6 +4944,7 @@
       "billingBasis": "Amount basis",
       "subscriptionHint": "Plan allowance usage; excludes subscription fees and actual charges",
       "referenceHint": "models.dev model reference; actual charges depend on the provider bill",
+      "partialReferenceHint": "Estimated from known tokens and model rates only; missing usage is unpriced. This is not the actual Copilot bill.",
       "subscriptionTotalHint": "Includes OpenCode Go plan allowance usage. Excludes monthly plan fees and does not represent total actual charges.",
       "goNote": "OpenCode Go measures USD plan allowance usage, excluding monthly fees. Peak hours are weekdays 01–04 and 06–10 UTC, without Chinese holiday exclusions. Unconfigured providers use models.dev model reference rates, rather than actual bills."
     },

@@ -28,6 +28,7 @@ import {
 } from "./format";
 import { usageTable } from "./usageTable";
 import { getUsageProviderLabel, usageProviderTitle } from "./providerLabel";
+import { useProviderName } from "@/hooks/useProviderName";
 import { useMoneyFormat } from "@/hooks/useMoneyFormat";
 import {
   REQUEST_LOG_COLUMN_LABEL_KEYS,
@@ -170,6 +171,7 @@ export function RequestLogTable({
   columns = DEFAULT_COLUMNS,
 }: RequestLogTableProps) {
   const { t, i18n } = useTranslation();
+  const providerNameFor = useProviderName();
   const formatQuantity = useUsageNumberFormat();
   const { costMoney, usdHint } = useMoneyFormat();
   const [page, setPage] = useState(0);
@@ -257,7 +259,7 @@ export function RequestLogTable({
     const isCacheInclusive = log.inputTokens !== freshInput;
     const time = formatLogTime(log.createdAt, now);
     const fullTime = formatLogFullTime(log.createdAt);
-    const providerLabel = getUsageProviderLabel(log.providerName, t);
+    const providerLabel = getUsageProviderLabel(log.providerName, t, providerNameFor(log.providerName, log.appType));
     const provider = providerLabel.shortLabel;
     const exactTps = formatOutputTokensPerSecond(log);
     // 流片段与端到端两种日志估算都保留 ≈，口径由后端计时来源决定。

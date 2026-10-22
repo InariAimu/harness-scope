@@ -69,9 +69,10 @@ fn binary(settings: &Settings) -> Result<PathBuf> {
         .find(|p| p.is_file())
         .context("Codex executable not found; configure its absolute path")
 }
-pub(super) fn fetch(settings: &Settings) -> Result<Value> {
+pub(super) fn fetch(settings: &Settings, network: &crate::network::Settings) -> Result<Value> {
     validate(settings)?;
-    let (account, limits) = transport::query(&binary(settings)?, settings.home_path.as_deref())?;
+    let (account, limits) =
+        transport::query(&binary(settings)?, settings.home_path.as_deref(), network)?;
     parse(&account, &limits)
 }
 fn parse(account: &Value, limits: &Value) -> Result<Value> {

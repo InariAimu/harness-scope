@@ -97,7 +97,7 @@ pub(super) fn due_at(
                 item.account.refresh.background_seconds
             };
             if seconds == 0
-                || (item.account.provider != "openai-codex" && !vault.exists(&item.account.id))
+                || !can_refresh(&item.account, vault)
                 || engine.account_polling.is_refreshing(&item.account.id)
             {
                 return false;
@@ -142,7 +142,10 @@ pub(super) fn refresh_managed(
     }
     result
 }
-pub(super) fn tick(engine: &Arc<Engine>, fetch: fn(&str, &str) -> Result<Value>) -> Result<usize> {
+pub(super) fn tick(
+    engine: &Arc<Engine>,
+    fetch: fn(&Engine, &str, &str) -> Result<Value>,
+) -> Result<usize> {
     let mut started = 0;
     for id in due_at(
         engine,
@@ -156,7 +159,9 @@ pub(super) fn tick(engine: &Arc<Engine>, fetch: fn(&str, &str) -> Result<Value>)
         let engine = engine.clone();
         std::thread::spawn(move || {
             let _guard = guard;
-            let _ = refresh_with(&engine, &engine.account_vault, &id, fetch);
+            let _ = refresh_with(&engine, &engine.account_vault, &id, |provider, key| {
+                fetch(&engine, provider, key)
+            });
         });
         started += 1;
     }

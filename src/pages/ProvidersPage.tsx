@@ -33,6 +33,9 @@ import {
   nativeMoney,
   quotaDisplay,
   routeKey,
+  accountCanRefresh,
+  accountProviderName,
+  isCustomProvider,
 } from "@/lib/providerAccounts";
 import { ProviderAccountEditor } from "./ProviderAccountEditor";
 import { GoUsagePanel } from "@/components/providers/GoUsagePanel";
@@ -40,6 +43,7 @@ import { CodexReferencePanel } from "@/components/providers/CodexReferencePanel"
 import { codexWindowLabel } from "@/lib/codexSubscription";
 import { cn } from "@/lib/utils";
 import { useProviderAccounts } from "@/lib/query/providerAccounts";
+import { CustomUsagePanel } from "@/components/providers/CustomUsagePanel";
 
 function QuotaCard({
   window,
@@ -109,12 +113,12 @@ function QuotaCard({
 }
 export function ProvidersPage({
   snapshot,
-  accountToEdit,
-  onAccountOpened,
+  accountToSelect,
+  onAccountSelected,
 }: {
   snapshot: Snapshot;
-  accountToEdit?: string;
-  onAccountOpened: () => void;
+  accountToSelect?: string;
+  onAccountSelected: () => void;
 }) {
   const { i18n } = useTranslation();
   const formatQuantity = useUsageNumberFormat();
@@ -128,7 +132,6 @@ export function ProvidersPage({
   const [editing, setEditing] = useState<
     ProviderAccountView | null | undefined
   >();
-  const [editorVersion, setEditorVersion] = useState(0);
   const [range, setRange] = useState<AccountUsageRange>("month");
   const [now, setNow] = useState(() => Date.now() / 1000);
   useEffect(() => {
@@ -138,16 +141,14 @@ export function ProvidersPage({
   const list = useProviderAccounts();
   const accounts = list.data ?? [];
   useEffect(() => {
-    if (!accountToEdit || !list.data) return;
-    const target = list.data.find((v) => v.account.id === accountToEdit);
+    if (!accountToSelect || !list.data) return;
+    const target = list.data.find((v) => v.account.id === accountToSelect);
     if (target) {
       setProvider(target.account.provider);
       setId(target.account.id);
-      setEditing(target);
-      setEditorVersion((v) => v + 1);
     }
-    onAccountOpened();
-  }, [accountToEdit, list.data, onAccountOpened]);
+    onAccountSelected();
+  }, [accountToSelect, list.data, onAccountSelected]);
   const visible = accounts.filter(
     (v) => provider === "all" || v.account.provider === provider,
   );
@@ -258,8 +259,7 @@ export function ProvidersPage({
               variant="neutral"
               disabled={
                 !selected ||
-                (selected.account.provider !== "openai-codex" &&
-                  !selected.keyConfigured) ||
+                !accountCanRefresh(selected) ||
                 refreshing
               }
               onClick={() => account && remote.mutate(account.id)}
@@ -305,6 +305,7 @@ export function ProvidersPage({
                 {label}
               </option>
             ))}
+            {accounts.filter(v => isCustomProvider(v.account.provider)).map(v => <option key={v.account.provider} value={v.account.provider}>{v.account.name}</option>)}
           </OptionSelect>
           <label
             className="text-caption text-fg-2 ms-1"
@@ -370,11 +371,11 @@ export function ProvidersPage({
           <>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-fg-3">
               <span className="text-fg-1 font-medium">
-                {ACCOUNT_PROVIDER_NAMES[account!.provider]}
+                {accountProviderName(account!.provider, accounts, zh)}
               </span>
               <span className="inline-flex items-center gap-1">
                 <KeyRound size={12} />
-                {account!.provider === "openai-codex"
+                {account!.custom && !account!.custom.enabled ? l("用量查询已关闭", "Usage query disabled") : account!.provider === "openai-codex"
                   ? l("使用本机 Codex 登录", "Local Codex login")
                   : selected.keyConfigured
                     ? l("Key 已保存", "Key saved")
@@ -414,6 +415,7 @@ export function ProvidersPage({
               </div>
             )}
             {account!.provider !== "openai-codex" &&
+              !account!.custom &&
               !selected.keyConfigured && (
                 <div className="rounded-control border border-border bg-subtle px-3 py-2 text-caption text-fg-2">
                   {l(
@@ -422,7 +424,12 @@ export function ProvidersPage({
                   )}
                 </div>
               )}
-            {account!.provider === "openai-codex" ? (
+            {account!.custom ? (
+              data?.kind === "customUsage" ? <CustomUsagePanel data={data} zh={zh} locale={locale} timezone={snapshot.config.timezone} /> :
+              <section className="scope-card !p-4 text-caption text-fg-3">{account!.custom.enabled
+                ? l("刷新后显示自定义查询的余额或额度。", "Refresh to see balances or quotas from your custom query.")
+                : l("已用于 Provider ID 归属，可在编辑中启用用量查询。", "Provider ID links are active. Enable usage queries in Edit when needed.")}</section>
+            ) : account!.provider === "openai-codex" ? (
               <div className="space-y-3">
                 {data?.kind === "codexQuota" ? (
                   data.buckets.map((bucket) => (
@@ -819,10 +826,11 @@ export function ProvidersPage({
       </div>
       {editing !== undefined && (
         <ProviderAccountEditor
-          key={`${editing?.account.id ?? "new"}:${editorVersion}`}
+          key={editing?.account.id ?? "new"}
           initial={editing ?? undefined}
           provider={provider === "all" ? "deepseek" : provider}
           accounts={accounts}
+          timezone={snapshot.config.timezone}
           onClose={() => setEditing(undefined)}
           onSaved={(view) => {
             client.setQueryData<ProviderAccountView[]>(

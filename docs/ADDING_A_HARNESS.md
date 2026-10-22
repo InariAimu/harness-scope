@@ -20,7 +20,7 @@
 * 累计字段必须先转换为事件增量；祖先历史和重复快照不计入新用量。无法恢复基线时返回诊断和 `complete=false`。
 * `Tokens.input` 为新增输入。缓存读写与输入互斥；推理 Token 为输出子集，1h 缓存写入为缓存写入子集。
 * 时间必须来自可验证的原始记录，不能回落到导入时刻。
-* `complete=false` 保留原记录并重试，不允许执行全范围撤销。真正的零用量和无法解释的用量必须区分。
+* `complete=false` 保留原记录并重试，不允许执行全范围撤销。默认区分真正的零用量和未知用量；`copliot-deprecated` 的首阶段兼容方案明确采用未知 Token 填 0，仍不能将损坏数据作为缺失值吞掉。
 * `parserVersion` 在解释规则改变时升级，使文件指纹缓存失效。
 * 正文读取和用量读取共享目录配置，但可以采用不同的解析投影。
 * `ParsedUsage.provider` 仅取原生持久化路由 ID；缺失时保持 `None`。不要以当前配置或模型厂商代替历史供应商。新增投影字段时同步更新流式用量白名单，并提升解析器版本以回填历史记录。
@@ -36,3 +36,5 @@ OpenCode 已作为原生 SQLite 适配器实现这一扩展方式，见 `crates/
 DeepSeek Harness 的 JSONL／多帧 Zstandard 适配器见 `crates/core/src/harness/dsh.rs`，版本差异见 [DSH.md](DSH.md)。目录发现限定原生规范 session 文件，按同目录最高版本选择并检查头部版本；使用稳定的 `message.id`，不把迁移后变化的事件序号作为请求身份。流片段不计用量；v0 继承边界使用 `seedLength`，App v4 使用最后一个 `session/end-seed.data.inherited=true`，普通恢复的空标记不能当成分叉边界。没有继承历史的新建子代理保留自己的全部用量。阅读器通过 `injected` 标记隐藏运行时上下文等注入消息，避免多算提问。
 
 当前解析器覆盖测试样本里的 JSONL 和 Zstandard 压缩 JSONL。分页续写及其他版本日志格式应增加对应样本和适配，遇到不支持的来源必须呈现诊断，不把缺少数据当成零使用。
+
+Copilot 的 `copliot-deprecated`／`copliot` 双来源导入另见 [Copilot 导入设计](COPILOT_IMPORT_DESIGN.md)。两类 VS Code 适配器均已注册，共用历史清单划分来源，复用现有字段，未知 Token 填 0、provider 回退为 `github-copliot`。可确认的非零 Token 可按价表计算模型参考费用，未知 Token 不定价；现代来源的覆盖率、不同用量粒度和原生计费用量留待后续。`allows_price_estimates(has_tokens)` 控制扫描、重新计价和待补价格建议，原生 Credits／PRU 不转换成 USD。模型的请求档位仅属于 Codex，不能凭模型名称或 provider 为其他 harness 加上档位。

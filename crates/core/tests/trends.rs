@@ -64,6 +64,40 @@ fn query(e: &Engine, kind: &str, start: i64, end: i64, harness: &str) -> Value {
     .unwrap()
 }
 fn check_totals(rows: &[Value], summary: &Value) {
+    for row in rows {
+        let models = row["modelBreakdown"].as_array().unwrap();
+        for column in ["requestCount", "totalTokens"] {
+            assert_eq!(
+                models
+                    .iter()
+                    .map(|m| m[column].as_u64().unwrap())
+                    .sum::<u64>(),
+                row[column].as_u64().unwrap()
+            );
+        }
+        let cost: rust_decimal::Decimal = models
+            .iter()
+            .map(|m| {
+                m["totalCost"]
+                    .as_str()
+                    .unwrap()
+                    .parse::<rust_decimal::Decimal>()
+                    .unwrap()
+            })
+            .sum();
+        assert_eq!(
+            cost,
+            row["totalCost"]
+                .as_str()
+                .unwrap()
+                .parse::<rust_decimal::Decimal>()
+                .unwrap()
+        );
+        assert_eq!(
+            models.iter().any(|m| m["costConverted"] == true),
+            row["costConverted"].as_bool().unwrap()
+        );
+    }
     for (column, total) in [
         ("requestCount", "totalRequests"),
         ("totalInputTokens", "totalInputTokens"),
@@ -98,6 +132,107 @@ fn check_totals(rows: &[Value], summary: &Value) {
             .parse::<rust_decimal::Decimal>()
             .unwrap()
     );
+}
+
+#[test]
+fn model_breakdown_merges_modes_and_harnesses_with_exact_costs_and_selected_scope() {
+    let tmp = tempfile::tempdir().unwrap();
+    let e = engine(tmp.path(), "Asia/Shanghai");
+    let start = ts("2026-10-22T00:00:00+08:00");
+    for (id, harness) in [
+        ("standard", "codex"),
+        ("fast", "codex"),
+        ("other-app", "opencode"),
+        ("other-model", "claude"),
+    ] {
+        add(&e, id, start + 60, harness);
+        let s = e.lock().unwrap();
+        let mut r = s.record(id).unwrap().unwrap();
+        r.model = if id == "other-model" {
+            "second"
+        } else {
+            "shared"
+        }
+        .into();
+        r.provider = Some(
+            if id == "other-app" {
+                "route-b"
+            } else {
+                "route-a"
+            }
+            .into(),
+        );
+        r.cost.amount_usd = Some("0.123456789".into());
+        r.request_metadata = Some(RequestMetadata {
+            service_tier: Some(id.into()),
+            service_tier_source: Some("thread_settings".into()),
+            reasoning_effort: None,
+        });
+        if id == "fast" {
+            r.cost.conversion = Some(CurrencyConversion {
+                currency: "CNY".into(),
+                original_amount: "0.864197523".into(),
+                units_per_usd: Some("7".into()),
+                configured_at: start,
+            });
+        }
+        s.upsert(r, "synthetic").unwrap();
+    }
+    add(&e, "next-bucket", start + 3600, "codex");
+    add(&e, "outside", start - 1, "codex");
+    let s = e.lock().unwrap();
+    let mut remote = s.record("standard").unwrap().unwrap();
+    remote.id = "remote".into();
+    remote.device_id = "remote-device".into();
+    s.conn
+        .execute(
+            "INSERT INTO remote_records VALUES(?1,?2,?3,?4)",
+            rusqlite::params![
+                remote.device_id,
+                remote.id,
+                remote.revision,
+                serde_json::to_string(&remote).unwrap()
+            ],
+        )
+        .unwrap();
+    let before = s.local_records().unwrap();
+    let pending = s.pending().unwrap();
+    let version = s.usage_version().unwrap();
+    for (filter, expected) in [
+        (json!({}), 3),
+        (json!({"appType":"codex"}), 2),
+        (json!({"providerName":"route-b"}), 1),
+        (json!({"model":"shared","providerName":"route-a"}), 2),
+        (json!({"scope":"all"}), 4),
+        (json!({"scope":"remote-device"}), 1),
+    ] {
+        let mut args = json!({"startDate":start,"endDate":start+7200});
+        args.as_object_mut()
+            .unwrap()
+            .extend(filter.as_object().unwrap().clone());
+        let rows = harness_scope_core::query::query(&s, "trends", &args).unwrap();
+        let models = rows[0]["modelBreakdown"].as_array().unwrap();
+        let shared = models.iter().find(|m| m["model"] == "shared").unwrap();
+        assert_eq!(shared["requestCount"], expected);
+        assert_eq!(shared["totalTokens"], expected * 19);
+        assert_eq!(
+            shared["totalCost"]
+                .as_str()
+                .unwrap()
+                .parse::<rust_decimal::Decimal>()
+                .unwrap(),
+            "0.123456789".parse::<rust_decimal::Decimal>().unwrap()
+                * rust_decimal::Decimal::from(expected)
+        );
+        assert!(!models.iter().any(|m| m["model"] == "fixture"));
+        check_totals(
+            rows.as_array().unwrap(),
+            &harness_scope_core::query::query(&s, "summary", &args).unwrap(),
+        );
+    }
+    assert_eq!(before, s.local_records().unwrap());
+    assert_eq!(pending, s.pending().unwrap());
+    assert_eq!(version, s.usage_version().unwrap());
 }
 
 #[test]

@@ -92,7 +92,7 @@ fn modes_keep_weighted_timings_unknowns_and_other_tiers_separate_without_changin
     let version = s.usage_version().unwrap();
     let stats = query::query(&s, "models", &json!({})).unwrap();
     let stats = stats.as_array().unwrap();
-    assert_eq!(stats.len(), 5);
+    assert_eq!(stats.len(), 6);
     let mode = |name| stats.iter().find(|v| v["requestMode"] == name).unwrap();
     let standard = mode("standard");
     assert_eq!(standard["requestCount"], 2);
@@ -105,7 +105,13 @@ fn modes_keep_weighted_timings_unknowns_and_other_tiers_separate_without_changin
     assert_eq!(fast["estSpeedSampleCount"], 1);
     assert_eq!(fast["estSpeedOutputTokens"], 1000);
     assert_eq!(fast["estFirstTokenMedianMs"], 200.0);
-    assert_eq!(mode("unknown")["requestCount"], 2);
+    assert_eq!(mode("unknown")["requestCount"], 1);
+    let external_gpt = stats
+        .iter()
+        .find(|v| v["model"] == "openai/gpt-fixture" && v["requestMode"].is_null())
+        .unwrap();
+    assert_eq!(external_gpt["appType"], "opencode");
+    assert_eq!(external_gpt["requestCount"], 1);
     assert_eq!(mode("flex")["requestCount"], 1);
     assert!(stats
         .iter()
@@ -205,4 +211,45 @@ fn device_provider_model_and_time_filters_apply_before_mode_grouping() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[test]
+fn gpt_names_and_openai_provider_do_not_enable_modes_for_other_harnesses() {
+    let tmp = tempfile::tempdir().unwrap();
+    let engine = Engine::open(&tmp.path().join("scope.db")).unwrap();
+    let store = engine.lock().unwrap();
+    let device = store.device_id().unwrap();
+    for harness in ["copliot-deprecated", "copliot", "opencode", "dsh", "claude"] {
+        let mut row = record(&device, harness, None, 300, 3000, 800);
+        row.harness = harness.into();
+        row.timing = None;
+        store.upsert(row, "synthetic").unwrap();
+    }
+    store
+        .upsert(
+            record(&device, "codex", Some("priority"), 300, 3000, 800),
+            "synthetic",
+        )
+        .unwrap();
+    let all = query::query(&store, "models", &json!({})).unwrap();
+    assert_eq!(all.as_array().unwrap().len(), 2);
+    let ungrouped = all
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["requestMode"].is_null())
+        .unwrap();
+    assert_eq!(ungrouped["requestCount"], 5);
+    let fast = all
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["requestMode"] == "fast")
+        .unwrap();
+    assert_eq!(fast["appType"], "codex");
+    assert_eq!(fast["requestCount"], 1);
+    for harness in ["copliot-deprecated", "copliot", "opencode", "dsh", "claude"] {
+        let filtered = query::query(&store, "models", &json!({"appType":harness})).unwrap();
+        assert!(filtered[0]["requestMode"].is_null());
+    }
 }

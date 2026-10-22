@@ -33,6 +33,7 @@ import {
 } from "./format";
 import { appDisplayName } from "./RequestLogTable";
 import { getUsageProviderLabel } from "./providerLabel";
+import { useProviderName } from "@/hooks/useProviderName";
 
 interface RequestDetailPanelProps {
   /** 要看的请求；null 时抽屉关闭 */
@@ -87,6 +88,7 @@ function DetailSection({ title, rows }: { title: string; rows: DetailRow[] }) {
 
 function useDetailSections(request: RequestLog) {
   const { t, i18n } = useTranslation();
+  const providerNameFor = useProviderName();
   const { costMoney, moneyTitle } = useMoneyFormat();
   const usd = (value: string) => costMoney(value, 4, request.costConverted);
   const locale = getLocaleFromLanguage(getResolvedLang(i18n));
@@ -115,7 +117,7 @@ function useDetailSections(request: RequestLog) {
     {
       key: "provider",
       label: t("usage.provider"),
-      value: getUsageProviderLabel(request.providerName, t).shortLabel,
+      value: getUsageProviderLabel(request.providerName, t, providerNameFor(request.providerName, request.appType)).shortLabel,
     },
     {
       key: "providerId",
@@ -288,7 +290,10 @@ function useDetailSections(request: RequestLog) {
               "scope.pricing.subscriptionHint",
               "套餐额度折算，不含月费或实际扣款",
             )
-          : t(
+          : ["copliot-deprecated", "copliot"].includes(request.appType) ? t(
+              "scope.pricing.partialReferenceHint",
+              "仅按已知 Token 和模型价表估算，缺失用量未计价；不代表 Copilot 实际账单",
+            ) : t(
               "scope.pricing.referenceHint",
               "models.dev 模型参考价，实际费用以供应商账单为准",
             ),
@@ -549,6 +554,7 @@ export function RequestDetailPanel({
   onClose,
 }: RequestDetailPanelProps) {
   const { t } = useTranslation();
+  const providerNameFor = useProviderName();
   const {
     data: request,
     isLoading,
@@ -560,7 +566,7 @@ export function RequestDetailPanel({
     ? [
         new Date(request.createdAt * 1000).toLocaleString(),
         appDisplayName(request.appType),
-        getUsageProviderLabel(request.providerName, t).shortLabel,
+        getUsageProviderLabel(request.providerName, t, providerNameFor(request.providerName, request.appType)).shortLabel,
       ].join(" · ")
     : undefined;
 

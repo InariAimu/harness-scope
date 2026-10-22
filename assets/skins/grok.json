@@ -1,0 +1,16 @@
+{
+  "id": "grok",
+  "artwork": "grok.png",
+  "source": "../grok.jpg",
+  "designReference": "grok-reference.png",
+  "generator": "built-in image_gen",
+  "faceAnchor": {
+    "x": 0.48,
+    "y": 0.17
+  },
+  "viewportAnchor": {
+    "x": 0.66667,
+    "y": 0.33333
+  },
+  "prompt": "Use case: identity-preserve.\nAsset type: one transparent anime character for a desktop application's right-side background skin.\nPrimary reference image 1 (assets/grok.jpg) controls the exact identity, face, pose and outfit: blonde long curly twin tails tied with large black bows, tiny black bat-wing ornaments beside pointed ears, small black-and-gold crown with ring motif above a WHITE RUFFLED MAID HEADBAND, ahoge, bright blue viewer-left eye open and viewer-right eye winking, cheerful open smile with tiny fang. Preserve her white-gloved viewer-left hand raised beside her face making a V/peace sign, slight head tilt, black puff-sleeved maid dress, white pointed collar, black neck bow and gold ring brooch, white ruffled bodice trim, gold buttons and white waist apron. Match the main image's charming energetic expression and refined anime linework.\nSupporting reference image 2 is only for details absent from the primary: flowing blonde curls, small crown and bat hair ornaments, gold ring decorations, delicate gold embroidery around a long black layered skirt, subtle burgundy lining, dark stockings and black shoes. Primary maid costume and V-sign pose take priority. Do not copy the large axe or weapon pose, high vampire collar, long sleeves, or remove the main image's white apron/headband. Other hand can rest naturally at the skirt's side.\nCreate ONE full-body upright single-view illustration, portrait canvas about 2:3, genuinely transparent RGBA background. Face near horizontal center, complete crown, hair, hands, skirt and shoes with a small transparent margin; character fills most of the canvas height. Preserve black/white/gold palette with warm golden hair and small burgundy skirt lining accents. Clean fine linework, soft detailed shading matching image 1, no redesign into another character. No weapon, extra characters, cat ears, dragon horns, wings on the back or animal tail. Remove all poster text and yellow backdrop. No text, letters, watermark, border, scenery, floor, cast shadow, glow outside silhouette or checkerboard. Render character at normal opacity; the app handles the upper-right thirds placement and readability veil separately."
+}

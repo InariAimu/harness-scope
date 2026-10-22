@@ -82,6 +82,7 @@ pub fn read(path: &Path) -> Result<(Vec<Value>, String, Vec<String>, bool)> {
                 if let Some(m) = v.as_object_mut() {
                     m.insert("_scopeOffset".into(), serde_json::json!(begin));
                     m.insert("_scopeLen".into(), serde_json::json!(part.len()));
+                    m.insert("_scopeLine".into(), serde_json::json!(i + 1));
                 }
                 values.push(v)
             }

@@ -22,6 +22,8 @@ export function CodexDeadlineInput({
   zh: boolean;
 }) {
   const l = (a: string, b: string) => (zh ? a : b);
+  const setNow = () =>
+    onChange(deadlineDraft(Math.floor(Date.now() / 1000), timeZone));
   const edit = (value: string, pst: boolean) => {
     const at = parseDeadlineWallTime(value, pst ? "PST" : timeZone);
     onChange({
@@ -45,6 +47,7 @@ export function CodexDeadlineInput({
             )}
             value={draft.local}
             onValueChange={(value) => edit(value, false)}
+            onNow={setNow}
             today={usageCalendarDate(Date.now() / 1000, timeZone)}
             aria-invalid={draft.at == null}
           />
@@ -57,6 +60,7 @@ export function CodexDeadlineInput({
             aria-label={l("目标时间（PST）", "Target time (PST)")}
             value={draft.pst}
             onValueChange={(value) => edit(value, true)}
+            onNow={setNow}
             today={usageCalendarDate(Date.now() / 1000 - 8 * 3600, "UTC")}
             aria-invalid={draft.at == null}
           />

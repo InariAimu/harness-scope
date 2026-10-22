@@ -31,6 +31,12 @@ const PAYLOAD: Projection = Fields(&[
     ),
     ("model_provider", All),
     ("id", All),
+    ("thread_id", All),
+    ("threadId", All),
+    ("response_id", All),
+    ("history_mode", All),
+    ("history_base", Fields(&[("thread_id", All)])),
+    ("rate_limits", Fields(&[("limit_id", All)])),
     ("type", All),
     ("model", All),
     ("role", All),
@@ -157,7 +163,14 @@ pub fn read(path: &Path, codex: bool) -> Result<(Vec<Value>, String, Vec<String>
                 Ok(v)
             });
         match result {
-            Ok(v) => rows.push(v),
+            Ok(mut v) => {
+                if codex {
+                    if let Some(object) = v.as_object_mut() {
+                        object.insert("_scopeLine".into(), number.into());
+                    }
+                }
+                rows.push(v)
+            }
             Err(e) => errors.push(format!(
                 "{}:{number}: {}{e}",
                 path.display(),

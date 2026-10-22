@@ -231,7 +231,7 @@ export function UsageHero({
             <MetricCard
               label={
                 summary?.unpricedCount
-                  ? `${t("usage.totalCost")} (${summary.unpricedCount} ${t("scope.unpriced", "条缺价")})`
+                  ? `${t("usage.totalCost")} (${summary.unpricedCount} ${t("scope.unpriced", "条未计价")})`
                   : t("usage.totalCost")
               }
               value={

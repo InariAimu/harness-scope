@@ -87,7 +87,7 @@ export function ModelStatsTable({
                       title={stat.model}
                     >
                       <span className="min-w-0 truncate">{stat.model}</span>
-                      {stat.requestMode && (
+                      {stat.appType === "codex" && stat.requestMode && (
                         <span
                           className={cn("shrink-0 rounded px-1.5 py-0.5 text-badge font-normal",
                             stat.requestMode === "fast" ? "bg-action-soft text-action-text" : "bg-subtle text-fg-2")}

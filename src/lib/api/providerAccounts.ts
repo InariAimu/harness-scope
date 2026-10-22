@@ -6,11 +6,20 @@ import type {
   AccountUsage,
   AccountUsageRange,
   ProviderAccountView,
+  ProviderAccountHistory,
+  ProviderAccountHistoryQuery,
   CodexReference,
   CodexPlan,
+  CustomQuerySettings,
+  CustomUsage,
+  ProviderSessionSource,
 } from "@/types/providerAccounts";
 
 export const providerAccountsApi = {
+  testQuery: (args: { id?: string; settings: CustomQuerySettings; apiKey?: string; clearApiKey?: boolean }) =>
+    command<CustomUsage>("provider_account_test_query", args),
+  sessionSources: (harness: string, sessionId: string) =>
+    command<ProviderSessionSource[]>("provider_session_sources", { harness, sessionId }),
   codexEstimate: (args: {
     mode?: CodexAllowanceMode;
     id: string;
@@ -21,6 +30,8 @@ export const providerAccountsApi = {
     pace: string;
   }) => command<CodexReference>("codex_subscription_estimate", args),
   list: () => command<ProviderAccountView[]>("provider_accounts"),
+  history: (args: ProviderAccountHistoryQuery) =>
+    command<ProviderAccountHistory>("provider_account_history", args),
   routes: () => command<AccountRoute[]>("provider_account_routes"),
   save: (account: AccountSave) =>
     command<ProviderAccountView>("provider_account_save", account),

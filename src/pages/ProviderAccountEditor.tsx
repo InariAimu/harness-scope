@@ -22,11 +22,14 @@ import {
   ACCOUNT_PROVIDER_NAMES,
   accountError,
   routeKey,
+  accountProviderName,
+  isCustomProvider,
 } from "@/lib/providerAccounts";
 import { useUnsavedChangesTracker } from "@/lib/unsavedChanges";
 import { toast } from "@/lib/toast";
 import { CODEX_PLANS } from "@/lib/codexSubscription";
 import { codexAllowancesApi } from "@/lib/api/codexAllowances";
+import { CustomQueryEditor, defaultCustomQuery } from "@/components/providers/CustomQueryEditor";
 import type {
   AccountProvider,
   AccountSave,
@@ -46,12 +49,14 @@ export function ProviderAccountEditor({
   initial,
   provider,
   accounts,
+  timezone,
   onClose,
   onSaved,
 }: {
   initial?: ProviderAccountView;
   provider: AccountProvider;
   accounts: ProviderAccountView[];
+  timezone: string;
   onClose: () => void;
   onSaved: (view: ProviderAccountView) => void;
 }) {
@@ -63,14 +68,17 @@ export function ProviderAccountEditor({
   // Capture runs before controlled inputs' onChange; avoid re-rendering their old values here.
   const dirty = useRef(false);
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [routeHarness, setRouteHarness] = useState("codex");
+  const [routeId, setRouteId] = useState("");
   const [key, setKey] = useState("");
   const [clearKey, setClearKey] = useState(false);
   const [form, setForm] = useState<AccountSave>(() =>
     initial
       ? { ...initial.account }
       : {
-          provider,
-          name: ACCOUNT_PROVIDER_NAMES[provider],
+          provider: isCustomProvider(provider) ? "custom" : provider,
+          name: accountProviderName(provider, [], zh),
           showInSidebar: true,
           links: [],
           subscription: {
@@ -81,6 +89,7 @@ export function ProviderAccountEditor({
             renewalDate: null,
           },
           refresh: { foregroundSeconds: 60, backgroundSeconds: 300 },
+          ...(isCustomProvider(provider) ? { custom: defaultCustomQuery() } : {}),
           ...(provider === "openai-codex"
             ? {
                 codex: {
@@ -177,7 +186,7 @@ export function ProviderAccountEditor({
       onOpenChange={(open) => {
         if (
           !open &&
-          !busy &&
+          !busy && !testing &&
           (!dirty.current ||
             window.confirm(l("放弃未保存的修改？", "Discard unsaved changes?")))
         )
@@ -216,12 +225,12 @@ export function ProviderAccountEditor({
               void save();
             }}
           >
-            <fieldset disabled={busy} className="min-w-0 space-y-4">
+            <fieldset disabled={busy || testing} className="min-w-0 space-y-4">
               <Field label={l("供应商", "Provider")}>
                 <OptionSelect
                   aria-label={l("供应商类型", "Provider type")}
                   className="scope-select w-full"
-                  value={form.provider}
+                  value={isCustomProvider(form.provider) ? "custom" : form.provider}
                   disabled={!!initial}
                   onValueChange={(value) => {
                     tracker.onChangeCapture();
@@ -230,7 +239,8 @@ export function ProviderAccountEditor({
                     setForm((v) => ({
                       ...v,
                       provider,
-                      name: ACCOUNT_PROVIDER_NAMES[provider],
+                      name: accountProviderName(provider, [], zh),
+                      custom: provider === "custom" ? defaultCustomQuery() : undefined,
                       codex:
                         provider === "openai-codex"
                           ? { plan: "plus", binaryPath: null, homePath: null }
@@ -253,9 +263,10 @@ export function ProviderAccountEditor({
                       {name}
                     </option>
                   ))}
+                  <option value="custom">{l("自定义供应商", "Custom provider")}</option>
                 </OptionSelect>
               </Field>
-              <Field label={l("账号名称", "Account name")}>
+              <Field label={isCustomProvider(form.provider) ? l("供应商名称", "Provider name") : l("账号名称", "Account name")}>
                 <Input
                   aria-label={l("账号名称", "Account name")}
                   value={form.name}
@@ -399,6 +410,8 @@ export function ProviderAccountEditor({
                   {l("清除已保存的 Key", "Remove saved key")}
                 </label>
               )}
+              {form.custom && <CustomQueryEditor value={form.custom} id={initial?.account.id} apiKey={key} clearApiKey={clearKey} zh={zh} timezone={timezone} onTesting={setTesting}
+                onChange={custom => { tracker.onChangeCapture(); dirty.current = true; setForm(v => ({ ...v, custom })); }} />}
               <section className="border-t border-border pt-4 space-y-3">
                 <h3 className="font-semibold text-fg-1">
                   {l("订阅信息", "Subscription")}{" "}
@@ -511,8 +524,25 @@ export function ProviderAccountEditor({
               </section>
               <section className="border-t border-border pt-4 space-y-2">
                 <h3 className="font-semibold text-fg-1">
-                  {l("关联跨设备用量", "Link usage across devices")}
+                  {isCustomProvider(form.provider) ? l("Provider ID 归属", "Provider ID links") : l("关联跨设备用量", "Link usage across devices")}
                 </h3>
+                {isCustomProvider(form.provider) && <div className="space-y-2">
+                  <p className="text-caption text-fg-3">{l("按工具和原始 provider ID 精确关联，在会话与请求详情中显示此供应商名称。", "Match the tool and original provider ID exactly to display this provider in sessions and requests.")}</p>
+                  <div className="flex gap-2">
+                    <OptionSelect aria-label={l("关联工具", "Linked tool")} className="scope-select w-28 shrink-0" value={routeHarness} onValueChange={setRouteHarness}>
+                      {["codex", "claude", "opencode", "dsh", "gemini", "copliot"].map(id => <option key={id} value={id}>{appShortName(id)}</option>)}
+                    </OptionSelect>
+                    <Input aria-label="Provider ID" placeholder="provider-id" maxLength={128} value={routeId} onChange={e => setRouteId(e.target.value)} />
+                    <Button type="button" variant="neutral" disabled={!routeId.trim()} onClick={() => {
+                      const link = { harness: routeHarness, provider: routeId.trim() };
+                      const owner = accounts.find(v => v.account.id !== initial?.account.id && v.account.links.some(l => routeKey(l) === routeKey(link)));
+                      if (owner) { toast.error(l(`此 ID 已关联 ${owner.account.name}`, `This ID is linked to ${owner.account.name}`)); return; }
+                      tracker.onChangeCapture(); dirty.current = true;
+                      setForm(v => ({ ...v, links: v.links.some(l => routeKey(l) === routeKey(link)) ? v.links : [...v.links, link] }));
+                      setRouteId("");
+                    }}>{l("添加", "Add")}</Button>
+                  </div>
+                </div>}
                 <p className="text-caption text-fg-3">
                   {l(
                     "选择所有已同步设备日志中的路由，按共用同一组订阅汇总。一条路由只能关联一个账号，日志无法区分其不同账号或 Key。",
@@ -596,7 +626,7 @@ export function ProviderAccountEditor({
             <Button
               variant="ghost"
               className="me-auto text-danger-text"
-              disabled={busy}
+              disabled={busy || testing}
               onClick={() => void remove()}
             >
               <Trash2 size={14} />
@@ -605,7 +635,7 @@ export function ProviderAccountEditor({
           )}
           <Button
             variant="neutral"
-            disabled={busy}
+            disabled={busy || testing}
             onClick={() => {
               if (
                 !dirty.current ||
@@ -618,7 +648,7 @@ export function ProviderAccountEditor({
           >
             {l("取消", "Cancel")}
           </Button>
-          <Button type="submit" form="provider-account-form" disabled={busy}>
+          <Button type="submit" form="provider-account-form" disabled={busy || testing}>
             {busy ? l("保存中…", "Saving…") : l("保存", "Save")}
           </Button>
         </SheetFooter>

@@ -6,6 +6,7 @@ import claude from "@/assets/harness/claude.svg?raw";
 import openai from "@/assets/harness/openai.svg?raw";
 import opencode from "@/assets/harness/opencode.svg?raw";
 import deepseek from "@/assets/harness/deepseek.svg?raw";
+import copilot from "@/assets/harness/copilot.svg?raw";
 export const APP_DISPLAY_NAME: Record<AppId, string> = {
   claude: "Claude Code",
   "claude-desktop": "Claude Desktop",
@@ -14,6 +15,8 @@ export const APP_DISPLAY_NAME: Record<AppId, string> = {
   grokbuild: "Grok Build",
   opencode: "OpenCode",
   dsh: "DeepSeek Harness",
+  "copliot-deprecated": "copliot-deprecated",
+  copliot: "Github Copliot",
   openclaw: "OpenClaw",
   hermes: "Hermes",
   pi: "Pi",
@@ -25,6 +28,8 @@ const BRAND_SVG: Record<string, string> = {
   codex: openai,
   opencode,
   dsh: deepseek,
+  "copliot-deprecated": copilot,
+  copliot: copilot,
 };
 const BADGE: Record<string, typeof Terminal | undefined> = {
   claude: Terminal,
@@ -56,7 +61,8 @@ export function AppGlyph({
         <span
           className={cn(
             "inline-flex items-center justify-center",
-            app === "codex" && "text-fg-1",
+            (app === "codex" || app === "copliot") && "text-fg-1",
+            app === "copliot-deprecated" && "text-muted-foreground",
           )}
           style={{ width: size, height: size, fontSize: size, lineHeight: 1 }}
           dangerouslySetInnerHTML={{ __html: svg }}

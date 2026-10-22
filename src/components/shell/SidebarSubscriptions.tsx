@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { AlertCircle, ChevronDown, RefreshCw, Wallet } from "lucide-react";
 import { providerAccountsApi as api } from "@/lib/api/providerAccounts";
 import { useProviderAccounts } from "@/lib/query/providerAccounts";
-import { accountError, nativeMoney, quotaDisplay } from "@/lib/providerAccounts";
+import { accountError, nativeMoney, quotaDisplay, accountCanRefresh, customUsageValue, customRemainingPercent } from "@/lib/providerAccounts";
 import { quotaCountdown, quotaWindowShortLabel, snapshotAge } from "@/lib/sidebarSubscriptions";
 import { toast } from "@/lib/toast";
 import type { ProviderAccountView, QuotaWindow } from "@/types/providerAccounts";
@@ -60,7 +60,7 @@ function AccountSummary({ view, now, zh, locale, onOpen }: {
   ].filter(Boolean).join("\n");
   return (
     <button type="button" className="scope-subscription-account" onClick={() => onOpen(account.id)}
-      aria-label={`${zh ? "配置" : "Configure"} ${account.name}`} title={details}>
+      aria-label={`${zh ? "查看" : "View"} ${account.name}`} title={details}>
       <span className="scope-subscription-account-heading">
         <span className="scope-subscription-account-name">{account.name}</span>
         {view.error && <AlertCircle size={11} className="shrink-0 text-danger-text" aria-label={zh ? "刷新失败" : "Refresh failed"} />}
@@ -71,13 +71,19 @@ function AccountSummary({ view, now, zh, locale, onOpen }: {
           {nativeMoney(balance.total, balance.currency, locale)}
         </span>
       ))}
+      {data?.kind === "customUsage" && data.items.map(item => {
+        const percent = customRemainingPercent(item, now);
+        return <span key={item.id} className="block text-caption leading-5 text-fg-2 truncate" title={item.planName ?? item.id}>
+          {data.items.length > 1 && `${item.planName ?? item.id} · `}{item.remaining != null ? customUsageValue(item.remaining, item.unit, locale) : percent != null ? `${Number(percent.toFixed(1))}%` : "—"}
+        </span>;
+      })}
       {groups.map((group) => (
         <span key={group.id} className="block">
           {groups.length > 1 && <span className="block truncate text-[10px] leading-4 text-fg-3">{group.name}</span>}
           {group.windows.map((window) => <QuotaRow key={window.id} window={window} now={now} zh={zh} />)}
         </span>
       ))}
-      {(!data || (data.kind !== "balance" && !groups.some((g) => g.windows.length))) && (
+      {(!data || (data.kind !== "balance" && data.kind !== "customUsage" && !groups.some((g) => g.windows.length))) && (
         <span className="block text-caption leading-5 text-fg-3">—</span>
       )}
     </button>
@@ -113,7 +119,7 @@ export function SidebarSubscriptions({ collapsed, active, enabled, onNavigate, o
   const refreshAll = async () => {
     if (refreshingRef.current) return;
     // Visibility only affects this list; manual refresh includes hidden accounts.
-    const targets = accounts.filter((v) => !v.refreshing && (v.account.provider === "openai-codex" || v.keyConfigured));
+    const targets = accounts.filter((v) => !v.refreshing && accountCanRefresh(v));
     if (!targets.length) {
       toast.info(zh ? "没有可刷新的账号，请先配置凭据或等待当前刷新完成。" : "Configure credentials or wait for the current refresh to finish.");
       return;

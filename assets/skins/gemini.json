@@ -1,0 +1,16 @@
+{
+  "id": "gemini",
+  "artwork": "gemini.png",
+  "source": "../gemini.jpg",
+  "designReference": "gemini-reference.png",
+  "generator": "built-in image_gen",
+  "faceAnchor": {
+    "x": 0.49,
+    "y": 0.15
+  },
+  "viewportAnchor": {
+    "x": 0.66667,
+    "y": 0.33333
+  },
+  "prompt": "Use case: identity-preserve.\nAsset type: transparent single anime character for the right-side background skin of a desktop application.\nPrimary image 1 (assets/gemini.jpg) is the authoritative reference: preserve this exact Gemini character's face, cheerful wink (viewer-left eye closed, viewer-right golden eye open), smiling mouth, head tilt, blue-periwinkle long flowing hair with violet and pink highlights, side buns, ahoge, fluffy cat ears with pink interiors, iridescent star hair ornament and dangling stars. Preserve the main image's welcoming pose with BOTH hands open, palms up beside her body, and two small iridescent four-point stars floating just above the palms. Preserve her dark indigo, white and purple star-themed off-shoulder costume, high dark collar, white chest panel, purple bodice straps, detached flowing bell sleeves with white ruffles and gold trim.\nSupporting image 2 is ONLY for missing full-body details: the matching layered short white ruffled skirt with asymmetrical indigo/purple panels, gold chains and dangling stars, fluffy blue-purple feline tail, white slouchy boots with dark purple platform shoes, and flowing sleeve ribbons. Do not copy image 2's finger-to-cheek pose or its two-open-eye expression; image 1 controls the pose and face.\nCreate ONE full-body upright character in polished detailed anime illustration matching the references, genuine transparent RGBA background, portrait canvas around 2:3. Face near horizontal center, enough transparent margin for complete ears, hair, sleeves, stars, tail and shoes; character fills most of the height. Soft clean linework, delicate periwinkle/pink hair shading, gold and iridescent star accents. Keep the original character design; no generic maid redesign, no dragon horns/wings or whale tail, no additional characters. No poster typography, letters, background, checkerboard, frame, watermark, ground plane or shadow/glow outside the silhouette (except the two small reference stars). The app positions the face at the upper-right thirds point and applies a separate readability veil; render the character at normal opacity."
+}

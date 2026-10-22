@@ -9,6 +9,7 @@ import {
   SlidersHorizontal,
   Info,
   RefreshCw,
+  Globe,
 } from "lucide-react";
 import type { Snapshot, Config } from "@/App";
 import { command } from "@/lib/client";
@@ -17,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { AccentColorSettings } from "@/components/settings/AccentColorSettings";
+import { NetworkSettings } from "@/components/settings/NetworkSettings";
 import { useAccentThemePreview } from "@/components/theme/AccentThemeProvider";
 import { DEFAULT_ACCENT_COLOR, normalizeAccentColor } from "@/lib/accentColor";
 import { INTERFACE_SKINS, normalizeInterfaceSkin } from "@/lib/interfaceSkins";
@@ -116,12 +118,12 @@ export function SettingsPage({
     <>
       <AppPageHeader
         title={l("设置", "Settings")}
-        actions={
+        actions={section !== "network" && (
           <Button onClick={() => void save()} disabled={busy || !accentValid}>
             <Save size={14} />
             {l("保存设置", "Save settings")}
           </Button>
-        }
+        )}
       />
       <div className="scope-page flex flex-col gap-4 md:flex-row md:gap-6">
         <nav className="scope-settings-nav flex flex-wrap gap-1 md:block md:space-y-1">
@@ -132,6 +134,7 @@ export function SettingsPage({
               Icon: SlidersHorizontal,
             },
             { id: "sync", name: l("多设备同步", "Device sync"), Icon: Cloud },
+            { id: "network", name: l("网络", "Network"), Icon: Globe },
             {
               id: "data",
               name: l("数据迁移", "Data migration"),
@@ -150,6 +153,7 @@ export function SettingsPage({
           ))}
         </nav>
         <div className="min-w-0 flex-1 max-w-3xl">
+          {section === "network" && <NetworkSettings />}
           {section === "general" && (
             <section className="scope-card">
               <h2 className="font-semibold mb-5">{l("通用", "General")}</h2>

@@ -4,6 +4,9 @@ mod claude_requests;
 pub mod codex;
 mod codex_settings;
 mod codex_timing;
+pub(crate) mod codex_usage;
+pub mod copliot;
+pub mod copliot_deprecated;
 pub mod dsh;
 pub mod files;
 pub mod opencode;
@@ -41,6 +44,9 @@ pub type TimelineIndex = HashMap<String, Vec<Value>>;
 
 pub trait HarnessAdapter: Send + Sync {
     fn descriptor(&self) -> Descriptor;
+    fn allows_price_estimates(&self, _has_tokens: bool) -> bool {
+        true
+    }
     fn parse(&self, path: &Path, lines: &[Value], index: &TimelineIndex) -> Result<ParseResult>;
     fn session(&self, path: &Path, lines: &[Value]) -> Option<Session>;
     fn messages(&self, lines: &[Value]) -> Vec<Value>;
@@ -109,6 +115,8 @@ impl Default for Registry {
                 Arc::new(codex::Codex),
                 Arc::new(opencode::OpenCode),
                 Arc::new(dsh::Dsh),
+                Arc::new(copliot_deprecated::CopliotDeprecated),
+                Arc::new(copliot::Copliot),
             ],
         }
     }

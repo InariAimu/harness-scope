@@ -2,6 +2,6 @@
   "$schema":"https://schema.tauri.app/config/2",
   "productName":"Harness Scope", "version":"0.1.0", "identifier":"dev.inariaimu.harness-scope",
   "build":{"beforeDevCommand":"npm run dev","beforeBuildCommand":"npm run build","devUrl":"http://localhost:1420","frontendDist":"../dist"},
-  "app":{"windows":[{"title":"Harness Scope","width":1000,"height":667,"minWidth":900,"minHeight":620}],"security":{"csp":"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost https://models.dev; font-src 'self' data:"}},
+  "app":{"windows":[{"title":"Harness Scope","width":1000,"height":667,"minWidth":900,"minHeight":620}],"security":{"csp":"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost; font-src 'self' data:"}},
   "bundle":{"active":false}
 }

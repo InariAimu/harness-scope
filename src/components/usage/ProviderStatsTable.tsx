@@ -12,6 +12,7 @@ import {
 } from "./format";
 import { usageTable } from "./usageTable";
 import { getUsageProviderLabel, usageProviderTitle } from "./providerLabel";
+import { useProviderName } from "@/hooks/useProviderName";
 import { PerformanceCells, PerformanceHeaders } from "./statsColumns";
 import type { UsageRangeSelection } from "@/types/usage";
 
@@ -31,6 +32,7 @@ export function ProviderStatsTable({
   refreshIntervalMs,
 }: ProviderStatsTableProps) {
   const { t, i18n } = useTranslation();
+  const providerNameFor = useProviderName();
   const formatQuantity = useUsageNumberFormat();
   const { costMoney, moneyTitle } = useMoneyFormat();
   const locale = getLocaleFromLanguage(getResolvedLang(i18n));
@@ -81,7 +83,7 @@ export function ProviderStatsTable({
               </tr>
             ) : (
               pagination.pageRows.map((stat) => {
-                const provider = getUsageProviderLabel(stat.providerName, t);
+                const provider = getUsageProviderLabel(stat.providerName, t, providerNameFor(stat.providerName, stat.appType));
                 return (
                   <tr
                     key={JSON.stringify([stat.appType, stat.providerId])}

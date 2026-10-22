@@ -1,0 +1,14 @@
+{"kind":0,"v":{"version":3,"sessionId":"synthetic-copliot-modern","creationDate":1792500000000,"pendingRequests":[],"requests":[],"inputState":{"mode":{"kind":"agent","id":"agent"}}}}
+{"kind":2,"k":["requests"],"v":[{"requestId":"modern-user-one","timestamp":1792500001000,"modelId":"copilot/auto","pendingMarker":true,"modelState":{"value":0}}]}
+{"kind":1,"k":["requests",0,"completionTokens"],"v":3}
+{"kind":1,"k":["requests",0,"result"],"v":{"metadata":{"promptTokens":1200,"outputTokens":5,"resolvedModel":"synthetic-modern-a","toolCallRounds":[{"id":"modern-round-one","modelId":"synthetic-modern-a","response":"Synthetic answer","toolCalls":[],"toolInputRetry":0}]}}}
+{"kind":1,"k":["requests",0,"promptTokens"],"v":1200}
+{"kind":1,"k":["requests",0,"copilotCredits"],"v":0.125005}
+{"kind":1,"k":["requests",0,"completionTokens"],"v":5}
+{"kind":1,"k":["requests",0,"elapsedMs"],"v":2500}
+{"kind":1,"k":["requests",0,"response"],"v":[{"value":"Synthetic obsolete response"}]}
+{"kind":2,"k":["requests",0,"response"],"i":0,"v":[{"value":"Synthetic final response"}]}
+{"kind":1,"k":["requests",0,"modelState"],"v":{"value":1,"completedAt":1792500003500}}
+{"kind":3,"k":["requests",0,"pendingMarker"]}
+{"kind":2,"k":["requests"],"v":[{"requestId":"modern-user-two","timestamp":1792500010000,"modelId":"copilot/synthetic-modern-a","promptTokens":200,"completionTokens":50,"copilotCredits":0,"result":{"metadata":{"promptTokens":200,"outputTokens":7,"toolCallRounds":[{"id":"modern-round-two","response":"Synthetic intermediate response","toolCalls":[],"toolInputRetry":0},{"id":"modern-round-three","response":"Synthetic final response","toolCalls":[],"toolInputRetry":0}]}},"modelState":{"value":1,"completedAt":1792500015000}}]}
+{"kind":2,"k":["requests"],"v":[{"requestId":"modern-user-three","timestamp":1792500020000,"modelId":"copilot/synthetic-modern-a","promptTokens":0,"completionTokens":0,"result":{"metadata":{"promptTokens":0,"outputTokens":0,"toolCallRounds":[{"id":"modern-round-four","response":"","toolCalls":[],"toolInputRetry":0}]}},"modelState":{"value":1,"completedAt":1792500021000}}]}

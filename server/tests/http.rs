@@ -64,7 +64,7 @@ async fn claude_capability_defers_only_unsupported_revisions_and_resumes_without
             .contains("retained locally"));
         assert_eq!(run.lock().unwrap().pending_count().unwrap(), 2);
         let snapshot = run.execute("snapshot", json!({})).unwrap();
-        assert_eq!(snapshot["localSchemaVersion"], 4);
+        assert_eq!(snapshot["localSchemaVersion"], 5);
         assert!(snapshot["remoteSchemaVersion"].is_null());
     })
     .await

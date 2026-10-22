@@ -1,0 +1,3 @@
+{"type":"session.start","id":"legacy-transcript-start","timestamp":"2025-09-01T00:00:00.000Z","parentId":null,"data":{"sessionId":"synthetic-copliot-legacy","version":1,"producer":"copilot-agent","copilotVersion":"synthetic-legacy","startTime":"2025-09-01T00:00:00.000Z"}}
+{"type":"user.message","id":"legacy-transcript-user","timestamp":"2025-09-01T00:00:01.000Z","parentId":"legacy-transcript-start","data":{"content":"Synthetic restored prompt"}}
+{"type":"assistant.message","id":"legacy-transcript-response","timestamp":"2025-09-01T00:00:03.000Z","parentId":"legacy-transcript-user","data":{"messageId":"legacy-transcript-answer","content":"Synthetic restored answer"}}

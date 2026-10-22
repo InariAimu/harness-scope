@@ -24,8 +24,9 @@ import {
 } from "./format";
 import { resolveUsageRange, usageDateParts } from "@/lib/usageRange";
 import { useUsageTimezone } from "@/lib/query/usageTimezone";
-import type { UsageRangeSelection } from "@/types/usage";
-import type { UsageChartMetric } from "./composition";
+import type { TrendModelStats, UsageRangeSelection } from "@/types/usage";
+import { usageCompositionColor, type UsageChartMetric } from "./composition";
+import { buildTrendModelBreakdown } from "./trendModelBreakdown";
 
 interface UsageTrendChartProps {
   range: UsageRangeSelection;
@@ -41,6 +42,7 @@ interface UsageTrendChartProps {
 }
 
 export interface UsageTrendStatLike {
+  modelBreakdown?: TrendModelStats[];
   costConverted?: boolean;
   date: string;
   requestCount?: number;
@@ -52,6 +54,7 @@ export interface UsageTrendStatLike {
 }
 
 export interface UsageTrendChartPoint {
+  modelBreakdown?: TrendModelStats[];
   costConverted?: boolean;
   /** Unique category key for Recharts — must not collide across years. */
   xKey: string;
@@ -135,6 +138,7 @@ export function buildUsageTrendChartData(
             });
 
       return {
+        modelBreakdown: stat.modelBreakdown,
         costConverted: stat.costConverted,
         xKey,
         rawDate: stat.date,
@@ -200,6 +204,9 @@ export function UsageTrendChart({
   const isHourly = durationSeconds <= 24 * 60 * 60;
   const language = i18n.resolvedLanguage || i18n.language || "en";
   const dateLocale = getLocaleFromLanguage(language);
+  const percent = useMemo(() => new Intl.NumberFormat(dateLocale, {
+    style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1,
+  }), [dateLocale]);
 
   const chartData = useMemo(
     () =>
@@ -242,8 +249,10 @@ export function UsageTrendChart({
     if (!active || !payload || payload.length === 0) return null;
     const point = payload[0]?.payload as UsageTrendChartPoint | undefined;
     const heading = point?.tooltipLabel ?? point?.label ?? "";
+    const breakdown = buildTrendModelBreakdown(point?.modelBreakdown, metric);
+    const modelName = (name: string) => name || t("usage.chart.unknownModel");
     return (
-      <div className="rounded-[8px] border border-border bg-popover px-3 py-2 text-caption text-fg-1 shadow-v7-md">
+      <div data-testid="usage-trend-tooltip" className="max-w-[360px] rounded-[8px] border border-border bg-popover px-3 py-2 text-caption text-fg-1 shadow-v7-md">
         <p className="mb-1 font-semibold">{heading}</p>
         <div className="flex items-center gap-2 tabular-nums">
           <span
@@ -258,6 +267,26 @@ export function UsageTrendChart({
             )}
           </span>
         </div>
+        {breakdown.slices.length > 0 && (
+          <div className="mt-2 border-t border-border pt-2">
+            <ul className="m-0 grid list-none grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 p-0 tabular-nums">
+              {breakdown.slices.map((slice) => (
+                <li key={slice.key} className="contents">
+                  <span className="flex min-w-0 items-center gap-1.5 text-fg-2">
+                    <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-[2px]" style={{ backgroundColor: slice.other ? "var(--text-3)" : usageCompositionColor(`models:${slice.members[0]}`) }} />
+                    <span className="min-w-0 break-all">
+                      {slice.other ? t("usage.chart.other") : modelName(slice.members[0])}
+                    </span>
+                  </span>
+                  <span className="whitespace-nowrap text-end">{formatMetric(slice.value, slice.costConverted)}</span>
+                  <span className="whitespace-nowrap text-end text-fg-3">
+                    {slice.share === 1 ? "100%" : slice.share < 0.001 ? `<${percent.format(0.001)}` : percent.format(slice.share)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     );
   };

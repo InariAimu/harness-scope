@@ -1,6 +1,8 @@
 import deepseekArtwork from "../../assets/skins/deepseek.png";
 import claudeArtwork from "../../assets/skins/claude.png";
 import gptArtwork from "../../assets/skins/gpt.png";
+import geminiArtwork from "../../assets/skins/gemini.png";
+import grokArtwork from "../../assets/skins/grok.png";
 
 export const INTERFACE_SKINS = [
   {
@@ -23,6 +25,20 @@ export const INTERFACE_SKINS = [
     artwork: gptArtwork,
     tint: "#a081de24",
     faceAnchor: { x: 49, y: 14 },
+  },
+  {
+    id: "gemini",
+    name: { zh: "Gemini · 星光猫娘", en: "Gemini · Starlight cat" },
+    artwork: geminiArtwork,
+    tint: "#8b86fd24",
+    faceAnchor: { x: 49, y: 15 },
+  },
+  {
+    id: "grok",
+    name: { zh: "Grok · 金曜女仆", en: "Grok · Golden maid" },
+    artwork: grokArtwork,
+    tint: "#edb53e24",
+    faceAnchor: { x: 48, y: 17 },
   },
 ] as const;
 

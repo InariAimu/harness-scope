@@ -14,7 +14,9 @@ use std::{
 
 const META: &str = "provider_accounts_v1";
 pub(crate) mod codex;
+mod custom;
 mod go_usage;
+mod history;
 mod polling;
 pub(crate) use polling::Polling;
 
@@ -77,6 +79,8 @@ pub struct Account {
     pub refresh: RefreshPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codex: Option<codex::Settings>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom: Option<custom::Settings>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -97,6 +101,8 @@ struct Save {
     refresh: RefreshPolicy,
     #[serde(default)]
     codex: Option<codex::Settings>,
+    #[serde(default)]
+    custom: Option<custom::Settings>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -164,7 +170,14 @@ fn weekly_usage_window(item: &Stored, now: i64) -> Option<WeeklyUsageWindow> {
     })
 }
 fn view(engine: &Engine, item: &Stored, vault: &Vault) -> Value {
-    json!({"account":item.account,"keyConfigured":vault.exists(&item.account.id),"snapshot":item.snapshot,"lastAttemptAt":item.last_attempt_at,"error":item.error,"refreshing":engine.account_polling.is_refreshing(&item.account.id),"weeklyUsageWindow":weekly_usage_window(item, Utc::now().timestamp())})
+    json!({"account":item.account,"keyConfigured":vault.exists(&item.account.id),"canRefresh":can_refresh(&item.account,vault),"snapshot":item.snapshot,"lastAttemptAt":item.last_attempt_at,"error":item.error,"refreshing":engine.account_polling.is_refreshing(&item.account.id),"weeklyUsageWindow":weekly_usage_window(item, Utc::now().timestamp())})
+}
+fn can_refresh(account: &Account, vault: &Vault) -> bool {
+    if let Some(settings) = &account.custom {
+        settings.enabled && (!settings.script.contains("{{apiKey}}") || vault.exists(&account.id))
+    } else {
+        account.provider == "openai-codex" || vault.exists(&account.id)
+    }
 }
 fn id(args: &Value) -> Result<&str> {
     let id = args["id"].as_str().context("Missing provider account ID")?;
@@ -182,9 +195,23 @@ fn validate(input: &Save) -> Result<()> {
         );
     }
     anyhow::ensure!(
-        ["deepseek", "opencode-go", "openai-codex"].contains(&input.provider.as_str()),
+        ["deepseek", "opencode-go", "openai-codex"].contains(&input.provider.as_str())
+            || custom::is_provider(&input.provider),
         "Unsupported provider"
     );
+    if custom::is_provider(&input.provider) {
+        custom::validate(
+            input
+                .custom
+                .as_ref()
+                .context("Missing custom query settings")?,
+        )?;
+    } else {
+        anyhow::ensure!(
+            input.custom.is_none(),
+            "Custom settings require a custom provider"
+        );
+    }
     if input.provider == "openai-codex" {
         codex::validate(
             input
@@ -265,6 +292,9 @@ pub(crate) fn execute(engine: &Engine, vault: &Vault, name: &str, args: Value) -
             .iter()
             .map(|a| view(engine, a, vault))
             .collect::<Vec<_>>())),
+        "provider_account_history" => history::query(&*engine.read_lock()?, args),
+        "provider_account_test_query" => custom::test_query(engine, vault, args),
+        "provider_session_sources" => custom::session_sources(engine, args),
         "provider_account_routes" => {
             let store = engine.read_lock()?;
             let selected = Selection::new(&store, &json!({"scope":"all"}), i64::MIN, i64::MAX)?;
@@ -293,7 +323,11 @@ pub(crate) fn execute(engine: &Engine, vault: &Vault, name: &str, args: Value) -
             }
             Ok(json!(true))
         }
-        "provider_account_refresh" => polling::refresh_managed(engine, vault, id(&args)?, fetch),
+        "provider_account_refresh" => {
+            polling::refresh_managed(engine, vault, id(&args)?, |provider, key| {
+                fetch(engine, provider, key)
+            })
+        }
         "provider_account_activity" => polling::activity(engine, &args),
         "go_usage_estimate" => go_usage::estimate(engine, &args),
         "codex_subscription_estimate" => codex::estimate(engine, &args),
@@ -321,6 +355,16 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
         .id
         .clone()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    if input.provider == "custom" {
+        anyhow::ensure!(new, "Choose the saved custom provider ID");
+        input.provider = format!("custom:{account_id}");
+    }
+    if custom::is_provider(&input.provider) {
+        anyhow::ensure!(
+            input.provider == format!("custom:{account_id}"),
+            "Invalid custom provider ID"
+        );
+    }
     uuid::Uuid::parse_str(&account_id).context("Invalid provider account ID")?;
     let position = items.iter().position(|a| a.account.id == account_id);
     anyhow::ensure!(
@@ -345,6 +389,7 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
             .map(|v| (&v.binary_path, &v.home_path))
             != input.codex.as_ref().map(|v| (&v.binary_path, &v.home_path))
             || input.provider == "openai-codex" && items[i].account.links != input.links
+            || items[i].account.custom != input.custom
     });
     let new_key = input
         .api_key
@@ -367,6 +412,7 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
                 subscription: Subscription::default(),
                 refresh: RefreshPolicy::default(),
                 codex: None,
+                custom: None,
             },
             revision: String::new(),
             snapshot: None,
@@ -385,6 +431,7 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
         subscription: input.subscription,
         refresh: input.refresh,
         codex: input.codex,
+        custom: input.custom,
     };
     item.revision = uuid::Uuid::new_v4().to_string();
     if new_key.is_some() || input.clear_api_key || provider_changed || connection_changed {
@@ -427,7 +474,17 @@ fn refresh_with(
             .iter_mut()
             .find(|a| a.account.id == id)
             .context("Provider account no longer exists")?;
-        let key = if item.account.provider == "openai-codex" {
+        let key = if let Some(settings) = &item.account.custom {
+            if !settings.enabled {
+                anyhow::bail!("Custom usage query is disabled");
+            }
+            let key = if settings.script.contains("{{apiKey}}") {
+                vault.read(id)
+            } else {
+                Ok(String::new())
+            };
+            key.and_then(|key| Ok(serde_json::to_string(&(settings, key))?))
+        } else if item.account.provider == "openai-codex" {
             serde_json::to_string(&item.account.codex).map_err(anyhow::Error::from)
         } else {
             vault.read(id)
@@ -443,6 +500,7 @@ fn refresh_with(
     // Credential failures must also record an attempt, so a moved/corrupt vault cannot
     // spin the automatic scheduler or silently hide the error from the account page.
     let response = key.and_then(|key| fetch(&captured.account.provider, &key));
+    let observed_at = Utc::now();
     let store = engine.lock()?;
     let mut items = load(&store)?;
     let item = items
@@ -454,20 +512,24 @@ fn refresh_with(
         let succeeded = response.is_ok();
         match response {
             Ok(data) => {
-                item.snapshot = Some(json!({"fetchedAt":Utc::now().timestamp(),"data":data}));
+                item.snapshot = Some(json!({"fetchedAt":observed_at.timestamp(),"data":data}));
                 item.error = None;
             }
             Err(error) => item.error = Some(error.to_string()),
         }
         let result = view(engine, item, vault);
-        let observed = if succeeded && item.account.provider == "openai-codex" {
-            item.snapshot.clone()
-        } else {
-            None
-        };
+        let observed = succeeded.then(|| item.clone());
         store.transaction(|| {
-            if let Some(snapshot) = observed.as_ref() {
-                codex::calibration::record(&store, id, previous_snapshot.as_ref(), snapshot)?;
+            if let Some(observed) = observed.as_ref() {
+                history::record(&store, observed, observed_at, &store.config()?.timezone)?;
+                if observed.account.provider == "openai-codex" {
+                    codex::calibration::record(
+                        &store,
+                        id,
+                        previous_snapshot.as_ref(),
+                        observed.snapshot.as_ref().unwrap(),
+                    )?;
+                }
             }
             store.set_meta(META, &items)
         })?;
@@ -476,22 +538,33 @@ fn refresh_with(
         Ok(view(engine, item, vault))
     }
 }
-fn fetch(provider: &str, key: &str) -> Result<Value> {
+fn fetch(engine: &Engine, provider: &str, key: &str) -> Result<Value> {
+    let network = crate::network::load(&*engine.read_lock()?)?;
+    if custom::is_provider(provider) {
+        let (settings, secret): (custom::Settings, String) = serde_json::from_str(key)?;
+        return custom::request(&settings, &secret, &network);
+    }
     if provider == "openai-codex" {
-        return codex::fetch(&serde_json::from_str(key)?);
+        return codex::fetch(&serde_json::from_str(key)?, &network);
     }
     let url = match provider {
         "deepseek" => "https://api.deepseek.com/user/balance",
         "opencode-go" => "https://opencode.ai/inference/go/v1/usage",
         _ => anyhow::bail!("Unsupported provider"),
     };
-    request(provider, key, url)
+    request_with_network(provider, key, url, &network)
 }
+#[cfg(test)]
 fn request(provider: &str, key: &str, url: &str) -> Result<Value> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()?;
+    request_with_network(provider, key, url, &crate::network::Settings::default())
+}
+fn request_with_network(
+    provider: &str,
+    key: &str,
+    url: &str,
+    network: &crate::network::Settings,
+) -> Result<Value> {
+    let client = network.client()?;
     let response = client
         .get(url)
         .bearer_auth(key)

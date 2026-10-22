@@ -1,6 +1,8 @@
 use super::*;
 use crate::model::{Cost, Tokens, UsageRecord};
 
+mod custom_provider;
+mod observation_history;
 mod sidebar_visibility;
 mod weekly_usage;
 
@@ -643,11 +645,11 @@ fn background_tick_fetches_without_ui_and_observes_cooldown_and_error_backoff() 
     let id = view["account"]["id"].as_str().unwrap().to_owned();
     let engine = std::sync::Arc::new(engine);
     assert_eq!(
-        polling::tick(&engine, |p, _| parse_response(p, quota())).unwrap(),
+        polling::tick(&engine, |_, p, _| parse_response(p, quota())).unwrap(),
         1
     );
     assert_eq!(
-        polling::tick(&engine, |_, _| panic!("duplicate tick")).unwrap(),
+        polling::tick(&engine, |_, _, _| panic!("duplicate tick")).unwrap(),
         0
     );
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
@@ -660,8 +662,17 @@ fn background_tick_fetches_without_ui_and_observes_cooldown_and_error_backoff() 
         std::thread::yield_now();
     }
     assert_eq!(
-        polling::tick(&engine, |_, _| panic!("cooldown ignored")).unwrap(),
+        polling::tick(&engine, |_, _, _| panic!("cooldown ignored")).unwrap(),
         0
+    );
+    assert_eq!(
+        engine
+            .execute("provider_account_history", json!({"id":id}))
+            .unwrap()["observations"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
     );
     {
         let store = engine.lock().unwrap();

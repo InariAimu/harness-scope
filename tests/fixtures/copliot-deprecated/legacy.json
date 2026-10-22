@@ -1,0 +1,35 @@
+{
+  "version": 3,
+  "sessionId": "synthetic-copliot-legacy",
+  "creationDate": 1756684800000,
+  "requests": [
+    {
+      "requestId": "legacy-user-one",
+      "timestamp": 1756684801000,
+      "modelId": "copilot/synthetic-model",
+      "modelState": { "value": 1, "completedAt": 1756684803000 }
+    },
+    {
+      "requestId": "legacy-user-two",
+      "timestamp": 1756684810000,
+      "modelId": "copilot/synthetic-model",
+      "result": {
+        "usage": { "promptTokens": 100, "completionTokens": 4 },
+        "metadata": {
+          "toolCallRounds": [
+            { "id": "legacy-round-one", "response": "Synthetic tool request", "toolCalls": [], "toolInputRetry": 0 },
+            { "id": "legacy-round-two", "response": "Synthetic tool request", "toolCalls": [], "toolInputRetry": 0 },
+            { "id": "legacy-round-three", "response": "Synthetic answer", "toolCalls": [], "toolInputRetry": 0 }
+          ]
+        }
+      },
+      "modelState": { "value": 1, "completedAt": 1756684816000 }
+    },
+    {
+      "requestId": "legacy-system-one",
+      "timestamp": 1756684820000,
+      "isSystemInitiated": true,
+      "modelState": { "value": 1, "completedAt": 1756684821000 }
+    }
+  ]
+}

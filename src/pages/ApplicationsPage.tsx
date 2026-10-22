@@ -99,6 +99,22 @@ export function ApplicationsPage({
                 {l("添加目录", "Add directory")}
               </Button>
             </div>
+            {h.id === "copliot-deprecated" && (
+              <p className="mt-3 text-caption text-fg-2">
+                {l(
+                  "已选中的 Copilot 历史会话。按保存的用户请求计数，缺失 Token 按 0 统计；已知 Token 按模型价表估算参考费用，其他费用未知。新会话不会自动加入。",
+                  "Selected historical Copilot sessions. Counts saved user requests and uses 0 for missing tokens. Known tokens use model reference pricing; other costs remain unknown. New sessions are not added automatically.",
+                )}
+              </p>
+            )}
+            {h.id === "copliot" && (
+              <p className="mt-3 text-caption text-fg-2">
+                {l(
+                  "自动采集历史清单之外的新 Copilot 会话。目录需包含历史会话清单；按用户请求计数，仅累计输出 Token 接入统计，输入及缓存缺失填 0。已知 Token 可估算模型参考费，Credits 不换算为美元。",
+                  "Collects new Copilot sessions outside the historical selection. The directory must contain that selection. Counts user requests and cumulative output tokens; unavailable input/cache usage uses 0. Known tokens may use model reference pricing; Credits are not converted to USD.",
+                )}
+              </p>
+            )}
             <div className="mt-5 space-y-3">
               {config.sources
                 .filter((s) => s.harness === h.id)

@@ -23,6 +23,7 @@ import {
 
 import { AppGlyph } from "@/components/shell/AppGlyph";
 import { AppPageHeader } from "@/components/shell/AppPageHeader";
+import { ProviderSessionSources } from "@/components/providers/ProviderSessionSources";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -362,7 +363,7 @@ export const SessionReaderHeader = memo(function SessionReaderHeader({
   );
 
   return (
-    <AppPageHeader
+    <><AppPageHeader
       variant="app"
       truncateTitle
       leading={
@@ -440,7 +441,7 @@ export const SessionReaderHeader = memo(function SessionReaderHeader({
           {moreMenu}
         </>
       }
-    />
+    /><ProviderSessionSources harness={session.providerId} sessionId={session.sessionId} /></>
   );
 });
 

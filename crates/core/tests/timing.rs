@@ -65,7 +65,7 @@ fn codex_prefers_response_end_and_earliest_model_item() {
     let t = rows[0].timing.as_ref().unwrap();
     assert_eq!((t.duration_ms, t.first_token_ms), (4000, Some(1000)));
     assert_eq!(t.duration_source, "codex_token_usage_record");
-    assert_eq!(rows[0].id, "codex:timing:token:1");
+    assert_eq!(rows[0].id, "codex:v6:timing:token:1");
 }
 #[test]
 fn codex_excludes_tool_time_and_does_not_reuse_aborted_or_flushed_output() {
@@ -122,7 +122,7 @@ fn codex_repeated_snapshots_do_not_split_next_request_or_shift_ids() {
         usage(9000, 2),
     ]);
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[1].id, "codex:timing:token:3");
+    assert_eq!(rows[1].id, "codex:v6:timing:token:2");
     let t = rows[1].timing.as_ref().unwrap();
     assert_eq!((t.duration_ms, t.first_token_ms), (4000, Some(2000)));
     assert!(codex(&[meta(), usage(9000, 1)])[0].timing.is_none());
@@ -485,12 +485,19 @@ fn dsh_decode_speed_is_consistent_in_details_and_mixed_harness_statistics() {
         assert!(detail["estimatedSpeed"].is_null());
     }
     let stats = query::query(&s, "models", &json!({"scope":"all"})).unwrap();
-    assert_eq!(stats[0]["estDecodeSpeedOutputTokens"], 688);
-    assert_eq!(stats[0]["estDecodeSpeedGenerationMs"], 3482);
-    assert_eq!(stats[0]["estDecodeSpeedSampleCount"], 2);
-    assert_eq!(stats[0]["estSpeedOutputTokens"], 1400);
-    assert_eq!(stats[0]["estSpeedDurationMs"], 24000);
-    assert_eq!(stats[0]["estSpeedSampleCount"], 4);
+    let rows = stats.as_array().unwrap();
+    assert_eq!(rows.len(), 2); // Codex's unknown tier is separate from other harnesses.
+    let sum = |key: &str| rows.iter().map(|r| r[key].as_u64().unwrap()).sum::<u64>();
+    assert_eq!(sum("estDecodeSpeedOutputTokens"), 688);
+    assert_eq!(sum("estDecodeSpeedGenerationMs"), 3482);
+    assert_eq!(sum("estDecodeSpeedSampleCount"), 2);
+    assert_eq!(sum("estSpeedOutputTokens"), 1400);
+    assert_eq!(sum("estSpeedDurationMs"), 24000);
+    assert_eq!(sum("estSpeedSampleCount"), 4);
+    assert!(rows.iter().any(|r| r["requestMode"].is_null()));
+    assert!(rows
+        .iter()
+        .any(|r| r["appType"] == "codex" && r["requestMode"] == "unknown"));
     let stats = query::query(&s, "providers", &json!({"filters":{"appType":"dsh"}})).unwrap();
     assert_eq!(stats[0]["estDecodeSpeedOutputTokens"], 688);
     assert_eq!(stats[0]["estDecodeSpeedGenerationMs"], 3482);

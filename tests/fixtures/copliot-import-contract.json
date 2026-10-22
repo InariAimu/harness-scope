@@ -1,0 +1,189 @@
+{
+  "contractVersion": 1,
+  "status": "compatible-vscode-importers-implemented",
+  "harnesses": [
+    "copliot-deprecated",
+    "copliot"
+  ],
+  "assignmentPolicy": "persist-native-session-assignment-before-import; never reclassify on rescan",
+  "productionImporterImplemented": true,
+  "implementedHarnesses": [
+    "copliot-deprecated",
+    "copliot"
+  ],
+  "legacyCompatibilityProfile": {
+    "harness": "copliot-deprecated",
+    "fixture": "copliot-deprecated/compatible-records.json",
+    "databaseFieldChanges": false,
+    "unknownTokenDefault": 0,
+    "unknownTextDefault": "unknown",
+    "unknownProviderDefault": "github-copliot",
+    "outputTokenPolicy": "top-level cumulative completionTokens only; no last-call fallback",
+    "priceInference": "model reference estimates for known tokens only; zero/missing token usage stays unpriced",
+    "optionalUnknownFields": "existing null representation; never fake zero HTTP status, zero duration or reported zero USD cost",
+    "expected": {
+      "observedUserRequests": 3,
+      "inputTokens": 0,
+      "outputTokens": 20,
+      "pendingAfterRepeatImport": 3,
+      "unpricedCount": 3
+    },
+    "fullFidelityCasesBelow": "Future full-fidelity semantics; this lossy legacy profile intentionally fills unsupported token dimensions with zero"
+  },
+  "cases": [
+    {
+      "id": "legacy_missing_content_and_partial_usage",
+      "fixture": "copliot-deprecated/legacy.json",
+      "harness": "copliot-deprecated",
+      "expected": {
+        "observedUserRequests": 2,
+        "systemRequests": 1,
+        "firstRequest": {
+          "promptTokens": null,
+          "outputTokens": null,
+          "premiumRequestUnits": null,
+          "cashUsd": null
+        },
+        "secondRequest": {
+          "reportedPromptTokens": 100,
+          "reportedOutputTokens": 4,
+          "usageScope": "last_api_call",
+          "wholeTurnTokens": null
+        },
+        "complete": true
+      }
+    },
+    {
+      "id": "legacy_assignment_survives_modern_append",
+      "fixture": "copliot-deprecated/continued.jsonl",
+      "harness": "copliot-deprecated",
+      "expected": {
+        "observedUserRequests": 2,
+        "copilotCreditsKnownSum": "0.25",
+        "creditsMissingRequests": 1,
+        "reclassifiedSessions": 0,
+        "complete": true
+      }
+    },
+    {
+      "id": "modern_v3_mutations_zero_and_multiple_calls",
+      "fixture": "copliot/modern.jsonl",
+      "harness": "copliot",
+      "expected": {
+        "observedUserRequests": 3,
+        "nativeRequestIds": [
+          "modern-user-one",
+          "modern-user-two",
+          "modern-user-three"
+        ],
+        "copilotCreditsKnownSum": "0.125005",
+        "knownZeroCreditRequests": 1,
+        "creditsMissingRequests": 1,
+        "firstRequest": {
+          "reportedPromptTokens": 1200,
+          "reportedOutputTokens": 5,
+          "resolvedModel": "synthetic-modern-a",
+          "cacheReadTokens": null,
+          "reasoningTokens": null
+        },
+        "secondRequest": {
+          "reportedPromptTokens": 200,
+          "reportedLastCallOutputTokens": 7,
+          "reportedAccumulatedOutputTokens": 50,
+          "wholeTurnTokens": null
+        },
+        "thirdRequest": {
+          "reportedPromptTokens": 0,
+          "reportedOutputTokens": 0,
+          "copilotCredits": null
+        },
+        "cashUsd": null,
+        "complete": true
+      }
+    },
+    {
+      "id": "modern_tail_is_incomplete",
+      "fixture": "copliot/incomplete.jsonl",
+      "harness": "copliot",
+      "expected": {
+        "complete": false,
+        "error": "incomplete_json",
+        "revokePreviouslyImportedRecords": false
+      }
+    },
+    {
+      "id": "modern_invalid_mutation_path",
+      "fixture": "copliot/invalid-path.jsonl",
+      "harness": "copliot",
+      "expected": {
+        "complete": false,
+        "error": "invalid_operation_path",
+        "revokePreviouslyImportedRecords": false
+      }
+    },
+    {
+      "id": "agent_host_whole_turn_excludes_double_counting",
+      "fixture": "copliot/turn-usage.json",
+      "harness": "copliot",
+      "expected": {
+        "observedUserRequests": 1,
+        "models": 2,
+        "reportedWholeTurnInputTokens": 1200,
+        "reportedWholeTurnOutputTokens": 40,
+        "reportedCachedTokens": 600,
+        "turnNanoAiUnits": "150000000",
+        "sessionNanoAiUnitsSnapshot": "450000000",
+        "addChildUsageAgain": false,
+        "usageScope": "user_turn",
+        "complete": true
+      }
+    },
+    {
+      "id": "cli_snapshot_units_and_granularity",
+      "fixture": "copliot/events.jsonl",
+      "harness": "copliot",
+      "expected": {
+        "observedUserRequests": 1,
+        "apiCalls": 2,
+        "premiumRequestUnits": "0",
+        "sessionNanoAiUnitsSnapshot": "500000000",
+        "reportedSessionInputTokens": 2000,
+        "reportedSessionOutputTokens": 40,
+        "usageScope": "session_model",
+        "cashUsd": null,
+        "complete": true
+      }
+    },
+    {
+      "id": "transcript_is_not_another_import",
+      "fixture": "copliot-deprecated/transcript.jsonl",
+      "harness": "copliot-deprecated",
+      "expected": {
+        "matchesSession": "synthetic-copliot-legacy",
+        "additionalSessions": 0,
+        "additionalUserRequests": 0,
+        "hasUsage": false,
+        "complete": true
+      }
+    }
+  ],
+  "modernCompatibilityProfile": {
+    "harness": "copliot",
+    "displayName": "Github Copliot",
+    "fixture": "copliot/modern.jsonl",
+    "databaseFieldChanges": false,
+    "discovery": "native chatSessions outside the required fixed historical selection; Copilot agent/model identity required",
+    "unknownTokenDefault": 0,
+    "unknownProviderDefault": "github-copliot",
+    "outputTokenPolicy": "modelTotals output sum when present, otherwise top-level cumulative completionTokens; mixed-model totals use unknown model",
+    "inputTokenPolicy": "0 until uncached whole-turn input and cache semantics can be retained",
+    "priceInference": "model reference estimates for known tokens only; never convert Credits to USD",
+    "expected": {
+      "observedUserRequests": 3,
+      "inputTokens": 0,
+      "outputTokens": 55,
+      "unpricedCount": 3
+    },
+    "otherFormats": "Agent Host databases, native CLI logs and OTel remain full-fidelity design only"
+  }
+}

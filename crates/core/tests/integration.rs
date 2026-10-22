@@ -114,7 +114,7 @@ fn modern_codex_cache_write_alias_preserves_identity_and_paired_usage_is_not_dup
     assert!(parsed.complete);
     assert_eq!(parsed.usage.len(), 1);
     let usage = &parsed.usage[0];
-    assert_eq!(usage.id, "codex:codex-modern:token:1");
+    assert_eq!(usage.id, "codex:v6:codex-modern:token:1");
     assert_eq!(
         (
             usage.tokens.input,
@@ -152,7 +152,7 @@ fn fork_history_is_skipped_and_new_usage_is_counted() {
     let mut child = parent.clone();
     child[0]["payload"]["id"] = json!("child");
     child[0]["payload"]["forked_from_id"] = json!("codex-fixture");
-    child[0]["timestamp"] = json!("2026-10-16T02:01:00Z");
+    child[0]["timestamp"] = json!("2026-10-16T02:00:05Z");
     child.push(json!({"type":"event_msg","timestamp":"2026-10-16T02:01:01Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":170,"cached_input_tokens":30,"output_tokens":45,"reasoning_output_tokens":8},"last_token_usage":{"input_tokens":20,"cached_input_tokens":0,"output_tokens":5,"reasoning_output_tokens":0}}}}));
     let index = TimelineIndex::from([("codex:codex-fixture".into(), parent)]);
     let r = Codex.parse(Path::new("f"), &child, &index).unwrap();

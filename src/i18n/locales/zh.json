@@ -4905,6 +4905,7 @@
     }
   },
   "scope": {
+    "unpriced": "条未计价",
     "pricing": {
       "settingsSaved": "计价设置已保存，已补齐可计价的未知费用",
       "settingsTitle": "计价汇率",
@@ -4942,6 +4943,7 @@
       "billingBasis": "金额口径",
       "subscriptionHint": "套餐额度折算，不含月费或实际扣款",
       "referenceHint": "models.dev 模型参考价，实际费用以供应商账单为准",
+      "partialReferenceHint": "仅按已知 Token 和模型价表估算，缺失用量未计价；不代表 Copilot 实际账单",
       "subscriptionTotalHint": "包含 OpenCode Go 套餐额度折算，不含套餐月费，不能视为实际扣款合计。",
       "goNote": "OpenCode Go 按 USD 计算套餐额度消耗，不含月费；高峰为 UTC 工作日 01–04、06–10 点，不套用中国节假日。未配置的供应商使用 models.dev 模型参考价，不代表实际账单。"
     },

@@ -13,8 +13,13 @@ impl Drop for Process {
         let _ = self.0.wait();
     }
 }
-pub(super) fn query(binary: &Path, home: Option<&str>) -> Result<(Value, Value)> {
+pub(super) fn query(
+    binary: &Path,
+    home: Option<&str>,
+    network: &crate::network::Settings,
+) -> Result<(Value, Value)> {
     let mut command = Command::new(binary);
+    network.configure_command(&mut command)?;
     command
         .args([
             "app-server",

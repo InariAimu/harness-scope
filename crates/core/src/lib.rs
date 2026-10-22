@@ -1,9 +1,11 @@
 mod account_credentials;
 pub mod accounts;
+mod codex_scan;
 pub mod engine;
 pub mod harness;
 pub mod migration;
 pub mod model;
+pub mod network;
 pub mod pricing;
 mod pricing_match;
 pub mod providers;

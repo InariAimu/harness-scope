@@ -1,6 +1,47 @@
 import { expect, it } from "vitest";
-import { nativeMoney, quotaDisplay, routeKey } from "./providerAccounts";
+import { nativeMoney, quotaDisplay, routeKey, accountCanRefresh, accountProviderName, customProviderName, customRemainingPercent } from "./providerAccounts";
+import type { ProviderAccountView, CustomUsageItem } from "@/types/providerAccounts";
 import type { QuotaWindow } from "@/types/providerAccounts";
+
+const customAccount = (id: string, harness: string, name: string): ProviderAccountView => ({
+  account: { id, provider: `custom:${id}`, name, showInSidebar: true,
+    links: [{ harness, provider: "shared-route" }], subscription: { planName: "", monthlyFee: null, currency: "USD", periodStart: null, renewalDate: null },
+    refresh: { foregroundSeconds: 60, backgroundSeconds: 300 }, custom: { enabled: false, baseUrl: "", script: "", timeoutSeconds: 10 } },
+  keyConfigured: false, snapshot: null, lastAttemptAt: null, error: null, refreshing: false,
+});
+
+it("keeps custom providers independent and resolves only exact unambiguous route links", () => {
+  const a = customAccount("a", "codex", "Relay A");
+  const b = customAccount("b", "opencode", "Relay B");
+  expect(accountProviderName(a.account.provider, [a, b])).toBe("Relay A");
+  expect(accountProviderName(b.account.provider, [a, b])).toBe("Relay B");
+  expect(customProviderName([a, b], "shared-route", "codex")).toBe("Relay A");
+  expect(customProviderName([a, b], "shared-route", "claude")).toBeUndefined();
+  expect(customProviderName([a, b], "shared-route")).toBeUndefined();
+  expect(customProviderName([a, b], "SHARED-ROUTE", "codex")).toBeUndefined();
+});
+
+it("queries require an enabled configuration and only require a key when referenced", () => {
+  const a = customAccount("a", "codex", "A");
+  expect(accountCanRefresh(a)).toBe(false);
+  a.account.custom!.enabled = true;
+  expect(accountCanRefresh(a)).toBe(true);
+  a.account.custom!.script = "{{apiKey}}";
+  expect(accountCanRefresh(a)).toBe(false);
+  a.keyConfigured = true;
+  expect(accountCanRefresh(a)).toBe(true);
+});
+
+it("missing and expired custom percentages remain unknown", () => {
+  const row = { usedPercent: null, resetsAt: null } as CustomUsageItem;
+  expect(customRemainingPercent(row, 100)).toBeNull();
+  row.usedPercent = "0";
+  expect(customRemainingPercent(row, 100)).toBe(100);
+  row.usedPercent = "120";
+  expect(customRemainingPercent(row, 100)).toBe(0);
+  row.resetsAt = 100;
+  expect(customRemainingPercent(row, 100)).toBeNull();
+});
 
 it("keeps unknown balances distinct from a real zero and retains native currency", () => {
   for (const missing of [null, undefined, "", "bad"])
