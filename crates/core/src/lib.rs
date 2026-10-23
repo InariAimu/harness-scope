@@ -1,5 +1,6 @@
 mod account_credentials;
 pub mod accounts;
+mod applications;
 pub mod build_info;
 mod codex_runtime;
 mod codex_scan;

@@ -35,6 +35,7 @@ import { AccentThemeProvider } from "@/components/theme/AccentThemeProvider";
 import { InterfaceSkinBackdrop } from "@/components/theme/InterfaceSkinBackdrop";
 import type { InterfaceSkinId } from "@/lib/interfaceSkins";
 import type { AppBuildInfo } from "@/lib/appBuild";
+import type { ApplicationSettingsMap } from "@/lib/applicationSettings";
 
 export interface Source {
   id: string;
@@ -58,6 +59,7 @@ export interface Config {
   modelsDevSync: unknown;
 }
 export interface Snapshot {
+  applicationSettings?: ApplicationSettingsMap;
   appBuild?: AppBuildInfo;
   syncProtocolVersion?: number;
   usageVersion: number;

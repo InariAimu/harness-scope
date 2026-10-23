@@ -36,7 +36,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
-  KNOWN_APP_TYPES,
   type AppTypeFilter,
   type UsageRangeSelection,
 } from "@/types/usage";
@@ -235,6 +234,15 @@ export function UsageDashboard({
     setProviderName(undefined);
     setModel(undefined);
   }, [initialAppType]);
+
+  const visibleHarnessIds = harnesses.map((h) => h.id).join(",");
+  useEffect(() => {
+    if (appType !== "all" && !visibleHarnessIds.split(",").includes(appType)) {
+      setAppType("all");
+      setProviderName(undefined);
+      setModel(undefined);
+    }
+  }, [visibleHarnessIds, appType]);
 
   // 切应用时清掉下游筛选，避免留下一个在新范围内查无数据的"幽灵"组合；
   // 切供应商同理清掉模型（模型选项随供应商级联）。
@@ -560,7 +568,7 @@ export function UsageDashboard({
           {t("usage.appFilter.all")}
         </button>
         {/* 应用只露图标，名字放悬停提示和 aria-label */}
-        {(harnesses.length ? harnesses.map((h) => h.id) : KNOWN_APP_TYPES).map(
+        {harnesses.map((h) => h.id).map(
           (app) => (
             <HoverTip key={app} content={APP_DISPLAY_NAME[app]}>
               <button

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Plus, Folder, Save, Trash2 } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
@@ -10,6 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/lib/toast";
 import { AppGlyph } from "@/components/shell/AppGlyph";
+import {
+  applicationSettings,
+  saveApplicationSettings,
+  type ApplicationSettings,
+} from "@/lib/applicationSettings";
 export function ApplicationsPage({
   snapshot,
   onChanged,
@@ -22,6 +28,18 @@ export function ApplicationsPage({
     i18n.language.startsWith("zh") ? zh : en;
   const [config, setConfig] = useState<Config>(snapshot.config);
   const [busy, setBusy] = useState(false);
+  const client = useQueryClient();
+  const [savingApp, setSavingApp] = useState<string | null>(null);
+  const saveApp = async (harness: string, patch: Partial<ApplicationSettings>) => {
+    setSavingApp(harness);
+    try {
+      await saveApplicationSettings(client, harness, patch);
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setSavingApp(null);
+    }
+  };
   const save = async () => {
     setBusy(true);
     try {
@@ -51,14 +69,20 @@ export function ApplicationsPage({
         actions={
           <Button onClick={() => void save()} disabled={busy}>
             <Save size={14} />
-            {l("保存", "Save")}
+            {l("保存目录", "Save directories")}
           </Button>
         }
       />
       <div className="scope-page space-y-5">
+        <p className="text-caption text-fg-2">
+          {l(
+            "应用开关自动保存，仅在本机生效；目录修改需点击「保存目录」。",
+            "Application switches save automatically on this device. Save directory changes with “Save directories”.",
+          )}
+        </p>
         {snapshot.harnesses.map((h) => (
           <section key={h.id} className="scope-card">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <div className="scope-app-icon">
                 <AppGlyph app={h.id} size={24} badgeClassName="bg-surface" />
               </div>
@@ -99,6 +123,53 @@ export function ApplicationsPage({
                 {l("添加目录", "Add directory")}
               </Button>
             </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="flex items-start gap-3 rounded-lg border border-border p-3">
+                <Switch
+                  className="mt-0.5 shrink-0"
+                  checked={
+                    applicationSettings(snapshot.applicationSettings, h.id).collectionEnabled
+                  }
+                  disabled={savingApp !== null}
+                  aria-label={`${h.name} ${l("采集", "collection")}`}
+                  onCheckedChange={(collectionEnabled) =>
+                    void saveApp(h.id, { collectionEnabled })
+                  }
+                />
+                <span>
+                  <span className="block text-body font-medium">{l("采集", "Collection")}</span>
+                  <span className="block text-caption text-fg-3">
+                    {l(
+                      "从已启用的目录采集。关闭后从下次采集起暂停，保留历史数据。",
+                      "Collect from enabled directories. Turning off pauses future scans and keeps history.",
+                    )}
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3 rounded-lg border border-border p-3">
+                <Switch
+                  className="mt-0.5 shrink-0"
+                  checked={applicationSettings(snapshot.applicationSettings, h.id).visible}
+                  disabled={savingApp !== null}
+                  aria-label={`${h.name} ${l("显示", "visibility")}`}
+                  onCheckedChange={(visible) => void saveApp(h.id, { visible })}
+                />
+                <span>
+                  <span className="block text-body font-medium">{l("显示", "Show")}</span>
+                  <span className="block text-caption text-fg-3">
+                    {l(
+                      "仅控制应用筛选项；汇总、明细与会话仍包含该应用。",
+                      "Show in application filters. Totals, details and sessions still include this app.",
+                    )}
+                  </span>
+                </span>
+              </label>
+            </div>
+            {savingApp === h.id && (
+              <p role="status" className="mt-2 text-caption text-fg-3">
+                {l("保存中…", "Saving…")}
+              </p>
+            )}
             {h.id === "copliot-deprecated" && (
               <p className="mt-3 text-caption text-fg-2">
                 {l(
@@ -122,7 +193,7 @@ export function ApplicationsPage({
                   <div key={s.id} className="flex items-center gap-3">
                     <Switch
                       checked={s.enabled}
-                      aria-label={`${h.name} ${l("采集", "collection")}`}
+                      aria-label={`${h.name} ${l("目录采集", "directory collection")} ${s.root}`}
                       onCheckedChange={(enabled) =>
                         setConfig((c) => ({
                           ...c,

@@ -1,5 +1,5 @@
 import { OptionSelect } from "@/components/ui/option-select";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useHarnessDescriptors } from "@/lib/harnessRegistry";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -15,6 +15,7 @@ import { SearchField } from "@/components/ui/search-field";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { getSessionKey } from "@/components/sessions/utils";
+import { APP_DISPLAY_NAME } from "@/components/shell/AppGlyph";
 export function SessionsPage({ onSettings }: { onSettings: () => void }) {
   const { i18n } = useTranslation();
   const l = (zh: string, en: string) =>
@@ -35,6 +36,11 @@ export function SessionsPage({ onSettings }: { onSettings: () => void }) {
   const [selection, setSelection] = useState(false);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const harnesses = useHarnessDescriptors();
+  const visibleHarnessIds = harnesses.map((h) => h.id).join(",");
+  useEffect(() => {
+    const visible = new Set(visibleHarnessIds.split(","));
+    if (app !== "all" && !visible.has(app)) setApp("all");
+  }, [visibleHarnessIds, app]);
   const transcript = useSessionTranscript(
     selected?.providerId,
     selected?.sourcePath,
@@ -97,7 +103,7 @@ export function SessionsPage({ onSettings }: { onSettings: () => void }) {
       {selected ? (
         <SessionReader
           session={selected}
-          appName={harnesses.find((h) => h.id === selected.providerId)?.name ?? selected.providerId}
+          appName={APP_DISPLAY_NAME[selected.providerId] ?? selected.providerId}
           transcript={transcript}
           listQuery={search}
           launchTerminal={null}

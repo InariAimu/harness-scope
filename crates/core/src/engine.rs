@@ -81,6 +81,13 @@ impl Engine {
             .lock()
             .map_err(|_| anyhow::anyhow!("Query lock poisoned"))
     }
+    fn wake_collection(&self) {
+        let (epoch, wake) = &*self.background_wake;
+        if let Ok(mut epoch) = epoch.lock() {
+            *epoch = epoch.wrapping_add(1);
+            wake.notify_all();
+        }
+    }
     pub fn execute(&self, name: &str, args: Value) -> Result<Value> {
         match name {
             "network_settings"
@@ -110,11 +117,49 @@ impl Engine {
             "snapshot" => {
                 let s = self.read_lock()?;
                 let mut config = serde_json::to_value(s.config()?)?;
+                let application_settings = crate::applications::load(&s)?;
                 let token = !s.config()?.server_token.is_empty();
                 config["serverToken"] = json!("");
                 Ok(
-                    json!({"appBuild":crate::build_info::current(),"syncProtocolVersion":4,"deviceId":s.device_id()?,"config":config,"usageVersion":s.usage_version()?,"localSchemaVersion":s.schema_version()?,"remoteSchemaVersion":s.meta::<Option<u32>>("remote_schema_version")?.flatten(),"remoteSchemaCheckedAt":s.meta::<Option<i64>>("remote_schema_checked_at")?.flatten(),"tokenConfigured":token,"harnesses":self.registry.descriptors(),"pending":s.pending_count()?,"devices":s.meta::<Vec<Value>>("devices")?.unwrap_or_default(),"lastScanAt":s.meta::<i64>("last_scan_at")?,"lastScan":s.meta::<ScanReport>("last_scan")?,"lastSyncAt":s.meta::<i64>("last_sync_at")?,"lastSyncError":s.meta::<Option<String>>("last_sync_error")?.flatten(),"migrations":s.meta::<Vec<Value>>("migration_manifests")?.unwrap_or_default()}),
+                    json!({"appBuild":crate::build_info::current(),"syncProtocolVersion":4,"deviceId":s.device_id()?,"config":config,"applicationSettings":application_settings,"usageVersion":s.usage_version()?,"localSchemaVersion":s.schema_version()?,"remoteSchemaVersion":s.meta::<Option<u32>>("remote_schema_version")?.flatten(),"remoteSchemaCheckedAt":s.meta::<Option<i64>>("remote_schema_checked_at")?.flatten(),"tokenConfigured":token,"harnesses":self.registry.descriptors(),"pending":s.pending_count()?,"devices":s.meta::<Vec<Value>>("devices")?.unwrap_or_default(),"lastScanAt":s.meta::<i64>("last_scan_at")?,"lastScan":s.meta::<ScanReport>("last_scan")?,"lastSyncAt":s.meta::<i64>("last_sync_at")?,"lastSyncError":s.meta::<Option<String>>("last_sync_error")?.flatten(),"migrations":s.meta::<Vec<Value>>("migration_manifests")?.unwrap_or_default()}),
                 )
+            }
+            "save_application_settings" => {
+                let harness = args["harness"].as_str().context("Missing harness")?;
+                self.registry.get(harness)?;
+                let patch: crate::applications::Patch =
+                    serde_json::from_value(args["patch"].clone())?;
+                anyhow::ensure!(
+                    patch.collection_enabled.is_some() || patch.visible.is_some(),
+                    "Missing application settings"
+                );
+                // Keep deletion's collect-before-remove sequence atomic with respect
+                // to this gate; an in-progress scan finishes before collection changes.
+                let _scan = if patch.collection_enabled.is_some() {
+                    Some(
+                        self.scan_lock
+                            .lock()
+                            .map_err(|_| anyhow::anyhow!("Scan lock poisoned"))?,
+                    )
+                } else {
+                    None
+                };
+                let s = self.lock()?;
+                let mut settings = crate::applications::load(&s)?;
+                let current = settings.entry(harness.to_owned()).or_default();
+                let previous = *current;
+                if let Some(enabled) = patch.collection_enabled {
+                    current.collection_enabled = enabled;
+                }
+                if let Some(visible) = patch.visible {
+                    current.visible = visible;
+                }
+                let updated = *current;
+                s.set_meta("application_settings", &settings)?;
+                if previous.collection_enabled != updated.collection_enabled {
+                    self.wake_collection();
+                }
+                Ok(json!(updated))
             }
             "rename_device" => {
                 let name =
@@ -191,11 +236,7 @@ impl Engine {
                 }
                 s.set_meta("config", &c)?;
                 if collection_changed {
-                    let (epoch, wake) = &*self.background_wake;
-                    if let Ok(mut epoch) = epoch.lock() {
-                        *epoch = epoch.wrapping_add(1);
-                        wake.notify_all();
-                    }
+                    self.wake_collection();
                 }
                 Ok(json!(true))
             }
@@ -533,17 +574,23 @@ impl Engine {
     }
     fn scan_selected(&self, force: bool, selected: Option<&str>) -> Result<ScanReport> {
         let config = self.lock()?.config()?;
+        let settings = crate::applications::load(&*self.lock()?)?;
         let mut report = ScanReport::default();
         let mut inputs = Vec::new();
         let mut paths = HashSet::new();
         crate::scan_cache::migrate_contexts(&*self.lock()?)?;
-        if selected.is_none_or(|h| h == "codex") {
+        if selected.is_none_or(|h| h == "codex")
+            && crate::applications::get(&settings, "codex").collection_enabled
+        {
             crate::codex_scan::scan(self, force, &mut report)?;
         }
         let mut index = TimelineIndex::new();
         let mut unavailable = HashSet::new();
         for source in config.sources.iter().filter(|s| {
-            s.enabled && s.harness != "codex" && selected.is_none_or(|h| h == s.harness)
+            s.enabled
+                && crate::applications::get(&settings, &s.harness).collection_enabled
+                && s.harness != "codex"
+                && selected.is_none_or(|h| h == s.harness)
         }) {
             let adapter = self.registry.get(&source.harness)?;
             let found = match adapter.discover(Path::new(&source.root)) {
@@ -928,6 +975,7 @@ impl Engine {
     }
     pub fn sessions(&self) -> Result<Vec<Session>> {
         let config = self.lock()?.config()?;
+        let settings = crate::applications::load(&*self.lock()?)?;
         let mut sessions = Vec::new();
         let mut visited = HashSet::new();
         let mut keys = HashSet::new();
@@ -944,7 +992,9 @@ impl Engine {
                 keys.insert((source.harness.clone(), path.clone()));
                 if let Ok(rows) = self.reader.metadata(adapter, &path) {
                     source_sessions.extend(rows.into_iter().map(|mut session| {
-                        session.can_delete = adapter.descriptor().delete;
+                        session.can_delete = adapter.descriptor().delete
+                            && crate::applications::get(&settings, &source.harness)
+                                .collection_enabled;
                         session
                     }));
                 }
@@ -978,6 +1028,12 @@ impl Engine {
             .map_err(|_| anyhow::anyhow!("Scan lock poisoned"))?;
         let path = self.session_path(args)?;
         let config = self.lock()?.config()?;
+        let settings = crate::applications::load(&*self.lock()?)?;
+        anyhow::ensure!(
+            crate::applications::get(&settings, args["providerId"].as_str().unwrap_or(""))
+                .collection_enabled,
+            "Enable collection for this application before deleting a session"
+        );
         anyhow::ensure!(
             config.sources.iter().any(|s| s.enabled
                 && s.harness == args["providerId"].as_str().unwrap_or("")

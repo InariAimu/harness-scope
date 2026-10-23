@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { command } from "./client";
 import { APP_DISPLAY_NAME } from "@/components/shell/AppGlyph";
 import type { Snapshot } from "@/App";
+import { applicationSettings } from "./applicationSettings";
 export function useHarnessDescriptors() {
   const q = useQuery({
     queryKey: ["snapshot"],
@@ -10,5 +11,5 @@ export function useHarnessDescriptors() {
   });
   const descriptors = q.data?.harnesses ?? [];
   for (const d of descriptors) APP_DISPLAY_NAME[d.id] = d.name;
-  return descriptors;
+  return descriptors.filter((d) => applicationSettings(q.data?.applicationSettings, d.id).visible);
 }
