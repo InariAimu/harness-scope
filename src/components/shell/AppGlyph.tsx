@@ -2,11 +2,8 @@
 import { Monitor, Terminal, Code2 } from "lucide-react";
 import type { AppId } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import claude from "@/assets/harness/claude.svg?raw";
-import openai from "@/assets/harness/openai.svg?raw";
-import opencode from "@/assets/harness/opencode.svg?raw";
-import deepseek from "@/assets/harness/deepseek.svg?raw";
-import copilot from "@/assets/harness/copilot.svg?raw";
+import { configuredIcon, defaultHarnessIcon, useIconLibrary } from "@/lib/entityIcons";
+import { IconArtwork } from "@/components/icons/IconArtwork";
 export const APP_DISPLAY_NAME: Record<AppId, string> = {
   claude: "Claude Code",
   "claude-desktop": "Claude Desktop",
@@ -22,15 +19,6 @@ export const APP_DISPLAY_NAME: Record<AppId, string> = {
   pi: "Pi",
   mcode: "MiniMax Code",
 };
-const BRAND_SVG: Record<string, string> = {
-  claude,
-  "claude-desktop": claude,
-  codex: openai,
-  opencode,
-  dsh: deepseek,
-  "copliot-deprecated": copilot,
-  copliot: copilot,
-};
 const BADGE: Record<string, typeof Terminal | undefined> = {
   claude: Terminal,
   "claude-desktop": Monitor,
@@ -38,42 +26,37 @@ const BADGE: Record<string, typeof Terminal | undefined> = {
 export function AppGlyph({
   app,
   size = 16,
+  fill = false,
   badgeClassName,
   className,
 }: {
   app: AppId;
   size?: number;
+  fill?: boolean;
   badgeClassName?: string;
   className?: string;
 }) {
-  const svg = BRAND_SVG[app];
+  const { data } = useIconLibrary();
   const Badge = BADGE[app];
   return (
     <span
       aria-hidden="true"
       className={cn(
         "relative inline-flex shrink-0 items-center justify-center",
+        fill && "h-full w-full rounded-[inherit]",
         className,
       )}
-      style={{ width: size + 2, height: size + 2 }}
+      style={fill ? undefined : { width: size + 2, height: size + 2 }}
     >
-      {svg ? (
-        <span
-          className={cn(
-            "inline-flex items-center justify-center",
-            (app === "codex" || app === "copliot") && "text-fg-1",
-            app === "copliot-deprecated" && "text-muted-foreground",
-          )}
-          style={{ width: size, height: size, fontSize: size, lineHeight: 1 }}
-          dangerouslySetInnerHTML={{ __html: svg }}
-        />
-      ) : (
-        <Code2 size={size} strokeWidth={1.8} />
-      )}
+      <span className={cn("inline-flex", fill && "absolute inset-0 items-center justify-center overflow-hidden rounded-[inherit]", (app === "codex" || app === "copliot") && "text-fg-1", app === "copliot-deprecated" && "text-muted-foreground")}>
+        <IconArtwork icon={configuredIcon(data, { kind: "harness", id: app })} fallback={defaultHarnessIcon(app)}
+          library={data} size={size} fill={fill} placeholder={<Code2 size={size} strokeWidth={1.8} />} />
+      </span>
       {Badge && (
         <span
           className={cn(
             "absolute -bottom-1 -right-1 flex h-[11px] w-[11px] items-center justify-center rounded-[3px] bg-sidebar text-fg-2",
+            fill && "bottom-0 right-0",
             badgeClassName,
           )}
         >

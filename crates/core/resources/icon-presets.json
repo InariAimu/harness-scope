@@ -1,0 +1,128 @@
+[
+  {
+    "id": "claude",
+    "name": "Claude",
+    "group": "brand",
+    "file": "claude.svg"
+  },
+  {
+    "id": "openai",
+    "name": "OpenAI",
+    "group": "brand",
+    "file": "openai.svg"
+  },
+  {
+    "id": "deepseek",
+    "name": "DeepSeek",
+    "group": "brand",
+    "file": "deepseek.svg"
+  },
+  {
+    "id": "opencode",
+    "name": "OpenCode",
+    "group": "brand",
+    "file": "opencode.svg"
+  },
+  {
+    "id": "copilot",
+    "name": "GitHub Copilot",
+    "group": "brand",
+    "file": "copilot.svg"
+  },
+  {
+    "id": "anthropic-portrait",
+    "name": "Anthropic",
+    "group": "portrait",
+    "file": "anthropic-portrait.png"
+  },
+  {
+    "id": "deepseek-portrait",
+    "name": "DeepSeek",
+    "group": "portrait",
+    "file": "deepseek-portrait.png"
+  },
+  {
+    "id": "bytedance-portrait",
+    "name": "ByteDance",
+    "group": "portrait",
+    "file": "bytedance-portrait.png"
+  },
+  {
+    "id": "google-portrait",
+    "name": "Google",
+    "group": "portrait",
+    "file": "google-portrait.png"
+  },
+  {
+    "id": "zhipu-portrait",
+    "name": "Zhipu",
+    "group": "portrait",
+    "file": "zhipu-portrait.png"
+  },
+  {
+    "id": "openai-portrait",
+    "name": "OpenAI",
+    "group": "portrait",
+    "file": "openai-portrait.png"
+  },
+  {
+    "id": "xai-portrait",
+    "name": "xAI",
+    "group": "portrait",
+    "file": "xai-portrait.png"
+  },
+  {
+    "id": "moonshot-portrait",
+    "name": "Moonshot",
+    "group": "portrait",
+    "file": "moonshot-portrait.png"
+  },
+  {
+    "id": "anthropic-pixel",
+    "name": "Anthropic",
+    "group": "pixel",
+    "file": "anthropic-pixel.png"
+  },
+  {
+    "id": "deepseek-pixel",
+    "name": "DeepSeek",
+    "group": "pixel",
+    "file": "deepseek-pixel.png"
+  },
+  {
+    "id": "bytedance-pixel",
+    "name": "ByteDance",
+    "group": "pixel",
+    "file": "bytedance-pixel.png"
+  },
+  {
+    "id": "google-pixel",
+    "name": "Google",
+    "group": "pixel",
+    "file": "google-pixel.png"
+  },
+  {
+    "id": "zhipu-pixel",
+    "name": "Zhipu",
+    "group": "pixel",
+    "file": "zhipu-pixel.png"
+  },
+  {
+    "id": "openai-pixel",
+    "name": "OpenAI",
+    "group": "pixel",
+    "file": "openai-pixel.png"
+  },
+  {
+    "id": "xai-pixel",
+    "name": "xAI",
+    "group": "pixel",
+    "file": "xai-pixel.png"
+  },
+  {
+    "id": "moonshot-pixel",
+    "name": "Moonshot",
+    "group": "pixel",
+    "file": "moonshot-pixel.png"
+  }
+]

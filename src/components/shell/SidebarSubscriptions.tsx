@@ -9,6 +9,7 @@ import { quotaCountdown, quotaWindowShortLabel, snapshotAge } from "@/lib/sideba
 import { moveProviderSidebarAccount, reconcileProviderSidebarOrder } from "@/lib/providerSidebarOrder";
 import { toast } from "@/lib/toast";
 import type { ProviderAccountView, QuotaWindow } from "@/types/providerAccounts";
+import { ProviderGlyph } from "@/components/icons/ProviderGlyph";
 
 const EXPANDED_KEY = "harness-scope.sidebar-subscriptions-expanded";
 
@@ -64,6 +65,7 @@ function AccountSummary({ view, now, zh, locale, onOpen, sorting }: {
     <button type="button" className="scope-subscription-account" onClick={() => onOpen(account.id)} disabled={sorting}
       aria-label={`${zh ? "查看" : "View"} ${account.name}`} title={details}>
       <span className="scope-subscription-account-heading">
+        <ProviderGlyph account={account} size={14} />
         <span className="scope-subscription-account-name">{account.name}</span>
         {view.error && <AlertCircle size={11} className="shrink-0 text-danger-text" aria-label={zh ? "刷新失败" : "Refresh failed"} />}
         {!sorting && <span className="scope-subscription-updated">{view.refreshing ? zh ? "刷新中" : "Refreshing" : age}</span>}

@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
-  Activity,
   ChartColumn,
   History,
   LayoutGrid,
@@ -159,7 +158,8 @@ export default function App() {
       <div className="scope-shell">
         <aside className={`scope-sidebar ${collapsed ? "is-collapsed" : ""}`}>
           <div className="scope-brand" {...DRAG_REGION_ATTR}>
-            <Activity size={19} className="text-action-text" />
+            <img src="/app-icon.png" alt="" aria-hidden="true" draggable={false} width={20} height={20}
+              className="h-5 w-5 shrink-0 rounded-[5px] object-cover" {...DRAG_REGION_ATTR} />
             {!collapsed && <strong {...DRAG_REGION_ATTR}>Harness Scope</strong>}
             <button
               aria-label="Toggle sidebar"

@@ -6,6 +6,7 @@ mod codex_runtime;
 mod codex_scan;
 pub mod engine;
 pub mod harness;
+mod icons;
 pub mod migration;
 pub mod model;
 pub mod network;

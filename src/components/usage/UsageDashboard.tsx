@@ -520,7 +520,7 @@ export function UsageDashboard({
   );
   const chipClass = (pressed: boolean) =>
     cn(
-      "relative inline-flex h-[26px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[5px] px-2 text-body transition-colors duration-150",
+      "relative inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[5px] px-2 text-body transition-colors duration-150",
       pressed
         ? "font-semibold text-fg-1"
         : "font-medium text-fg-2 hover:text-fg-1",
@@ -532,7 +532,7 @@ export function UsageDashboard({
         ref={appFilterIndicator.ref}
         role="group"
         aria-label={t("usage.appFilter.label")}
-        className="relative flex h-8 shrink-0 items-center gap-0.5 rounded-[8px] bg-subtle p-[3px]"
+        className="relative flex h-8 shrink-0 items-center gap-0.5 rounded-[8px] bg-subtle px-[3px]"
       >
         <SegmentThumb
           rect={appFilterIndicator.rect}
@@ -577,7 +577,7 @@ export function UsageDashboard({
                 aria-label={APP_DISPLAY_NAME[app]}
                 className={cn(
                   chipClass(appType === app),
-                  "w-[30px] justify-center px-0",
+                  "w-8 justify-center px-0",
                 )}
                 onClick={() => changeAppType(app as AppTypeFilter)}
                 onPointerEnter={() => {
@@ -603,8 +603,8 @@ export function UsageDashboard({
               >
                 <AppGlyph
                   app={app}
-                  size={16}
-                  badgeClassName={appType === app ? "bg-surface" : "bg-subtle"}
+                  size={20}
+                  badgeClassName={cn("bottom-0 right-0", appType === app ? "bg-surface" : "bg-subtle")}
                 />
               </button>
             </HoverTip>

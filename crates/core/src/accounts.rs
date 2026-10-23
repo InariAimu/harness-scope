@@ -127,6 +127,9 @@ struct Stored {
 fn load(store: &Store) -> Result<Vec<Stored>> {
     Ok(store.meta(META)?.unwrap_or_default())
 }
+pub(crate) fn exists(store: &Store, id: &str) -> Result<bool> {
+    Ok(load(store)?.iter().any(|item| item.account.id == id))
+}
 fn measurement_revision(item: &Stored) -> &str {
     item.measurement_revision
         .as_deref()
@@ -342,6 +345,7 @@ pub(crate) fn execute(engine: &Engine, vault: &Vault, name: &str, args: Value) -
             vault.restore(id, None)?;
             if let Err(error) = store.transaction(|| {
                 codex::calibration::clear(&store, id)?;
+                crate::icons::remove_account(&store, id)?;
                 store.set_meta(META, &accounts)
             }) {
                 vault.restore(id, old.as_deref())?;

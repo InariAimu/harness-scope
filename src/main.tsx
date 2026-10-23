@@ -6,6 +6,10 @@ import "./i18n";
 import "./index.css";
 import "./scope.css";
 import App from "./App";
+import { initializeInputModality } from "./lib/inputModality";
+
+initializeInputModality();
+
 const client = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
 });

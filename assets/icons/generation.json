@@ -1,0 +1,129 @@
+{
+  "generator": "built-in image_gen",
+  "generatedOn": "2026-10-23",
+  "size": [
+    128,
+    128
+  ],
+  "sources": [
+    {
+      "provider": "anthropic",
+      "name": "Anthropic",
+      "reference": "../claude.jpg",
+      "portraitBounds": [
+        0,
+        0,
+        418,
+        420
+      ]
+    },
+    {
+      "provider": "deepseek",
+      "name": "DeepSeek",
+      "reference": "../deepseek.jpg",
+      "portraitBounds": [
+        420,
+        0,
+        838,
+        420
+      ]
+    },
+    {
+      "provider": "bytedance",
+      "name": "ByteDance",
+      "reference": "../doubao.jpg",
+      "portraitBounds": [
+        868,
+        0,
+        1254,
+        420
+      ]
+    },
+    {
+      "provider": "google",
+      "name": "Google",
+      "reference": "../gemini.jpg",
+      "portraitBounds": [
+        0,
+        422,
+        417,
+        837
+      ]
+    },
+    {
+      "provider": "zhipu",
+      "name": "Zhipu",
+      "reference": "../glm.jpg",
+      "portraitBounds": [
+        420,
+        422,
+        838,
+        837
+      ]
+    },
+    {
+      "provider": "openai",
+      "name": "OpenAI",
+      "reference": "../gpt.jpg",
+      "portraitBounds": [
+        840,
+        422,
+        1254,
+        837
+      ]
+    },
+    {
+      "provider": "xai",
+      "name": "xAI",
+      "reference": "../grok.jpg",
+      "portraitBounds": [
+        0,
+        840,
+        417,
+        1254
+      ]
+    },
+    {
+      "provider": "moonshot",
+      "name": "Moonshot",
+      "reference": "../kimi.jpg",
+      "portraitBounds": [
+        420,
+        840,
+        838,
+        1254
+      ]
+    }
+  ],
+  "atlas": {
+    "layout": [
+      3,
+      3
+    ],
+    "size": [
+      1254,
+      1254
+    ],
+    "order": [
+      "anthropic",
+      "deepseek",
+      "bytedance",
+      "google",
+      "zhipu",
+      "openai",
+      "xai",
+      "moonshot"
+    ],
+    "lastCell": "unused"
+  },
+  "portrait": {
+    "prompt": "Use case: identity-preserve / background-extraction.\nCreate ONE production sprite atlas of eight community mascot AVATAR icons from the eight numbered character panels in the ONE supplied reference contact sheet. Input layout is 4x2, but OUTPUT layout MUST be 3x3. Reference N means numbered panel N. These are fictional community characters, not official company logos.\nLayout is a precise 3 columns x 3 rows grid on a square 1536x1536 transparent canvas. Every cell is 512x512; cells touch with no grid lines, no frames, no labels. The ninth (bottom-right) cell is completely transparent and empty.\nRow-major order is exactly:\n1 top-left: Anthropic, reference 1 Claude, copper-orange long hair, amber eyes, flower ornament, ivory frills, dark bow. Keep her upright as in this reference panel.\n2 top-middle: DeepSeek, reference 2, blue hair with cyan ends, blue eyes, white maid headband, blue side bow, friendly wink.\n3 top-right: ByteDance, reference 3 Doubao, dark brown asymmetric bob, big dark eyes, red scarf, black sweater. Preserve her soft 3D animated illustration style.\n4 middle-left: Google, reference 4 Gemini, lavender-blue hair, cat ears, rainbow star hair ornament, golden eyes.\n5 middle-middle: Zhipu, reference 5 GLM, black hair, black animal ears with white inner fur, sleepy gray eyes, sleep-mask headband, silver bells.\n6 middle-right: OpenAI, reference 6 GPT, white hair, two ivory dragon horns, lavender eyes, white/lavender maid headband and collar.\n7 bottom-left: xAI, reference 7 Grok, golden twin tails, blue eyes, black bows, white frilled headband, tiny gold crescent ornament, playful wink.\n8 bottom-middle: Moonshot, reference 8 Kimi, silver-white hair WITHOUT horns, lavender-gray eyes, navy bow, crescent/prism hair accessory, musical theme.\n9 bottom-right: empty.\nEach cell contains a single upright close-up HEAD AND SHORT NECK/COLLAR only, centered, with consistent scale. Hair, ears and horns fit fully inside a safe 6% margin. Head including hair fills roughly 88% of cell width/height; show very little torso so the face remains clear at 24px. Preserve each reference's distinct face, hairstyle, colors and recognizable accessories. Clean polished edges and strong readable silhouettes. No hands, no objects, no full body.\nGenuine alpha transparency everywhere outside each character silhouette. No circular badge, no background color, no painted checkerboard, no drop shadow or glow. Keep the provided costume/character identity; remove ALL poster text, typography, slogans and decorative poster backgrounds. Do not blend identities between cells. This is one atlas intended for exact equal-grid slicing into individual transparent icons.",
+    "resampling": "Lanczos, contain within 128x128; preserve generated alpha",
+    "master": "output/imagegen/provider-icons/portrait-sheet.png"
+  },
+  "pixel": {
+    "prompt": "Use case: style-transfer.\nCreate ONE sprite atlas of eight PIXEL ART community mascot avatar icons, based on the eight numbered character panels in the ONE input contact sheet. Input layout is 4x2; OUTPUT layout MUST be exactly 3x3 equal square cells in a square 1536x1536 canvas (each cell 512x512).\nRow-major order: top row 1 Anthropic (Claude copper-orange hair, amber eyes, flower ornament and ivory frills), 2 DeepSeek (blue/cyan hair, blue eyes, white headband, blue bow, wink), 3 ByteDance (Doubao dark-brown asymmetric bob, big dark eyes, RED SCARF and black sweater); middle row 4 Google (Gemini lavender-blue hair, CAT EARS, rainbow star hair ornament, golden eyes), 5 Zhipu (GLM black hair, black animal ears with white inner fur, sleepy gray eyes, sleep-mask headband and silver bells), 6 OpenAI (GPT white hair, two ivory DRAGON HORNS, lavender eyes, white/lavender headband); bottom row 7 xAI (Grok blonde twin tails, blue eyes, black bows, white headband, tiny gold crescent ornament, wink), 8 Moonshot (Kimi silver-white hair WITHOUT horns, lavender-gray eyes, navy bow, moon/prism hair ornament), 9 EMPTY SOLID DARK GRAY.\nEach tile is a FULL-BLEED OPAQUE SQUARE portrait. Background must fill the ENTIRE tile including all corners, no rounded corners, no transparent margin, no white gutters, no borders or labels. Cells touch exactly at 1/3 and 2/3 of canvas, ready for equal-grid slicing.\nStyle is AUTHENTIC COARSE PIXEL ART, not an anime image with a pixel filter: draw each avatar on an approximately 64x64 logical pixel grid enlarged exactly with nearest-neighbor square pixels. Hard stepped edges, flat limited color palette, simple one-pixel highlights, chunky readable forms. Absolutely no smooth brushwork, no airbrushing, no blurry pixels, no anti-aliasing.\nClose-up upright head and small collar with head filling ~85-90% of each tile. Strong silhouette and big readable face for 24px UI thumbnails. Keep hair, ears and horns within the tile. No hands, no full bodies. All eight have the SAME coherent pixel technique, including Doubao.\nFill background with simple pixel-art color blocks and very sparse pixel highlights; palette per tile: 1 warm terracotta/cream; 2 rich ocean blue; 3 red/burgundy; 4 violet/periwinkle; 5 slate charcoal; 6 muted lavender; 7 warm gold/ochre; 8 midnight blue. Ensure clear contrast between each character and its background.\nKeep each distinct character's hairstyle, accessories and colors from the reference. No mixing identities. No poster slogans, no typography, no labels, no text. Do NOT copy contact-sheet labels. No gradient rendering: only deliberate solid square pixel clusters.",
+    "resampling": "Nearest neighbor, 128x128, opaque",
+    "master": "output/imagegen/provider-icons/pixel-sheet.png"
+  }
+}

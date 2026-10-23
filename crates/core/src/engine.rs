@@ -90,6 +90,9 @@ impl Engine {
     }
     pub fn execute(&self, name: &str, args: Value) -> Result<Value> {
         match name {
+            "icon_library" | "set_entity_icon" | "import_entity_icon" | "delete_icon_asset" => {
+                crate::icons::execute(self, name, args)
+            }
             "network_settings"
             | "save_network_settings"
             | "test_network_settings"

@@ -96,6 +96,8 @@ npm run test:version
 
 ## 产物与空间
 
+Agent 执行构建、测试及收尾时遵循根目录 [AGENTS.md](../AGENTS.md)：按变更选择目标，验证完成后及时清理中间产物。Windows 清理使用回收站，核验完成后由用户决定何时清空，不直接永久删除。
+
 `target/`、`node_modules/`、`dist/` 和 `output/` 均不进入 Git。Rust 的 debug 依赖、PDB 和增量缓存会随多次构建增长；停止相关构建和程序后可以清理 `target/debug`，下次 debug／测试构建会重新生成。仅运行 release 构建通常不会生成 debug 缓存。
 
 `output/` 同时容纳临时测试数据和升级备份，不能整体当作缓存删除。完成验收后可清理对应测试库、WAL／SHM、复制日志和旧程序；保留需要的报告、截图，以及成对的升级前数据库与可执行文件。清理目录链接时不要跟随到外部数据。依赖和产物清理不应触碰 AppData 中的正式数据库。

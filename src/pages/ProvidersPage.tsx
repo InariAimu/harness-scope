@@ -45,6 +45,9 @@ import { cn } from "@/lib/utils";
 import { useProviderAccounts } from "@/lib/query/providerAccounts";
 import { CustomUsagePanel } from "@/components/providers/CustomUsagePanel";
 import { ProviderHistoryPanel } from "@/components/providers/ProviderHistoryPanel";
+import { IconPickerPopover } from "@/components/icons/IconPickerPopover";
+import { ProviderGlyph } from "@/components/icons/ProviderGlyph";
+import { defaultProviderIcon } from "@/lib/entityIcons";
 
 function QuotaCard({
   window,
@@ -373,7 +376,11 @@ export function ProvidersPage({
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-fg-3">
-              <span className="text-fg-1 font-medium">
+              <span className="inline-flex items-center gap-2 text-fg-1 font-medium">
+                <IconPickerPopover key={account!.id} target={{ kind: "account", id: account!.id }} name={account!.name}
+                  fallback={defaultProviderIcon(account!.provider)} className="inline-flex h-7 w-7 items-center justify-center">
+                  <ProviderGlyph account={account!} size={20} />
+                </IconPickerPopover>
                 {accountProviderName(account!.provider, accounts, zh)}
               </span>
               <span className="inline-flex items-center gap-1">

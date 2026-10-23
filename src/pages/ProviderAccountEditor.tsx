@@ -178,6 +178,7 @@ export function ProviderAccountEditor({
     setBusy(true);
     try {
       await api.remove(initial.account.id);
+      await client.invalidateQueries({ queryKey: ["icon-library"] });
       await client.invalidateQueries({ queryKey: ["provider-accounts"] });
       onClose();
     } catch (e) {

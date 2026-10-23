@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Plus, Folder, Save, Trash2 } from "lucide-react";
+import { Plus, Folder, Save, Trash2, LoaderCircle } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import type { Snapshot, Config } from "@/App";
 import { command } from "@/lib/client";
@@ -9,8 +9,11 @@ import { AppPageHeader } from "@/components/shell/AppPageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { HoverTip } from "@/components/ui/hover-tip";
 import { toast } from "@/lib/toast";
 import { AppGlyph } from "@/components/shell/AppGlyph";
+import { IconPickerPopover } from "@/components/icons/IconPickerPopover";
+import { defaultHarnessIcon } from "@/lib/entityIcons";
 import {
   applicationSettings,
   saveApplicationSettings,
@@ -26,6 +29,14 @@ export function ApplicationsPage({
   const { i18n } = useTranslation();
   const l = (zh: string, en: string) =>
     i18n.language.startsWith("zh") ? zh : en;
+  const collectionDescription = l(
+    "从已启用的目录采集用量；关闭后暂停后续采集，保留历史数据。",
+    "Collect usage from enabled directories. Turning off pauses future scans and keeps history.",
+  );
+  const visibilityDescription = l(
+    "在应用筛选项中显示；关闭不影响汇总、明细和会话列表。",
+    "Show in application filters. Turning off keeps this app in totals, details and sessions.",
+  );
   const [config, setConfig] = useState<Config>(snapshot.config);
   const [busy, setBusy] = useState(false);
   const client = useQueryClient();
@@ -76,100 +87,99 @@ export function ApplicationsPage({
       <div className="scope-page space-y-5">
         <p className="text-caption text-fg-2">
           {l(
-            "应用开关自动保存，仅在本机生效；目录修改需点击「保存目录」。",
-            "Application switches save automatically on this device. Save directory changes with “Save directories”.",
+            "点击图标可更换；图标与应用开关自动保存，仅在本机生效。目录修改需点击「保存目录」。",
+            "Click an icon to change it. Icons and switches save automatically on this device. Save directory changes with “Save directories”.",
           )}
         </p>
         {snapshot.harnesses.map((h) => (
           <section key={h.id} className="scope-card">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="scope-app-icon">
-                <AppGlyph app={h.id} size={24} badgeClassName="bg-surface" />
-              </div>
-              <div>
-                <h2 className="font-semibold">{h.name}</h2>
-                <p className="text-caption text-fg-3">
-                  {h.parserVersion} ·{" "}
-                  {[
-                    h.usage && l("用量采集", "Usage"),
-                    h.transcript && l("本机会话", "Local sessions"),
-                  ]
-                    .filter(Boolean)
-                    .join(" / ")}
-                  {!h.delete &&
-                    ` · ${l("请在原应用中删除会话", "Delete sessions in the original app")}`}
-                </p>
-              </div>
-              <span className="flex-1" />
-              <Button
-                variant="neutral"
-                size="compact"
-                onClick={() =>
-                  setConfig((c) => ({
-                    ...c,
-                    sources: [
-                      ...c.sources,
-                      {
-                        id: crypto.randomUUID(),
-                        harness: h.id,
-                        root: h.defaultRoots[0] || "",
-                        enabled: false,
-                      },
-                    ],
-                  }))
-                }
-              >
-                <Plus size={14} />
-                {l("添加目录", "Add directory")}
-              </Button>
-            </div>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <label className="flex items-start gap-3 rounded-lg border border-border p-3">
-                <Switch
-                  className="mt-0.5 shrink-0"
-                  checked={
-                    applicationSettings(snapshot.applicationSettings, h.id).collectionEnabled
-                  }
-                  disabled={savingApp !== null}
-                  aria-label={`${h.name} ${l("采集", "collection")}`}
-                  onCheckedChange={(collectionEnabled) =>
-                    void saveApp(h.id, { collectionEnabled })
-                  }
-                />
-                <span>
-                  <span className="block text-body font-medium">{l("采集", "Collection")}</span>
-                  <span className="block text-caption text-fg-3">
-                    {l(
-                      "从已启用的目录采集。关闭后从下次采集起暂停，保留历史数据。",
-                      "Collect from enabled directories. Turning off pauses future scans and keeps history.",
+            <div className="flex items-start gap-3">
+              <div className="flex min-w-0 flex-1 items-start gap-3">
+                <IconPickerPopover target={{ kind: "harness", id: h.id }} name={h.name} fallback={defaultHarnessIcon(h.id)} className="scope-app-icon">
+                  <AppGlyph app={h.id} size={24} fill badgeClassName="bg-surface" />
+                </IconPickerPopover>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h2 className="min-w-0 break-words font-semibold">{h.name}</h2>
+                    {savingApp === h.id && (
+                      <span role="status" className="shrink-0 text-fg-3">
+                        <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />
+                        <span className="sr-only">{l("保存中…", "Saving…")}</span>
+                      </span>
                     )}
-                  </span>
-                </span>
-              </label>
-              <label className="flex items-start gap-3 rounded-lg border border-border p-3">
-                <Switch
-                  className="mt-0.5 shrink-0"
-                  checked={applicationSettings(snapshot.applicationSettings, h.id).visible}
-                  disabled={savingApp !== null}
-                  aria-label={`${h.name} ${l("显示", "visibility")}`}
-                  onCheckedChange={(visible) => void saveApp(h.id, { visible })}
-                />
-                <span>
-                  <span className="block text-body font-medium">{l("显示", "Show")}</span>
-                  <span className="block text-caption text-fg-3">
-                    {l(
-                      "仅控制应用筛选项；汇总、明细与会话仍包含该应用。",
-                      "Show in application filters. Totals, details and sessions still include this app.",
-                    )}
-                  </span>
-                </span>
-              </label>
+                  </div>
+                  <p className="break-words text-caption text-fg-3">
+                    {h.parserVersion} ·{" "}
+                    {[
+                      h.usage && l("用量采集", "Usage"),
+                      h.transcript && l("本机会话", "Local sessions"),
+                    ]
+                      .filter(Boolean)
+                      .join(" / ")}
+                    {!h.delete &&
+                      ` · ${l("请在原应用中删除会话", "Delete sessions in the original app")}`}
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-4 pt-1">
+                {/* Tooltip state belongs to the label, not the switch's data-state. */}
+                <HoverTip content={collectionDescription} disableHoverableContent>
+                  <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap text-caption text-fg-2">
+                    <span>{l("采集", "Collection")}</span>
+                    <Switch
+                      size="sm"
+                      checked={applicationSettings(snapshot.applicationSettings, h.id).collectionEnabled}
+                      disabled={savingApp !== null}
+                      aria-label={`${h.name} ${l("采集", "collection")}`}
+                      aria-describedby={`application-${h.id}-collection-help`}
+                      onCheckedChange={(collectionEnabled) =>
+                        void saveApp(h.id, { collectionEnabled })
+                      }
+                    />
+                    <span id={`application-${h.id}-collection-help`} className="sr-only">
+                      {collectionDescription}
+                    </span>
+                  </label>
+                </HoverTip>
+                <HoverTip content={visibilityDescription} disableHoverableContent>
+                  <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap text-caption text-fg-2">
+                    <span>{l("显示", "Show")}</span>
+                    <Switch
+                      size="sm"
+                      checked={applicationSettings(snapshot.applicationSettings, h.id).visible}
+                      disabled={savingApp !== null}
+                      aria-label={`${h.name} ${l("显示", "visibility")}`}
+                      aria-describedby={`application-${h.id}-visibility-help`}
+                      onCheckedChange={(visible) => void saveApp(h.id, { visible })}
+                    />
+                    <span id={`application-${h.id}-visibility-help`} className="sr-only">
+                      {visibilityDescription}
+                    </span>
+                  </label>
+                </HoverTip>
+                <Button
+                  variant="neutral"
+                  size="compact"
+                  onClick={() =>
+                    setConfig((c) => ({
+                      ...c,
+                      sources: [
+                        ...c.sources,
+                        {
+                          id: crypto.randomUUID(),
+                          harness: h.id,
+                          root: h.defaultRoots[0] || "",
+                          enabled: false,
+                        },
+                      ],
+                    }))
+                  }
+                >
+                  <Plus size={14} />
+                  {l("添加目录", "Add directory")}
+                </Button>
+              </div>
             </div>
-            {savingApp === h.id && (
-              <p role="status" className="mt-2 text-caption text-fg-3">
-                {l("保存中…", "Saving…")}
-              </p>
-            )}
             {h.id === "copliot-deprecated" && (
               <p className="mt-3 text-caption text-fg-2">
                 {l(

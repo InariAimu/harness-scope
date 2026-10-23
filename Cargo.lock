@@ -1488,12 +1488,15 @@ name = "harness-scope-core"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "chrono-tz",
  "dirs 6.0.0",
  "flate2",
  "hyper-util",
+ "png 0.17.16",
  "reqwest 0.12.28",
+ "roxmltree",
  "rquickjs",
  "rusqlite",
  "rust_decimal",
@@ -3205,6 +3208,12 @@ dependencies = [
  "untrusted",
  "windows-sys 0.52.0",
 ]
+
+[[package]]
+name = "roxmltree"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
 
 [[package]]
 name = "rquickjs"
