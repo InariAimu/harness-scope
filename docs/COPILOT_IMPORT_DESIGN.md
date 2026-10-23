@@ -1,18 +1,20 @@
-# Copilot 双来源导入设计
+# Copilot 兼容导入与后续设计
 
-本设计约定两个独立的来源 ID：`copliot-deprecated` 和 `copliot`，沿用本次指定的拼写；当前历史来源界面名称为 `copliot-deprecated`，使用灰色 Copilot 图标，现代来源显示「Github Copliot」，使用黑色 Copilot 图标。旧会话不自动归入新来源，同一会话的来源在首次导入时固定。缺失正文不会使已有请求元数据失效。
+[文档索引](README.md) · [使用指南](USAGE.md)
+
+本设计约定两个独立的来源 ID：`copliot-deprecated` 和 `copliot`，为兼容已有数据保留该拼写；当前历史来源界面名称为 `copliot-deprecated`，使用灰色 Copilot 图标，现代来源显示「Github Copliot」，使用黑色 Copilot 图标。旧会话不自动归入新来源，同一会话的来源在首次导入时固定。缺失正文不会使已有请求元数据失效。
 
 当前已实现 `copliot-deprecated` 的兼容导入：复用现有数据库字段和同步格式，未知 Token 填 `0`，未知模型填 `unknown`，未知 provider 填 `github-copliot`，其他已有可空字段继续使用其未知表示。接受历史 Token 不完整、未知与真实零无法区分的限制。现代 `copliot` 也已接入 VS Code chatSessions 的兼容统计；原生 Credits、计量覆盖率、Agent Host 和 CLI 的完整语义设计保留为后续阶段。
 
-旧版适配器已注册，支持选定历史会话的 JSON 快照和 JSONL 对象操作日志、会话元数据及可恢复的文本阅读。旧版兼容方案无需数据库迁移，也不以实现现代来源作为前提。
+两个适配器沿用现有数据库和同步格式。旧版读取选定历史会话，现代来源读取历史清单之外符合 Copilot 身份的会话；均支持 JSON 快照、JSONL 对象操作日志、元数据及可恢复的文本阅读。
 
-## 第一阶段：旧版兼容导入
+## 已实现：旧版兼容导入
 
-结论：可以接入当前请求数、会话、模型和按日统计，不必增加或改变数据库字段。每个可恢复的用户请求生成一条现有 `UsageRecord`，`harness=copliot-deprecated`、`grain=event`、`count=1`、`recordSource=session`。Token 全为零也必须保留该记录。
+兼容记录接入现有请求数、会话、模型和按日统计，不增加数据库字段。每个可恢复的用户请求生成一条现有 `UsageRecord`，`harness=copliot-deprecated`、`grain=event`、`count=1`、`recordSource=session`。Token 全为零也必须保留该记录。
 
 | 现有字段 | 旧版兼容映射 |
 | --- | --- |
-| `id` | `copliot-session:{sessionId}:{requestId}`，不包含路径、模型或来源分类；为将来两类来源共享身份 |
+| `id` | `copliot-session:{sessionId}:{requestId}`，两个来源共用，不包含路径、模型或来源分类 |
 | `sessionId` / `nativeEventId` | 原生会话 ID / 请求 ID；transcript 只关联，不另计请求 |
 | `occurredAt` | 原生请求时间由毫秒转换为秒；不能用扫描时间补齐 |
 | `model` | 优先实际解析模型，其次明确的选择模型；缺失或只有未解析 `auto` 时为 `unknown` |
@@ -30,8 +32,6 @@
 只统计保存下来的用户请求；显式 `isSystemInitiated=true` 的条目不计数，工具轮数不增加请求数。取消、失败和重试保留原生请求身份，不能从用户请求次数反推 Premium Request 实际账单。空会话不产生虚构请求。
 
 适配器通过 `allows_price_estimates(has_tokens)` 允许对可确认的非零 Token 估价，扫描、重新计价及待补价格模型列表都遵循同一限制。只按已知维度计算，缺失维度不推算；费用是模型 API 参考价，不代表 Copilot 的 Premium Request／Credits 账单。价表快照、来源和 `model_reference` 口径复用现有字段。未知 Token 全为 0 的请求即使能匹配模型价表仍不定价，避免「已估价 0 USD」覆盖未知；它们也不导致已定价模型反复补价。当前摘要会将未知费用合计显示为 `0`，并增加 `unpricedCount`；该零值不代表免费。
-
-2026-10-22 核对原厂价表，现存已知输出可按 GPT-5.4 每百万输出 Token $15 和 GPT-5.3-Codex $14 计算参考价，分别对应 1,202,149 和 3,705 个输出 Token。来源为 [GPT-5.4 官方价格](https://openai.com/index/introducing-gpt-5-4/)和 [GPT-5.3-Codex 官方价格](https://developers.openai.com/api/docs/models/gpt-5.3-codex)。其他 310 条请求的费用继续未知。`reprice_usage` 可按 `harness` 限定回填范围；带备份的命令行工具见 `crates/core/examples/reprice_harness.rs`。
 
 模型统计的 Standard／Fast／档位未知仅适用于 `codex` harness。其他来源即使使用 GPT、Codex 命名的模型或 OpenAI provider，也不进入档位分组。同一模型跨来源统计时，Codex 档位行与其他来源的无档位行分别保留，总请求数和 Token 总量不变。
 
@@ -55,7 +55,7 @@ cargo run -p harness-scope-core --example import_copliot_deprecated --locked -- 
 
 ## 现代 VS Code 兼容接入
 
-`copliot` 的界面名称为「Github Copliot」。它读取配置的 VS Code User 根目录下、不在 `.harness-scope-copliot-deprecated.json` 历史清单中的原生 chatSessions JSON／JSONL。用户已将旧会话固定为历史类，并启用其余新会话的持续采集；因此普通重扫无需逐次选择新会话。缺少或损坏的历史清单会使发现失败，不会把整个历史目录当成现代来源。手动注册新的 User 根目录前，需先完成其历史清单；空清单表示显式选择该根目录下所有 Copilot 会话为现代来源。
+`copliot` 的界面名称为「Github Copliot」。它读取配置的 VS Code User 根目录下、不在 `.harness-scope-copliot-deprecated.json` 历史清单中的原生 chatSessions JSON／JSONL。历史清单固定旧会话归属，其余符合身份条件的新会话可持续采集，普通重扫无需逐次选择。缺少或损坏的历史清单会使发现失败，不会把整个历史目录当成现代来源。手动注册新的 User 根目录前，需先完成其历史清单；空清单表示显式选择该根目录下所有 Copilot 会话为现代来源。
 
 请求必须具有 Copilot 扩展／agent 身份或 `copilot/` 模型标识；显式其他扩展优先排除。会话文件名与原生 ID 不一致时暂缓，避免绕过历史边界。两类使用相同的 `copliot-session:{sessionId}:{requestId}` 身份；历史会话被新版续写后仍归旧类。新建会话和已有会话的新请求随普通扫描持续接入，关联 transcripts 不再计量。
 
@@ -71,20 +71,20 @@ cargo run -p harness-scope-core --example import_copliot --locked -- <DB> <CODE_
 
 [现代适配器回归](../crates/core/tests/copliot.rs)验证来源互斥、未来会话发现、其他 agent 排除、计数、价表、损坏文件保留、重启幂等与 v4 同步。该阶段不改变数据库结构或同步字段；Agent Host 数据库、CLI 和 OTel 仍按下文完整语义设计推进，尚未注册为可采集来源。
 
+可按工具限定重新计价范围，带一致性备份的辅助工具见 [reprice_harness.rs](../crates/core/examples/reprice_harness.rs)。它生成模型参考估算，不恢复缺失 Token 或实际订阅账单。
+
 ## 两类来源的边界
 
 | 来源 ID | 主要用途 | 默认展示 | 缺失数据的处理 |
 | --- | --- | --- | --- |
 | `copliot-deprecated` | 旧版 VS Code/Copilot 会话及其关联 transcript | 观察到的用户请求次数、会话和模型活动 | 首阶段只保存兼容 Token，缺失填 0，模型未知填 `unknown`，费用沿用未知表示 |
-| `copliot` | 已接入新建的 VS Code chatSessions v3；后续包含 Agent Host 和 CLI | 当前为用户请求、会话和累计输出 Token；完整方案包括 Credits 与覆盖率 | 当前未知 Token 填 0；完整方案按实际字段保留计量范围和缺失项 |
+| `copliot` | VS Code chatSessions v3；Agent Host 和 CLI 仅列入后续设计 | 当前为用户请求、会话和累计输出 Token；完整方案包括 Credits 与覆盖率 | 当前未知 Token 填 0；完整方案按实际字段保留计量范围和缺失项 |
 
 来源分类、计费制度、统计粒度、正文完整性是四个独立属性。`copliot-deprecated` 中也可能存在 Token 或后续新增的 Credits；`copliot` 中也可能存在没有 Token 的请求。不能以「新版」直接推定 AI Credits 计费，或以「旧版」直接推定每次消耗一个 Premium Request 单位。
 
-[GitHub 旧制说明](https://docs.github.com/en/copilot/reference/copilot-billing/request-based-billing-legacy/copilot-requests)规定，用户 prompt 与模型倍率决定 Premium Request 用量，Agent 自行执行的工具步骤不另算用户请求。部分年付账号在 2026 年 6 月后仍保留旧制，因此日期不能单独决定账单口径，见[计费过渡说明](https://docs.github.com/en/copilot/reference/copilot-billing/request-based-billing-legacy/what-changed-with-billing)。
+## 后续设计：扩展来源发现与归属
 
-## 来源发现与归属
-
-导入器在同一次发现中收集下列候选，先建立原生身份索引，再分配两个来源；不能让两个适配器分别全量读取同一目录并各自入账。
+以下跨存储发现与预览是待实现设计；当前仅使用前文的历史清单和 VS Code chatSessions。完整导入器拟在同一次发现中收集下列候选，先建立原生身份索引，再分配两个来源；不能让两个适配器分别全量读取同一目录并各自入账。
 
 | 存储 | 读取方式 | 归属依据 |
 | --- | --- | --- |
@@ -168,7 +168,7 @@ CLI 的 `assistant.usage` 是临时事件，不能假设历史文件中一定存
 
 详情页同时显示「Copilot 历史／GitHub Copilot」、实际模型、观察范围、缺失项和计费用量单位。正文阅读与用量采集共用来源配置，各自处理不完整性；没有正文仍可显示元数据与用量。
 
-## 身份与重复导入
+## 后续设计：跨来源身份与重复导入
 
 同一来源实例中，以原生 session/request/event ID 关联 chatSessions、transcript、SDK events 和 SQLite。`turns.event_id` 可以作为 turn ID 的别名映射，不能各自新增一个请求。文件移动或由 JSON 改为 JSONL 不改变身份；路径、Tokens、Credits、模型标签和来源分类不参与稳定事件身份计算。
 
@@ -192,4 +192,4 @@ CLI 的 `assistant.usage` 是临时事件，不能假设历史文件中一定存
 | transcript 副本 | 补充正文，不增加会话或请求次数 |
 | 半行／非法操作路径 | 诊断并暂缓，保留旧事实，禁止完整撤销 |
 
-合成样本和期望结果见 `tests/fixtures/copliot-import-contract.json`；校验命令为 `python -m unittest discover -s scripts -p "test_copilot_import_design.py"`。Python 检查完整语义的原生样本及契约；已实现的第一阶段由 Rust 适配器及兼容测试验证原生读取、现有记录格式、存储和同步。现代 `copliot` 尚未注册，完整语义的样本不能代替其未来实现的验收。
+合成样本和期望结果见 `tests/fixtures/copliot-import-contract.json`；校验命令为 `python -m unittest discover -s scripts -p "test_copilot_import_design.py"`。Python 检查完整语义的原生样本及契约；已实现的兼容层由 Rust 适配器及兼容测试验证原生读取、现有记录格式、存储和同步。两个 VS Code 适配器均已注册并有 Rust 回归；Agent Host、CLI、OTel 和完整原生计量仍未实现，设计样本不能代替生产支持。

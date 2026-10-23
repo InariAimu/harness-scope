@@ -1,114 +1,127 @@
-# 同步服务器
+# 自部署同步服务器
 
-`src/` 为 Rust/Axum 服务，`tests/` 为 HTTP 集成测试，`examples/sync_probe.rs` 为使用真实客户端引擎的部署验证工具，`deploy/` 为 Debian 部署文件。此 crate 与 `../crates/core` 共用同步协议和 SQLite 实现；以下 Cargo 命令均在仓库根目录执行。
+[项目首页](../README.md) · [文档索引](../docs/README.md) · [同步契约](../docs/ARCHITECTURE.md)
+
+Rust／Axum 服务与桌面共用核心数据模型，采用单用户 Bearer token。以下 Cargo 和打包命令在仓库根目录执行。生产启动不加 `--local`；该参数用于具有本机文件能力的开发 API。
+
+## 本机启动
+
+设置至少 24 字符的随机令牌，不要提交到仓库：
+
+```powershell
+$env:HARNESS_SCOPE_TOKEN = python -c "import secrets; print(secrets.token_urlsafe(48))"
+cargo run --release --locked -p harness-scope-service -- --db data/server.db --bind 127.0.0.1:8787
+```
+
+保留生成的令牌供客户端配置，远程访问通过 HTTPS 反向代理。在桌面「设置 → 多设备同步」填写服务器地址和相同令牌。
 
 ```powershell
 cargo test -p harness-scope-service --locked
 cargo build -p harness-scope-service --release --locked
 ```
 
-生产启动不加 `--local`。`--local` 提供本机命令 API，仅供桌面前端开发。
+## Docker Compose
 
-## Debian 目录与进程
+仓库中的 [compose.yaml](../compose.yaml) 使用同一个环境变量：
+
+```powershell
+# 当前终端已设置 HARNESS_SCOPE_TOKEN
+# 后续重启也须使用同一个令牌
+docker compose up --build -d
+```
+
+默认只向宿主机 `127.0.0.1:8787` 发布端口，数据库保存在命名卷 `scope-data`。HTTPS 代理需要能连接此端口。删除容器不等于备份数据；不要在需要保留数据库时删除命名卷。
+
+## 接口与兼容
+
+| 接口 | 用途 |
+| --- | --- |
+| `GET /health` | 无认证的版本、schema、协议和能力检查 |
+| `POST /v1/push` | 上传请求事实和设备名称 |
+| `GET /v1/changes?after=0&limit=500&protocolVersion=4` | 分页下载请求变化 |
+| `POST /v1/subscriptions/push` | 上传共享订阅和真实采样 |
+| `GET /v1/subscriptions/changes` | 分页下载共享订阅历史 |
+
+健康检查以外的接口需要 Bearer token。当前 schema 为 v6，请求协议为 v4；健康检查声明 `claude_request_timing_v2` 和 `subscription_history_v1` 能力。升级时先更新服务端及代理路由，再更新各客户端。
+
+请求上传支持 gzip，下载按 Accept-Encoding 协商 gzip；解压后上传上限为 5 MiB。代理也应限制传输体，并仅开放上述同步接口。正文、项目路径、API Key 和自定义查询脚本不在同步负载中。
+
+## Debian 部署模板
+
+[deploy/](deploy/) 提供构建、systemd、Nginx、证书和定时备份模板。**这些脚本保留了原部署环境的固定域名、IP 校验及站点文件名，首次部署必须修改为自己的配置。** 重点检查：
+
+- [install.sh](deploy/install.sh)：Nginx 站点文件名与启用链接。
+- [enable-https.sh](deploy/enable-https.sh)：域名、DNS 地址校验、证书和站点路径。
+- [nginx-http.conf](deploy/nginx-http.conf)、[nginx.conf](deploy/nginx.conf)：server_name 与证书路径。
+- [build.sh](deploy/build.sh) 和 systemd 单元：安装根目录、工具链及资源限制是否适合目标机器。
+
+部署机需准备 Python 3、Nginx、Certbot、curl、tar 及 Rust 构建所需系统依赖。模板的默认布局为：
 
 | 路径 | 内容 |
 | --- | --- |
-| `/opt/harness-scope/src/` | 仓库源码快照，服务器代码在其 `server/` 子目录 |
-| `/opt/harness-scope/build-tools/` | 隔离安装的 Rust 1.91.0 和 Cargo 缓存 |
+| `/opt/harness-scope/src/` | 源码快照 |
+| `/opt/harness-scope/build-tools/` | 脚本隔离安装的工具链与 Cargo 缓存 |
 | `/opt/harness-scope/build-target/` | Linux 构建产物 |
-| `/opt/harness-scope/releases/` | 带时间戳的可执行文件与备份脚本 |
-| `/opt/harness-scope/current` | 当前发布版本的符号链接 |
-| `/etc/harness-scope/server.env` | 随机同步令牌，root 所有、0600 |
-| `/var/lib/harness-scope/server.db` | 生产 SQLite 数据库 |
-| `/var/backups/harness-scope/` | 最近 14 份一致性备份 |
+| `/opt/harness-scope/releases/`、`current` | 发布目录与当前版本链接 |
+| `/etc/harness-scope/server.env` | 同步令牌，root 所有、0600 |
+| `/var/lib/harness-scope/server.db` | 服务端数据库 |
+| `/var/backups/harness-scope/` | 一致性备份 |
 
-`harness-scope.service` 以专用无登录用户运行，只监听 `127.0.0.1:8787`，设置内存上限、文件系统保护与自动重启。退出信号使用 SIGINT，与程序的优雅停机处理一致。
-
-## 上传与构建
-
-先在本机生成不含数据库、密钥和构建缓存的源码包，再上传到服务器：
+先生成源码包；下例 SSH 别名 `scope-server` 需替换为自己的主机配置：
 
 ```powershell
 python server/deploy/package_source.py output/deploy/harness-scope-source.tar.gz
-ssh harness-scope-debian "install -d -m 0755 /opt/harness-scope/src"
-scp output/deploy/harness-scope-source.tar.gz harness-scope-debian:/opt/harness-scope/source.tar.gz
-ssh harness-scope-debian "tar -xzf /opt/harness-scope/source.tar.gz -C /opt/harness-scope/src"
+ssh scope-server "install -d -m 0755 /opt/harness-scope/src"
+scp output/deploy/harness-scope-source.tar.gz scope-server:/opt/harness-scope/source.tar.gz
+ssh scope-server "tar -xzf /opt/harness-scope/source.tar.gz -C /opt/harness-scope/src"
 ```
 
-升级时应在旧构建结束后再更新源码。首次在服务器构建：
+升级时等旧构建结束再更新源码；在服务器执行：
 
 ```bash
-systemd-run --unit=harness-scope-build --property=RemainAfterExit=yes \
-  --property=MemoryMax=1300M --property=CPUQuota=150% \
-  --property=TasksMax=256 \
-  /bin/bash /opt/harness-scope/src/server/deploy/build.sh
-journalctl -fu harness-scope-build.service
-```
-
-构建使用单任务和固定工具链，不更改 root 的 PATH。再次使用同一临时构建单元前，执行 `systemctl stop harness-scope-build.service`；若此前失败，再执行 `systemctl reset-failed harness-scope-build.service`。
-
-构建成功后安装，首次生成令牌；后续安装保留令牌和数据库：
-
-```bash
+bash /opt/harness-scope/src/server/deploy/build.sh
+# 安装前完成域名等配置调整；升级现有服务时先做一致性备份
 bash /opt/harness-scope/src/server/deploy/install.sh
 ```
 
-脚本安装服务、备份计时器和独立 Nginx 站点，保留其他站点配置。之前的发布文件会保留在 `releases/`；升级前先备份数据库，因为数据库迁移后仅切换旧二进制未必能回滚。
+构建脚本当前固定 Rust 1.91.0、单构建任务，不修改全局 PATH。安装脚本要求 root，创建专用无登录用户、发布目录、服务和备份计时器；首次生成令牌，后续保留现有令牌与数据库。服务仅监听 loopback，以 SIGINT 优雅停机。
 
-## HTTPS
-
-在 DNS 添加 `hs.amu.moe` 的 A 记录 `49.51.191.33`，并确保云安全组可访问 80/443。解析生效后：
-
-```bash
-bash /opt/harness-scope/src/server/deploy/enable-https.sh
-```
-
-使用已有 Certbot 的 webroot 插件签发独立证书，续期成功后检查并重载 Nginx。Nginx 仅转发 `/health`、`/v1/push`、`/v1/changes`、`/v1/subscriptions/push` 和 `/v1/subscriptions/changes`，请求体上限 5 MiB、每 IP 限流 20 次/秒并允许短时突发，其他路径返回 404。
-
-桌面设置中填写 `https://hs.amu.moe` 和 `server.env` 内的令牌值。`/health` 无需认证，用量接口要求 Bearer token；当前是单用户共享令牌模型。
+配置自己的 DNS 与 80／443 访问后，使用已调整的 `enable-https.sh` 申请证书。它使用 Certbot webroot，续期成功后检查并重载 Nginx。客户端填写自己的 HTTPS 域名。
 
 ## 同步验证
 
-对生产服务可使用只读检查：建立空的临时客户端，通过真实同步引擎验证认证和下载，不上传记录：
+对已有数据的服务使用只读探测。令牌文件格式为 `HARNESS_SCOPE_TOKEN=...`，存放在被忽略的位置：
 
 ```powershell
-cargo run --locked -p harness-scope-service --example sync_probe -- --url https://hs.amu.moe --token-file output/deploy/hs.amu.moe.env --read-only
+cargo run --locked -p harness-scope-service --example sync_probe -- --url https://scope.example.com --token-file output/deploy/server.env --read-only
 ```
 
-先使用独立服务器数据库进行探测。探测会写入两台合成设备、三条记录，需要空的测试库，不能对已有用户数据的服务执行。
+将示例域名改为自己的地址。该模式创建临时客户端并验证认证及下载，不上传合成记录。
+
+不带 `--read-only` 的探测会写入合成设备和用量，只能对独立空测试服务器运行：
 
 ```powershell
-cargo run --locked -p harness-scope-service --example sync_probe -- --url https://hs.amu.moe --token-file output/deploy/hs.amu.moe.env
+cargo run --locked -p harness-scope-service --example sync_probe -- --url http://127.0.0.1:8787 --token-file output/deploy/test-server.env
 ```
 
-探测使用临时目录与合成 Claude/Codex 日志，不扫描真实会话。它检查错误令牌保留 outbox、双向同步、重复上传幂等、供应商字段、修订替换、游标分页和客户端重启。初始为 3 条记录、410 Tokens，修订后为 417 Tokens，待传应为 0。测试完成后归档测试服务器数据库，生产启动使用新库和新令牌。
+测试服务器应使用独立数据库和令牌。工具验证重试、双向同步、幂等、修订、分页和重启；订阅历史的并发与冲突另由 [subscription_sync.rs](tests/subscription_sync.rs) 回归覆盖。
 
-## 备份与恢复
+## 升级、备份与恢复
 
-### v6 订阅历史同步
-
-先备份数据库，部署新版服务及 `deploy/nginx.conf` 中两条 `/v1/subscriptions/*` 路由，再升级各客户端。`/health` 的 `recordCapabilities` 包含 `subscription_history_v1` 才支持此功能。两个接口沿用同一 Bearer token、gzip 及解压后的请求上限；请求用量的 v4 接口保持兼容。订阅采样为不可变记录，同一 ID 的不同内容会被拒绝，不采用覆盖合并。共享订阅目录只包含 ID、供应商类型和初次创建时的显示名称，不包含凭据或查询脚本。
-
-客户端明确关联共享订阅后补传已有真实采样。允许多台设备同时使用并独立采样；按采样时间合并，同一身份、套餐、额度桶和重置窗口内已用比例回退的读数不参与趋势和测算，原始记录保留。请求 Token 仍按设备、事件 ID 和修订精确同步，不参与额度筛选；未上传数据无法计入。服务器恢复时更换 `server_instance_id`，各来源设备下一次连接会补传其本机采样和订阅目录；已下载的历史在客户端保留。原有请求记录的恢复规则不变。v6 升级为追加表及索引，不改写已有请求或价格事实；在独立副本运行新版 `--compact` 后，使用 `python3 server/deploy/audit_v6.py BEFORE AFTER` 逐表验证原始数据、元信息和游标完全一致。`audit_v4.py` 是旧 v4 计时迁移专用工具，不用于验证本次升级。
-
-### v4 升级及空间回收
-
-当前数据库为 v6，请求用量同步协议仍为 v4。先部署服务器，再升级每台客户端；v4 计时来自来源设备，服务器无法凭 Token 数反推历史耗时。客户端首次启动自动补传已有计时，保留用量和冻结费用。
-
-变更表只保存每条记录最新的 `(seq, device_id, id)`，关联当前记录生成下载页，不再保存每次修订的完整 JSON。旧游标仍可追赶最新修订，新设备从零下载全部当前记录和删除墓碑，不需重置设备身份或重新上传全部事实。只有实际接受的新修订才推进序号，重试和低修订记录不产生日志。墓碑及每条记录的最新位置不能按日期直接删除。
-
-首次升级先通过 SQLite backup 生成一致性快照，在独立副本运行新二进制 `--db COPY --compact`，再以 `python3 server/deploy/audit_v4.py BEFORE COPY` 验证身份、用量、费用、源路径及序号。正式切换时暂停服务和备份计时器，重新生成最终快照，运行 `--db /var/lib/harness-scope/server.db --compact` 并审计，成功后启动新版本。`--compact` 执行迁移、VACUUM 和 WAL 截断后退出，不启动监听，只能在该数据库的服务停止时执行。失败时保留原快照与旧二进制；回滚需恢复对应版本的数据快照。
-
-上传使用 gzip，下载按 Accept-Encoding 协商 gzip，仍接收未压缩请求。5 MiB 请求上限作用于解压后内容；Nginx 保留传输体限制并透传编码。
-
-`harness-scope-backup.timer` 每天运行一次，随机延迟至多 30 分钟，保留最近 14 份快照。使用 Python `sqlite3.Connection.backup`，验证 `quick_check` 后才发布备份文件。手动验证：
+日常备份由 [backup.py](deploy/backup.py) 使用 SQLite Backup API 生成，`quick_check` 通过后发布。计时器每日运行，随机延迟至多 30 分钟，保留最近 14 份；异机备份需另行配置。
 
 ```bash
 systemctl start harness-scope-backup.service
 journalctl -u harness-scope-backup.service -n 10 --no-pager
 ```
 
-目前备份只在本服务器，异机备份需要另行配置目的地。恢复旧快照前应停止主服务和备份任务，完整保留原数据库及 WAL/SHM 文件；恢复完成后更新 `meta.server_instance_id` 为 JSON 字符串编码的新 UUID，再启动服务，促使所有设备重建镜像并重新上传本机记录。只有仍持有原始本机数据的设备上线后，才能补齐其记录。历史变更在 v4 中自动合并为每条记录的最新位置。
+数据库升级先在一致性副本上验证。`--db COPY --compact` 执行迁移、VACUUM 和 WAL 截断后退出，不启动监听，只能在该数据库未被服务使用时执行。v6 升级用 [audit_v6.py](deploy/audit_v6.py) 比较升级前后副本；[audit_v4.py](deploy/audit_v4.py) 仅用于对应旧版迁移审计，不混用。
+
+正式切换前暂停主服务与备份任务，生成最终备份并保留旧二进制，按副本上验证的流程升级。回滚需恢复匹配的旧数据库和程序。不能只替换程序，也不能在未处理 WAL 状态时用旧主文件覆盖在线数据库。
+
+恢复历史快照时，为 `meta.server_instance_id` 写入 JSON 字符串编码的新 UUID，再启动服务。来源设备下一次连接会重建请求镜像并补传本机事实、墓碑及共享采样；订阅历史的已下载缓存保留。只有仍持有本机数据且重新上线的设备能补齐缺失记录。
+
+服务端请求变更表只保存各记录最新序号位置，不保存每次修订的完整副本。墓碑和最新位置不能按日期直接删除；正常空间回收使用停机后的 `--compact`。
 
 ## 日常检查
 
@@ -116,7 +129,7 @@ journalctl -u harness-scope-backup.service -n 10 --no-pager
 systemctl status harness-scope.service
 journalctl -u harness-scope.service -n 50 --no-pager
 systemctl list-timers harness-scope-backup.timer
-curl --fail https://hs.amu.moe/health
+curl --fail http://127.0.0.1:8787/health
 ```
 
-服务器重启后服务与备份计时器自动启动。令牌不应写入仓库、命令参数或测试报告。
+同时检查公网 HTTPS 健康接口和需要认证的下载接口，避免只验证本机端口。令牌不写入仓库、命令参数或报告；升级共享历史时确认代理已开放两条订阅路由。

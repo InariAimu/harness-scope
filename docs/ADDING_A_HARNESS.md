@@ -1,40 +1,55 @@
-# 新增 harness
+# 新增工具适配器
 
-1. 在 `crates/core/src/harness/` 添加独立适配器，实现 `HarnessAdapter`。
-2. 在 `Registry::default()` 注册。适配器描述包括 ID、名称、默认目录、解析器版本和能力。
-3. `parse()` 只返回 `ParsedUsage`，不调用 SQLite、价表、Tauri 或网络。
-4. `session()` / `messages()` 输出本机列表及阅读器的消息块。正文不能进入 `UsageRecord`。
-5. 在 `tests/fixtures/<harness>/` 添加合成样本；在 `crates/core/tests` 验证准确总量、重扫、追加、修订和异常格式。
+[文档索引](README.md) · [架构与数据契约](ARCHITECTURE.md)
 
-非 JSONL 格式可覆盖 `discover()` 和 `read_source()`，将原生存储转换为本适配器的逻辑事件。一个数据库包含多个会话时覆盖 `sessions()`、`messages_for_session()` 和 `delete_session()`；后端与前端会传递原生 sessionId。祖先解析通过 `context_id()` / `context_events()` / `uses_ancestry()` 提供，只保存不含正文的最小用量上下文。通用编排器不识别 Codex 或其他 harness 的字段。
+仓库用 harness 表示一种编程工具的数据来源。接口定义在 [harness/mod.rs](../crates/core/src/harness/mod.rs)，已有适配器由 `Registry::default()` 注册。
 
-会话阅读使用独立的 `read_metadata()` / `read_messages(path, session_id)` 投影：前者只读列表摘要，后者只读所选会话。默认回退到完整日志；大日志或多会话数据库应覆盖这两个入口。Codex／Claude 使用有上限的头尾采样，压缩日志仅读前缀；OpenCode 在只读事务内查询会话头或限定 `session_id` 的正文。不要把这些摘要用于用量计数。
+## 接入步骤
 
-独立于日志更新的原生列表信息可通过 `enrich_metadata(root, sessions)` 按来源批量补充，此入口在日志摘要缓存之外每次刷新执行。Codex 按当前来源查找 `session_index.jsonl`，以最后一条有效 `thread_name` 覆盖标题，支持活动／归档目录及日期子目录，不混用其他来源或当前 `CODEX_HOME` 的索引。索引缺失或损坏时保留日志回退：跳过环境、项目指令和 Page 上下文等注入消息，取真实提问；附件包装取 `My request` 部分，完全没有提问则显示 session ID。正文保留原始消息。
+1. 在 `crates/core/src/harness/` 添加独立模块，实现 `HarnessAdapter`。
+2. 在注册表加入适配器，声明稳定 ID、名称、默认目录、解析器版本及 usage／transcript／delete 能力。
+3. `parse()` 返回 `ParseResult`：包含 `Vec<ParsedUsage>`、诊断及完整性标记；解析不调用数据库写入、价表、Tauri 或网络。
+4. 实现会话与消息投影，正文不进入 `UsageRecord`。
+5. 在 `tests/fixtures/<harness>/` 增加合成样本，在 `crates/core/tests/` 验证采集、存储和同步；补前端图标或阅读风格。
 
-阅读缓存位于 `crates/core/src/sessions.rs`。摘要按修改时间、大小与创建时间失效，SQLite 还合并 WAL；正文按 harness、规范源路径及 session ID 区分，LRU 限制为 8 个快照／96 MiB。分页和长块引用绑定快照指纹，日志续写不会把旧引用解释为新正文。`session_messages` 保留完整兼容读取；`session_transcript` 每批最多 150 条／约 256 KiB，`session_block` 按 Unicode 字符分页取完整工具参数、输出及思考。正文缓存和引用不进入数据库或同步协议。
+前端工具注册表来自后端，未知品牌可使用通用图标。不要让普通新增来源要求改写同步协议或数据库结构；确实新增计量语义时另行设计兼容策略。
 
-## 身份与统计规则
+## 发现与读取接口
 
-* 原生事件 ID 优先。若源不提供事件 ID，使用原生会话身份＋不依赖 Token/价格的稳定原始序号。解析规则修复不能让旧事件变成新事件。
-* 累计字段必须先转换为事件增量；祖先历史和重复快照不计入新用量。无法恢复基线时返回诊断和 `complete=false`。
-* `Tokens.input` 为新增输入。缓存读写与输入互斥；推理 Token 为输出子集，1h 缓存写入为缓存写入子集。
-* 时间必须来自可验证的原始记录，不能回落到导入时刻。
-* `complete=false` 保留原记录并重试，不允许执行全范围撤销。默认区分真正的零用量和未知用量；`copliot-deprecated` 的首阶段兼容方案明确采用未知 Token 填 0，仍不能将损坏数据作为缺失值吞掉。
-* `parserVersion` 在解释规则改变时升级，使文件指纹缓存失效。
-* 正文读取和用量读取共享目录配置，但可以采用不同的解析投影。
-* `ParsedUsage.provider` 仅取原生持久化路由 ID；缺失时保持 `None`。不要以当前配置或模型厂商代替历史供应商。新增投影字段时同步更新流式用量白名单，并提升解析器版本以回填历史记录。
+| 接口 | 用途 |
+| --- | --- |
+| `discover()` | 发现本来源的规范文件，避免迁移副本和临时文件重复入账 |
+| `read_source()` / `read_usage_source()` | 将 JSONL、压缩日志或原生存储转成用量读取输入 |
+| `parse()` | 生成稳定用量事实、诊断与 `complete` 状态 |
+| `context_id()` / `context_events()` / `parent_context()` | 提供祖先身份与最小用量上下文 |
+| `session()` / `sessions()` | 单文件或多会话来源的列表投影 |
+| `read_metadata()` / `enrich_metadata()` | 摘要读取及来源级外部标题等补充 |
+| `read_messages()` / `messages_for_session()` | 按原生会话读取正文 |
+| `delete_session()` / `delete_source()` | 在能力允许时执行删除 |
+| `allows_price_estimates(has_tokens)` | 限制不具备可靠计费维度的来源参与估价 |
 
-## 维护边界
+SQLite 来源应使用只读一致性事务，同时考虑 WAL。一个数据库包含多个会话时，发现、列表、正文与删除均须保留原生 session ID。摘要采样只用于展示，不能替代完整用量计数。
 
-第一版用量扫描对变更文件全量读取；Codex 为恢复父会话基线建立当轮时间线索引。将来增加字节游标时必须维持相同的事件身份、修订和完整性语义。
+会话缓存由 [sessions.rs](../crates/core/src/sessions.rs) 管理：摘要按文件元数据失效，SQLite 考虑 WAL；正文按工具、规范路径和 session ID 区分，最多 8 个快照／96 MiB。`session_transcript` 按最多 150 条／约 256 KiB 分页，长块通过 `session_block` 按 Unicode 字符读取。引用绑定快照指纹，续写不能将旧引用解释为新正文。
 
-UI 的注册表来自后端；新增适配器后应补充品牌图标和可选阅读风格。未识别品牌使用通用图标。按未知 harness 分组和同步不应要求修改协议或数据库 schema。
+## 身份与计量规则
 
-OpenCode 已作为原生 SQLite 适配器实现这一扩展方式，见 `crates/core/src/harness/opencode.rs`。V1 和 V2 同库存放时按会话选择新表，避免重复；不要仅依据旧 `session` 表判定 V2 会话是否存在，V2 新会话写入 `session_v2`。统计和会话列表必须来自同一读取事务。适配器描述的 `delete` 由引擎注入会话 `canDelete`，前端据此决定是否允许删除。
+- 优先原生事件 ID；无原生 ID 时使用不依赖 Token、价格和路径变化的稳定身份。
+- 累计计数必须先变成事件增量，祖先历史、重放和副本不产生新用量。
+- `input` 是新增输入，与缓存读写互斥；推理是输出子集，1h 缓存写入是全部缓存写入的子集。
+- 时间和 provider 必须有原生日志依据，不能使用导入时间、当前配置或模型厂商补造。
+- 缺失、损坏和真实零分别处理；异常来源返回诊断及 `complete=false`，保留已有记录并重试，禁止全范围撤销。
+- 解释规则改变时更新 `parser_version`，并验证历史 ID、费用快照和重复扫描。新用量投影字段要同步更新读取白名单。
+- 删除入口由 `Descriptor.delete` 和会话 `canDelete` 控制；不能只在前端放开按钮。
 
-DeepSeek Harness 的 JSONL／多帧 Zstandard 适配器见 `crates/core/src/harness/dsh.rs`，版本差异见 [DSH.md](DSH.md)。目录发现限定原生规范 session 文件，按同目录最高版本选择并检查头部版本；使用稳定的 `message.id`，不把迁移后变化的事件序号作为请求身份。流片段不计用量；v0 继承边界使用 `seedLength`，App v4 使用最后一个 `session/end-seed.data.inherited=true`，普通恢复的空标记不能当成分叉边界。没有继承历史的新建子代理保留自己的全部用量。阅读器通过 `injected` 标记隐藏运行时上下文等注入消息，避免多算提问。
+Copilot 兼容层受现有非空 Token 字段约束，缺失维度填 0；这是明确记录的例外，不应成为新适配器默认做法。模型档位分组只应用于 Codex，不从模型名为其他工具补造档位。
 
-当前解析器覆盖测试样本里的 JSONL 和 Zstandard 压缩 JSONL。分页续写及其他版本日志格式应增加对应样本和适配，遇到不支持的来源必须呈现诊断，不把缺少数据当成零使用。
+## 可参考的实现
 
-Copilot 的 `copliot-deprecated`／`copliot` 双来源导入另见 [Copilot 导入设计](COPILOT_IMPORT_DESIGN.md)。两类 VS Code 适配器均已注册，共用历史清单划分来源，复用现有字段，未知 Token 填 0、provider 回退为 `github-copliot`。可确认的非零 Token 可按价表计算模型参考费用，未知 Token 不定价；现代来源的覆盖率、不同用量粒度和原生计费用量留待后续。`allows_price_estimates(has_tokens)` 控制扫描、重新计价和待补价格建议，原生 Credits／PRU 不转换成 USD。模型的请求档位仅属于 Codex，不能凭模型名称或 provider 为其他 harness 加上档位。
+- [OpenCode](../crates/core/src/harness/opencode.rs)：V1／V2 SQLite，同会话优先新表；纯 V2 会话不能只靠旧 `session` 表发现，列表和用量来自一致性读取。
+- [Codex](CODEX.md)：逻辑会话与物理分段、祖先基线、运行日志档位证据和独立标题来源。
+- [DSH](DSH.md)：版本文件选择、多帧 Zstandard、稳定消息身份和继承边界。
+- [Claude](CLAUDE.md)：同请求内容块合并、请求计时关联和推理子集。
+- [Copilot](COPILOT_IMPORT_DESIGN.md)：固定历史清单划分两个已注册来源，未知用量不能伪装成已确认免费。
+
+用量扫描对发生变化的来源重读完整用量投影，并持久缓存可复用的读取结果。若增加字节游标或其他增量策略，仍须保持身份、修订、完整性和父会话基线语义。检查命令见[验证指南](VALIDATION.md)。

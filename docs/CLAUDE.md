@@ -1,5 +1,7 @@
 # Claude Code 会话统计
 
+[文档索引](README.md) · [速度与首字](TIMING.md)
+
 Claude Code 适配器读取 `~/.claude/projects` 的 JSONL；新配置会优先使用 `$CLAUDE_CONFIG_DIR/projects`。已保存的来源目录继续以「应用」页配置为准。支持范围以回归样本及本机实测版本为准。
 
 ## 请求与 Tokens
@@ -8,7 +10,7 @@ Claude Code 适配器读取 `~/.claude/projects` 的 JSONL；新配置会优先�
 
 输入、输出、缓存读取和缓存写入分别使用原生字段。`output_tokens_details.thinking_tokens` 为输出子集，单独保存在 `tokens.reasoning`，不会再次加入总 Tokens 或费用。非法计数、推理大于输出、1h 缓存写入大于全部缓存写入均报告未完成，保留原有记录等待重试。
 
-`cost-state` 是 Claude Code 的累计状态，可能包含可见助手消息以外的请求或不同计费口径，不作为额外用量或逐请求费用入库。实测 Haiku 会话的累计输入／输出与可见请求存在差额；`hasUnknownModelCost=true` 时 Claude 自报费用也无法作为供应商账单参照。
+`cost-state` 是 Claude Code 的累计状态，可能包含可见助手消息以外的请求或不同计费口径，不作为额外用量或逐请求费用入库。累计输入／输出可能与可见请求存在差额；`hasUnknownModelCost=true` 时 Claude 自报费用也无法作为供应商账单参照。
 
 ## 请求耗时与元数据
 
@@ -24,7 +26,7 @@ Claude Code 适配器读取 `~/.claude/projects` 的 JSONL；新配置会优先�
 
 ## 供应商与会话标题
 
-当前实测的 2.1.306 日志没有供应商路由 ID 或请求 endpoint。`provider` 保持未知，界面显示「会话日志」；不能以模型名、当前环境变量或 API Key 反推历史路由。显式绑定供应商需单独设计来源记录，当前没有将个人会话 ID 写入通用解析器。
+已验证的 2.1.306 样本没有供应商路由 ID 或请求 endpoint。`provider` 保持未知，界面显示「会话日志」；不能以模型名、当前环境变量或 API Key 反推历史路由。不能用个人会话 ID 的特例替代通用来源识别。
 
 会话标题优先使用同一会话的 `custom-title`，再取 `ai-title`，最后回退实际用户提问或会话 ID。摘要忽略运行时命令包装、工具结果和 `isMeta` 注入上下文。列表仍使用有上限的头尾采样；未落入采样范围的标题可能回退，不为读取标题完整扫描大日志。
 

@@ -1,72 +1,59 @@
 # 速度与首字
 
+[文档索引](README.md) · [架构与数据契约](ARCHITECTURE.md)
+
+原生日志计时均为估算，界面显示 `≈`；缺失依据显示 `—`。请求详情提供耗时与首字来源，不应把这些值当作精确网络延迟。
+
 ## 采集来源
 
-参考 [CC Switch e8880e6](https://github.com/farion1231/cc-switch/tree/e8880e6f57e25bce1bf3125cc6e33d9fb2b0d806/src-tauri/src/services) 的请求计时器、速度门槛和中位数口径。所有原生日志计时均为**估算**，请求列表和模型／应用统计显示 `≈`；未知显示 `—`。请求详情展示耗时依据、首字依据以及估算说明。
-
-| 来源 | 开始 | 结束 | 首字估算 |
-| --- | --- | --- | --- |
-| Codex JSONL / zst | 首个模型输出之前最近的用户消息、turn_context、工具结果或上次用量边界 | 优先匹配本次用量的 token_usage_record；否则 token_count；若它紧跟工具结果写出，回退到工具执行前最后模型输出 | 本次最早 Reasoning / AgentMessage 的 item_completed.started_at_ms 减去起点；没有有效字段则未知 |
-| OpenCode v2 SQLite | 助手消息 time.created | 优先有效 time.streamed；缺失或早于起点时回退 time.completed | 本条消息 text / reasoning 内容中最早 time.created（兼容 time.start）减去起点；缺失则未知 |
-| OpenCode v1 SQLite | 同上 | 同上，通常只有 completed | 使用同一 session/message 下 text / reasoning part 的 time.start（兼容 created） |
-| DeepSeek Harness v0/v4 | 对应 turn/step 的 step/start.time | assistant/message.time（不含后续工具执行） | 首个非空 text / reasoning / tool-call delta；v0 支持打包流片段，v4 读取消息／重试 attempt 内 stream；空片段跳过 |
-
-Codex 重复累计快照不切分请求；task_started / turn_aborted 清除未结算请求；旧布局在 token_count 后补写的同批输出不归到下一次请求。沿用原有用量去重、分叉和稳定事件 ID。OpenCode v2 的流结束时间不包含后续工具执行；completed 回退可能包含工具执行、使估算速度偏低，详情中会明确展示。
-
-首字指**最早模型输出（包含推理）**，不是最终可见答案的首字。日志起点不是网络请求发出的精确时刻，包含客户端组装开销；OpenCode 内容创建时间也可能晚于首个流片段。不要将估算值当成网络 TTFT。CC Switch 固定版本未从 OpenCode 原生日志推首字；内容时间戳估算是本项目的补充。
-
-## 计算与统计
-
-| 指标 | 计算与条件 |
-| --- | --- |
-| DSH 输出阶段估算 | 输出 Tokens ÷ ((耗时 − 首字等待) / 1000)；耗时依据为 dsh_step_message、首字依据为 dsh_stream_delta；输出至少 200、输出窗口至少 1000 ms |
-| E2E 端到端吞吐估算 | 其他日志或缺少有效流式首字依据的 DSH，输出 Tokens ÷ (估算耗时 / 1000)，包含首字等待；输出至少 200、耗时至少 1000 ms；显示 E2E 标记 |
-| 汇总估算速度 | 同一口径有效样本 Σ输出 ÷ (Σ有效窗口 / 1000)，不平均逐条速度；优先输出阶段样本，无此类有效样本才显示 E2E。两种口径不混算，悬停展示口径及采用／未混入的 E2E 样本数 |
-| 首字 | firstTokenMs / 1000，保留一位小数 |
-| 汇总首字 | 当前日期、设备、应用和模型筛选下有效首字样本的中位数；偶数样本取中间两项均值 |
-| 精确代理速度（预留显示） | 输出至少 100，latencyMs − firstTokenMs 至少 100 ms；本机日志不会填入此统计 |
-
-输出沿用统一 output 维度，包含 reasoning 子集。耗时只接受 100 ms 至 1 h；倒挂、缺失、过短或过长的时间戳不影响用量采集，仅使计时未知。首字必须位于起止区间内。DSH 流输出窗口过短或输出不足时显示未知，不能为了显示速度而改用整段耗时。没有流式首字依据时仍可估算 E2E，小回复不算速度但仍可统计首字。缺失计时的输出不能混入速度分子。
-
-DSH 的客户端流时间反映片段到达，无法保证等同于模型逐 Token 生成。2026-10-20 本机只读核对发现，`opencode-go / deepseek-v4.1-flash` 一次工具调用输出 124 Tokens，总耗时 6491 ms，首片段等待 6331 ms；78 个参数片段集中在余下 160 ms 到达，旧门槛得到 775 tok/s。同批还发现 1311 Tokens / 778 ms 的集中输出，仅提高 Token 门槛仍不足以过滤。现将输出量和输出窗口门槛同时提高到 200 Tokens / 1 s，列表、详情和汇总使用同一查询策略；不截断高速度数值，也不将过短窗口改作 E2E。该过滤减少短样本偏差，保留下来的值仍是客户端接收速度估算，不能排除较长时间的缓冲。
-
-API 的 models/providers 用 estDecodeSpeedOutputTokens、estDecodeSpeedGenerationMs、estDecodeSpeedSampleCount 表示输出阶段样本；estSpeedOutputTokens、estSpeedDurationMs、estSpeedSampleCount 仅表示 E2E 回退样本。另返回 estFirstTokenMedianMs、estFirstTokenSampleCount、timingSampleCount。请求列表与详情包含 timingMethod=estimated、timingSource、firstTokenSource，以及查询时派生的 estimatedSpeed（basis、durationMs、eligible、minOutputTokens、minDurationMs）。前端依后端策略显示，避免按不同门槛重算；兼容旧服务未返回策略时使用原 E2E 估算。未知状态码的成功率显示 `—`。
-
-## 模型的 Fast／Standard 对比
-
-模型统计对 OpenAI／Codex 类记录使用 `(原模型, 请求档位)` 分组。已验证的 Codex `thread_settings`／`turn_context` 来源中，`default` 显示 Standard，`priority`／`fast` 显示 Fast；其他显式档位保留原值。没有可信档位的历史记录，以及仅凭模型名识别的其他工具记录，进入「档位未知」，不会并入 Standard。模型名及筛选项保持原值，API 另提供 `rowKey` 与 `requestMode`。
-
-每组独立计算请求、Tokens、费用、加权速度及首字中位数，模型页显示采用的测速样本数，首字提示显示其有效样本数。测速门槛与 E2E／输出阶段口径沿用上述规则。前端按模型合计请求数排序，同一模型依次展示 Standard、Fast、其他档位及未知，整组分页，便于对照。供应商汇总仍按供应商合计；日期、设备、应用、供应商和模型筛选均先于档位分组执行。
-
-档位分组本身不改写原始用量。v0.2.0 采集器另支持从同一 Codex 来源的 `logs_2.sqlite` 中读取 `feedback_tags`，按会话、轮次、模型与时间补齐 rollout 首轮缺失的服务档位；沿用 `thread_settings` 来源，代表本地有效设置，而非服务端确认的计费。缓存仅保留匹配证据，缺失或冲突时仍为未知。已有记录通过原 ID 修订档位及解析版本、按协议 v4 同步，Token、冻结费用和计时不变；不需要升级 schema 或同步协议。
-
-历史缺失档位不能从当前设置、后续轮次、速度或价格反推；不同任务、上下文和输出长度仍会影响比较结果。
-
-## 统一其他 harness 的评估（2026-10-20）
-
-建议统一“明确口径、按同口径汇总、有效窗口过滤”的规则，不能直接从所有日志的总耗时减去当前首字估计。DSH 的起点、流片段与结束属于同一 turn/step，已在本机 App 0.2.1-rc.2 的实际会话逐请求验证，适合启用输出阶段估算。
-
-| Harness | 当前条件 | 本次处理与后续条件 |
+| 来源 | 起止依据 | 首字依据 |
 | --- | --- | --- |
-| DSH | step/start、首个非空流 delta、assistant/message 组成完整边界，重试首输出保持 | 启用输出阶段估算，保留 ≈ 与短窗口过滤 |
-| Codex | 首字来自输出项 started_at_ms，约 19% 本机历史请求有该字段；它是 item 生命周期开始，缺失时上游还可回退完成时刻，不是流 Token 到达事件 | 保留 E2E。要采用输出阶段口径，需要验证 item 与具体请求的对应关系及实际首输出语义，或采集请求级流式首字时间，不能将缺失字段补为零 |
-| OpenCode | 首字来自内容创建；仅约 6% 本机记录带独立 streamed 结束字段，其余 completed 可能包含工具执行 | 保留 E2E。可后续仅对具备可靠首次输出和独立流结束的版本启用，旧记录继续回退并明确来源 |
-| Claude Code | 2.1.306 样本有 `api-request`／`requestRef` 和助手内容块时间，旧日志可能没有；缺少真实首 Token 时间 | 同一请求唯一关联时显示日志 E2E 耗时／速度估算；首字保持未知，不扣除思考块耗时。规则见 [Claude 兼容说明](CLAUDE.md) |
+| Codex | 最近的有效用户／轮次／工具边界至本次用量事件；排除后续工具执行 | 对应输出项 `item_completed.started_at_ms`，无有效字段则未知 |
+| OpenCode V1／V2 | 助手 `time.created` 至有效 `time.streamed`，缺失时回退 `completed` | 同一消息 text／reasoning part 的最早创建／开始时间 |
+| DeepSeek Harness v0／v4 | 同一 turn／step 的 `step/start` 至 `assistant/message` | 首个非空 text／reasoning／tool-call delta，含支持的重试 stream |
+| Claude Code | `api-request.id` 与助手 `requestRef` 唯一关联后的请求窗口 | 未提供可靠首 Token 时间，保持未知 |
 
-上述比例为本机只读审计快照，不代表这些产品的全部版本能力。Codex 上游可参考 [item 计时实现](https://github.com/openai/codex/blob/main/codex-rs/core/src/session/mod.rs)。后续适配集中在后端计时来源策略，不需要改变 Token、费用或同步身份。
+首字表示最早模型输出，可能包含推理，不一定是最终可见答案。Codex 输出项生命周期和 OpenCode 内容创建时间不等于流 Token 到达；Claude 的思考块时长也不能用于补造首字。
 
-## 持久化与回填
+Codex 重复累计快照不切分请求，取消等边界清除未结算计时。OpenCode 的 completed 回退可能包含工具耗时；DSH 流片段可能缓冲后集中到达。计时只影响估算可用性，不改变用量身份和去重。
 
-schema / 同步协议 v4 将可选 timing 加入用量记录，传输耗时、首字等待及其来源白名单；不传输计算后的速度、正文、路径或凭据。各设备的 record_timings 是按完整 (device_id, id) 键维护的查询投影，接收远程修订时与记录和下载游标在同一事务更新；旧修订不会覆盖较新的计时。切换服务器或重建镜像时清除远程计时，保留本机样本。远程样本始终表示来源设备的日志估算，沿用相同的过滤、E2E / 输出阶段口径和 ≈ 标记。
+## 计算与样本门槛
 
-升级到 v4 时，已有本机计时一次性补入对应记录，递增修订并进入 outbox；保持设备身份、稳定 ID、Token、费用快照和源路径不变，无需重新读取历史日志。没有原始计时的记录保持未知；客户端重启不重复回填。服务端先升级，旧版本不得静默读取或覆盖新计时；其他设备升级并上线后才能补传它们的历史计时。
+| 指标 | 规则 |
+| --- | --- |
+| DSH 输出阶段速度 | 输出 Tokens ÷（总耗时 − 首字等待）；输出至少 200，输出阶段至少 1 秒 |
+| E2E 吞吐 | 输出 Tokens ÷ 端到端耗时；输出至少 200，耗时至少 1 秒 |
+| 汇总速度 | 同口径的输出总和 ÷ 有效时间总和，不平均逐条速度；优先输出阶段样本，无此类样本才显示 E2E |
+| 单条首字 | `firstTokenMs / 1000`，显示秒 |
+| 汇总首字 | 有效样本中位数，偶数样本取中间两项均值 |
 
-解析器版本更新为 codex-v3-timing / opencode-sqlite-v2-timing；启动扫描会重读现有源日志并回填，无需重新定价。历史已删源日志不能回填；删除会话后已有计时随用量保留。若源记录仍未完成，继续重试，不覆盖已完成用量。
+耗时只接受 100 ms–1 小时，首字必须在起止区间内；输出包含 reasoning 子集，不重复累加。短回复仍可有首字，但不进入速度样本。缺失计时的输出不能加入速度分子。
 
-2026-10-20 的 DSH 速度调整仅在查询时消费现有 record_timings，没有增加 schema、修改原始计时、提高解析器版本或重新扫描历史日志；不更改费用、用量修订与 outbox。速度策略 DTO 也不进入同步记录。
+DSH 有流式依据但输出窗口过短时保持未知，不能为了显示速度而改用 E2E；缺少流式依据时才采用 E2E 回退。两种速度口径不混算，界面展示采用的样本数。门槛用于减少短窗口偏差，不能保证消除所有客户端缓冲影响。
 
-测试见 crates/core/tests/timing.rs、src/components/usage/format.test.ts 和 statsColumns.test.ts。
+## 模型档位比较
 
-## 默认窗口尺寸
+仅 `harness=codex` 的模型统计按原始模型与请求档位分组。可信 `thread_settings`／`turn_context` 的 `default` 为 Standard，`priority`／`fast` 为 Fast；缺失为档位未知。其他工具的同名模型保留无档位分组，不推断其服务档位。
 
-默认客户端尺寸为 1000×667 **逻辑像素**，对应原先 150% 缩放下约 1500×1000 的设计视口。Tauri 配置和 Windows 关闭系统装饰后的 `LogicalSize` 使用同一尺寸，随后居中；100% 缩放时客户端为 1000×667 物理像素，150% 时约为 1500×1000（高度有取整差异）。系统 DPI 负责缩放，避免在 100% 下仍强制打开 1500×1000 的大窗口。最小尺寸维持 900×620 逻辑像素，阴影／外框不计入客户端尺寸。
+各组独立计算请求、Tokens、费用、加权速度和首字中位数，同模型相邻展示并一起分页。档位来自请求设置，不证明服务端实际执行或计费；任务、上下文和输出长度差异仍会影响比较。首轮证据、历史回填见 [Codex 说明](CODEX.md)。
+
+## 查询接口
+
+后端查询统一提供估算策略，前端按策略展示，不自行使用另一套门槛：
+
+- 输出阶段：`estDecodeSpeedOutputTokens`、`estDecodeSpeedGenerationMs`、`estDecodeSpeedSampleCount`。
+- E2E：`estSpeedOutputTokens`、`estSpeedDurationMs`、`estSpeedSampleCount`。
+- 首字与覆盖：`estFirstTokenMedianMs`、`estFirstTokenSampleCount`、`timingSampleCount`。
+- 单请求：`timingMethod`、`timingSource`、`firstTokenSource` 和派生的 `estimatedSpeed`（依据、时间、门槛及有效性）。
+
+未知状态码的成功率保持未知，不用计时是否存在代替请求成功状态。
+
+## 持久化与同步
+
+可选 `timing` 随用量协议 v4 传输，仅包含耗时、首字及白名单来源。schema 版本独立演进，当前见[版本说明](ARCHITECTURE.md#版本与兼容)。计算后的速度、正文、路径和凭据不进入计时负载。
+
+`record_timings` 是按 `(device_id, id)` 维护的查询投影，与事实及下载游标在事务中更新，旧修订不会覆盖新样本。服务器镜像重建时清除远程投影，保留本机计时；远端样本仍表示来源设备的日志估算。
+
+解析器升级可从仍存在的日志补齐证据；源日志已删除且未保存的计时不能恢复。已有本机计时可通过原 ID 修订和 outbox 补传，Token 与冻结费用保持原样。服务端先升级相应能力，未知来源不能通过剥离字段提前确认。
+
+实现见 [timing.rs](../crates/core/src/timing.rs)；回归见 [timing 测试](../crates/core/tests/timing.rs)、[格式化测试](../src/components/usage/format.test.ts)和[列配置测试](../src/components/usage/statsColumns.test.ts)。
