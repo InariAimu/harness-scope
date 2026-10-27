@@ -80,12 +80,6 @@ export function GoForecastPanel({
   const time = (value: number) => new Date(value * 1000).toLocaleString(locale);
   return (
     <div className="space-y-4">
-      <p className="text-caption text-fg-3">
-        {l(
-          "按近期同模型的请求频率与上下文／缓存分布，预测剩余额度能支持多久，以及均匀用到重置时的预算。",
-          "Uses recent request frequency and context/cache mix for this model to estimate remaining time and a budget through reset.",
-        )}
-      </p>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <label className="text-caption text-fg-2 space-y-1">
           {l("预测模型", "Forecast model")}
@@ -180,12 +174,6 @@ export function GoForecastPanel({
                 {l("最近样本", "Latest sample")}: {time(data.sample.lastAt)}
               </p>
             )}
-            <p className="text-fg-3">
-              {l(
-                "平均频率包含采样区间内的空闲时间；这是额度消耗速度，不是模型生成 TPS。",
-                "The average includes idle time in the sampling interval; this is allowance burn, not generation TPS.",
-              )}
-            </p>
           </div>
           {data.nextEvent && (
             <div
@@ -224,12 +212,6 @@ export function GoForecastPanel({
                   {labels[data.dailyBudget.window]}
                 </p>
               )}
-              <p className="text-caption text-fg-3">
-                {l(
-                  "该上限仅适用于当前窗口；最早的窗口重置后重新计算，不把未来多次重置后的补充额度提前算入。",
-                  "This pace applies to current windows only. Recalculate after the first reset; future replenishments are not counted in advance.",
-                )}
-              </p>
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -307,12 +289,6 @@ export function GoForecastPanel({
           </p>
         </>
       )}
-      <p className="text-caption text-fg-3">
-        {l(
-          "按共用订阅采样所有已同步设备的关联路由。基于当前本地规则，按未来 UTC 高峰／非高峰分段计价，并补扣官方快照后的已知关联用量。假设后续只使用所选模型，保持样本中的请求规模与缓存分布。每日预算是所有关联设备的合计，按均匀分布折算，集中高峰使用时需相应降低用量；尚未同步的用量、其他模型、服务端计费延迟和缓存变化会影响结果。官方快照须在 10 分钟内；缺失或不足样本时不推算无限可用。额度美元为折算量，不是新增账单。",
-          "Samples linked routes from all synced devices, assuming a shared subscription. Uses current local rules, future UTC peak/off-peak segments and known linked usage since the official snapshot. Assumes subsequent traffic uses only this model with the sampled request sizes and cache mix. Daily budgets are shared totals across linked devices with uniform traffic; use less if concentrated in peak hours. Unsynced usage, other models, billing lag and cache changes affect accuracy. Quota must be newer than 10 minutes; insufficient samples never imply unlimited use. Dollar values express allowance, not a new bill.",
-        )}
-      </p>
     </div>
   );
 }

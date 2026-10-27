@@ -21,6 +21,7 @@ Harness Scope 是一个以本机数据为基础的桌面应用：从编程工具
 | Codex | JSONL／Zstandard rollout | 用量、会话、分段与继承去重、请求档位 |
 | OpenCode | V1／V2 SQLite | 用量、会话、原生费用、迁移副本去重 |
 | DeepSeek Harness | v0／v4 JSONL、Zstandard | 用量、会话、缓存与推理细分、流式计时估算 |
+| Cherry Studio | 2.x SQLite | 会话和可完整拆分的逐次用量；未知旧汇总不计入 |
 | GitHub Copilot（兼容导入） | VS Code chatSessions JSON／JSONL | 用户请求、会话和可确认的输出 Tokens；需先配置历史来源边界 |
 
 Copilot 的完整 Credits／PRU 计量、Agent Host 和 CLI 导入仍未实现。各工具的格式限制和配置方法见[使用指南](docs/USAGE.md)及[兼容说明](docs/README.md#工具兼容与计量)。
@@ -60,4 +61,4 @@ Windows 可执行文件的构建步骤见[开发与构建](docs/DEVELOPMENT.md)�
 
 ## 来源与许可
 
-项目采用 [MIT 许可证](LICENSE)。界面、会话阅读器和部分统计组件参考或复用 CC Switch；原作者 Jason Young 的许可及具体来源见 [third_party/UPSTREAM.md](third_party/UPSTREAM.md) 和 [CC Switch 许可证](third_party/CC-Switch-LICENSE)。其他素材声明也在来源清单中保留。
+项目采用 [MIT 许可证](LICENSE)。界面、会话阅读器和部分统计组件参考或复用 CC Switch；原作者 Jason Young 的许可及具体来源见 [third_party/UPSTREAM.md](third_party/UPSTREAM.md) 和 [CC Switch 许可证](third_party/CC-Switch-LICENSE)。Cherry Studio 图标及其他素材的来源和各自许可另见来源清单。

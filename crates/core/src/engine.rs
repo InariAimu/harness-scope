@@ -58,6 +58,26 @@ impl Engine {
             }
             store.set_meta("config", &config)?
         }
+        // Add newly supported Cherry sources once on existing installations. Respect
+        // later removal or disabling by never recreating the source after migration.
+        if !store
+            .meta::<bool>("cherry_source_initialized")?
+            .unwrap_or(false)
+        {
+            if !config.sources.iter().any(|s| s.harness == "cherry") {
+                let descriptor = registry.get("cherry")?.descriptor();
+                for (i, root) in descriptor.default_roots.iter().enumerate() {
+                    config.sources.push(Source {
+                        id: format!("cherry-{i}"),
+                        harness: "cherry".into(),
+                        root: root.clone(),
+                        enabled: Path::new(root).is_file(),
+                    });
+                }
+                store.set_meta("config", &config)?;
+            }
+            store.set_meta("cherry_source_initialized", &true)?;
+        }
         Ok(Self {
             account_vault: crate::account_credentials::Vault::new(path),
             account_polling: Default::default(),

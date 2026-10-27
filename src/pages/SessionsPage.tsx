@@ -1,7 +1,8 @@
 import { OptionSelect } from "@/components/ui/option-select";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useHarnessDescriptors } from "@/lib/harnessRegistry";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTranslation } from "react-i18next";
 import { RefreshCw, Folder } from "lucide-react";
 import { sessionsApi } from "@/lib/api";
@@ -16,6 +17,11 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "@/lib/toast";
 import { getSessionKey } from "@/components/sessions/utils";
 import { APP_DISPLAY_NAME } from "@/components/shell/AppGlyph";
+
+type SessionListRow =
+  | { kind: "heading"; key: string }
+  | { kind: "session"; session: SessionMeta; first: boolean; last: boolean };
+
 export function SessionsPage({ onSettings }: { onSettings: () => void }) {
   const { i18n } = useTranslation();
   const l = (zh: string, en: string) =>
@@ -35,6 +41,8 @@ export function SessionsPage({ onSettings }: { onSettings: () => void }) {
   const [busy, setBusy] = useState(false);
   const [selection, setSelection] = useState(false);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const listScrollRef = useRef<HTMLDivElement>(null);
+  const listOffset = useRef(0);
   const harnesses = useHarnessDescriptors();
   const visibleHarnessIds = harnesses.map((h) => h.id).join(",");
   useEffect(() => {
@@ -51,12 +59,15 @@ export function SessionsPage({ onSettings }: { onSettings: () => void }) {
       .writeText(s)
       .then(() => toast.success(l("已复制", "Copied")))
       .catch((e) => toast.error(String(e)));
-  const rows = (list.data ?? []).filter(
-    (s) =>
-      (app === "all" || s.providerId === app) &&
-      `${s.title} ${s.summary} ${s.projectDir} ${s.sessionId}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
+  const rows = useMemo(
+    () => (list.data ?? []).filter(
+      (s) =>
+        (app === "all" || s.providerId === app) &&
+        `${s.title} ${s.summary} ${s.projectDir} ${s.sessionId}`
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+    ),
+    [list.data, app, search],
   );
   const index = rows.findIndex(
     (s) =>
@@ -88,16 +99,46 @@ export function SessionsPage({ onSettings }: { onSettings: () => void }) {
       setBusy(false);
     }
   };
-  const groups = new Map<string, SessionMeta[]>();
-  for (const s of rows) {
-    const key =
-      group === "project"
-        ? s.projectDir || l("其他会话", "Other sessions")
+  const listRows = useMemo(() => {
+    const groups = new Map<string, SessionMeta[]>();
+    for (const s of rows) {
+      const key = group === "project"
+        ? s.projectDir || (i18n.language.startsWith("zh") ? "其他会话" : "Other sessions")
         : new Date(s.lastActiveAt || s.createdAt || 0).toLocaleDateString();
-    const entries = groups.get(key);
-    if (entries) entries.push(s);
-    else groups.set(key, [s]);
-  }
+      const entries = groups.get(key);
+      if (entries) entries.push(s);
+      else groups.set(key, [s]);
+    }
+    const result: SessionListRow[] = [];
+    for (const [key, sessions] of groups) {
+      result.push({ kind: "heading", key });
+      sessions.forEach((session, i) => result.push({
+        kind: "session", session, first: i === 0, last: i === sessions.length - 1,
+      }));
+    }
+    return result;
+  }, [rows, group, i18n.language]);
+  const virtualizer = useVirtualizer({
+    count: listRows.length,
+    getScrollElement: () => listScrollRef.current,
+    estimateSize: (i) => listRows[i]?.kind === "heading" ? 40 : 56,
+    getItemKey: (i) => {
+      const row = listRows[i];
+      if (!row) return i;
+      return row.kind === "heading" ? `group:${row.key}` : `session:${getSessionKey(row.session)}`;
+    },
+    overscan: 8,
+    initialOffset: () => listOffset.current,
+  });
+  useLayoutEffect(() => {
+    if (!selected && listScrollRef.current) {
+      listScrollRef.current.scrollTop = listOffset.current;
+    }
+  }, [selected]);
+  const resetListOffset = () => {
+    listOffset.current = 0;
+    if (listScrollRef.current) listScrollRef.current.scrollTop = 0;
+  };
   return (
     <>
       {selected ? (
@@ -136,8 +177,8 @@ export function SessionsPage({ onSettings }: { onSettings: () => void }) {
               </Button>
             }
           />
-          <div className="scope-page">
-            <div className="flex items-center gap-3 mb-6">
+          <div className="scope-page flex flex-col overflow-hidden">
+            <div className="flex shrink-0 items-center gap-3 mb-6">
               <SearchField
                 className="max-w-sm flex-1"
                 placeholder={l(
@@ -145,14 +186,20 @@ export function SessionsPage({ onSettings }: { onSettings: () => void }) {
                   "Search sessions, projects, IDs…",
                 )}
                 value={search}
-                onValueChange={setSearch}
+                onValueChange={(value) => {
+                  resetListOffset();
+                  setSearch(value);
+                }}
                 clearLabel={l("清除搜索", "Clear search")}
               />
               <OptionSelect
                 aria-label="Session harness"
                 className="scope-select"
                 value={app}
-                onValueChange={(value) => setApp(value)}
+                onValueChange={(value) => {
+                  resetListOffset();
+                  setApp(value);
+                }}
               >
                 <option value="all">{l("全部应用", "All applications")}</option>
                 {harnesses.map((h) => (
@@ -165,7 +212,10 @@ export function SessionsPage({ onSettings }: { onSettings: () => void }) {
                 aria-label="Session grouping"
                 className="scope-select"
                 value={group}
-                onValueChange={(value) => setGroup(value)}
+                onValueChange={(value) => {
+                  resetListOffset();
+                  setGroup(value);
+                }}
               >
                 <option value="project">{l("按项目分组", "By project")}</option>
                 <option value="time">{l("按时间分组", "By date")}</option>
@@ -183,46 +233,65 @@ export function SessionsPage({ onSettings }: { onSettings: () => void }) {
                 )}
               </div>
             )}
-            {Array.from(groups, ([key, sessions]) => (
-              <section key={key} className="mb-6">
-                <h2 className="flex items-center gap-2 text-caption text-fg-2 mb-2">
-                  <Folder size={13} />
-                  {key}
-                </h2>
-                <div className="rounded-panel border border-border overflow-hidden">
-                  {sessions.map((s, i) => (
-                    <SessionItem
-                      key={`${s.providerId}:${s.sourcePath}:${s.sessionId}`}
-                      session={s}
-                      showAppIcon
-                      showDir={group !== "project"}
-                      selectionMode={selection}
-                      isChecked={checked.has(getSessionKey(s))}
-                      searchQuery={search}
-                      launchTerminal={null}
-                      bordered={i > 0}
-                      openButtonId={`open-${s.sessionId}`}
-                      onOpen={() => setSelected(s)}
-                      onToggleChecked={(value) =>
-                        setChecked((old) => {
-                          const next = new Set(old);
-                          value
-                            ? next.add(getSessionKey(s))
-                            : next.delete(getSessionKey(s));
-                          return next;
-                        })
-                      }
-                      onStartSelect={() => setSelection(true)}
-                      onLaunch={() => copy(s.resumeCommand || "")}
-                      onCopyResume={() => copy(s.resumeCommand || "")}
-                      onCopyId={() => copy(s.sessionId)}
-                      onCopySource={() => copy(s.sourcePath || "")}
-                      onDelete={() => setDeleting(s)}
-                    />
-                  ))}
-                </div>
-              </section>
-            ))}
+            <div
+              ref={listScrollRef}
+              role="region"
+              onScroll={(event) => { listOffset.current = event.currentTarget.scrollTop; }}
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+              aria-label={l("会话列表", "Session list")}
+            >
+              <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+                {virtualizer.getVirtualItems().map((item) => {
+                  const row = listRows[item.index];
+                  if (!row) return null;
+                  const position = {
+                    height: item.size,
+                    transform: `translateY(${item.start}px)`,
+                  };
+                  if (row.kind === "heading") return (
+                    <div key={item.key} className="absolute left-0 top-0 w-full" style={position}>
+                      <h2 className="flex h-full items-center gap-2 text-caption text-fg-2">
+                        <Folder size={13} />{row.key}
+                      </h2>
+                    </div>
+                  );
+                  const s = row.session;
+                  return (
+                    <div key={item.key} className="absolute left-0 top-0 w-full" style={position}>
+                      <div className={`h-full overflow-hidden border-x border-border ${row.first ? "rounded-t-panel border-t" : ""} ${row.last ? "rounded-b-panel border-b" : ""}`}>
+                        <SessionItem
+                          session={s}
+                          showAppIcon
+                          showDir={group !== "project"}
+                          selectionMode={selection}
+                          isChecked={checked.has(getSessionKey(s))}
+                          searchQuery={search}
+                          launchTerminal={null}
+                          bordered={!row.first}
+                          openButtonId={`open-${s.sessionId}`}
+                          onOpen={() => setSelected(s)}
+                          onToggleChecked={(value) =>
+                            setChecked((old) => {
+                              const next = new Set(old);
+                              value
+                                ? next.add(getSessionKey(s))
+                                : next.delete(getSessionKey(s));
+                              return next;
+                            })
+                          }
+                          onStartSelect={() => setSelection(true)}
+                          onLaunch={() => copy(s.resumeCommand || "")}
+                          onCopyResume={() => copy(s.resumeCommand || "")}
+                          onCopyId={() => copy(s.sessionId)}
+                          onCopySource={() => copy(s.sourcePath || "")}
+                          onDelete={() => setDeleting(s)}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </>
       )}

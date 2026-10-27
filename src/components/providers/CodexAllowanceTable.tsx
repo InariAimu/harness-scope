@@ -4,6 +4,7 @@ import type {
   CodexAllowanceMode,
 } from "@/types/codexAllowances";
 import { nativeMoney } from "@/lib/providerAccounts";
+import { ProviderHelp } from "./ProviderHelp";
 export function CodexAllowanceTable({
   info,
   mode,
@@ -32,12 +33,14 @@ export function CodexAllowanceTable({
     <section className="text-caption">
       <h3 className="font-medium">
         {l("分模型每周参考额度表", "Model-specific weekly estimates")}
+        <ProviderHelp label={l("参考额度表说明", "About weekly estimates")}>
+          {l(
+            "同一套餐各模型共享额度，不叠加。API 等值（USD）用于参考预算；来源 Token 数含缓存，仅供对照。",
+            "Models share the same plan quota; do not add them together. API equivalents (USD) drive reference budgets; source tokens include cache and are comparison figures only.",
+          )}
+        </ProviderHelp>
       </h3>
       <p className="text-fg-3 my-2">
-        {l(
-          "同一套餐各模型共享额度，不叠加。API 等值（USD）用于参考预算；来源 Token 数含缓存，仅供对照。",
-          "Models share the same plan quota; do not add them together. API equivalents (USD) drive reference budgets; source tokens include cache and are comparison figures only.",
-        )}{" "}
         <a
           className="underline"
           href={info.catalog.sourceUrl}

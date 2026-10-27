@@ -23,6 +23,7 @@
 | Codex | `CODEX_HOME` 或 `~/.codex` 下的活动与归档会话目录 | 初始 Fast 证据必须来自同一来源；见 [Codex 说明](CODEX.md) |
 | OpenCode | `~/.local/share/opencode/opencode.db`；支持 `XDG_DATA_HOME`、`OPENCODE_DB` | 可填数据库文件或包含它的目录；只读 V1／V2 SQLite，迁移后的同会话不重复计数 |
 | DeepSeek Harness | `DSH_HOME/sessions` 或 `~/.dsh/sessions` | 支持主目录、sessions 目录、单个会话目录或日志；见 [DSH 说明](DSH.md) |
+| Cherry Studio | Windows 下 `%APPDATA%/CherryStudio/Data/cherrystudio.sqlite` | 只读普通聊天和 Agent 会话；仅采集可完整拆分的逐次调用，未知旧汇总不计入；见 [Cherry 说明](CHERRY.md) |
 | GitHub Copilot | 手动配置 VS Code User 根目录 | 需先建立历史会话清单；使用[兼容导入工具](COPILOT_IMPORT_DESIGN.md#选择历史范围和执行导入) |
 
 OpenCode 的早期 JSON 存储、分叉继承正文和 SQLite 附件图片没有完整适配。DSH 只支持已实现的 v0／v4 格式。未知版本、损坏或未完成的记录会诊断并重试，不把缺少数据解释为零用量。

@@ -12,6 +12,7 @@ export const APP_DISPLAY_NAME: Record<AppId, string> = {
   grokbuild: "Grok Build",
   opencode: "OpenCode",
   dsh: "DeepSeek Harness",
+  cherry: "Cherry Studio",
   "copliot-deprecated": "copliot-deprecated",
   copliot: "Github Copliot",
   openclaw: "OpenClaw",

@@ -317,9 +317,9 @@ fn stats_use_weighted_speed_median_filters_and_device_identity() {
     for kind in ["models", "providers"] {
         let stats = query::query(&s, kind, &json!({"scope":"all"})).unwrap();
         let row = &stats[0];
-        assert_eq!(row["estSpeedOutputTokens"], 1200);
-        assert_eq!(row["estSpeedDurationMs"], 10_000);
-        assert_eq!(row["estSpeedSampleCount"], 2);
+        assert_eq!(row["estDecodeSpeedOutputTokens"], 900);
+        assert_eq!(row["estDecodeSpeedGenerationMs"], 8_700);
+        assert_eq!(row["estDecodeSpeedSampleCount"], 1);
         assert_eq!(row["estFirstTokenMedianMs"], 250.0);
         assert_eq!(row["estFirstTokenSampleCount"], 4);
         assert!(row["successRate"].is_null());
@@ -473,10 +473,17 @@ fn dsh_decode_speed_is_consistent_in_details_and_mixed_harness_statistics() {
         assert_eq!(log["outputTokens"], detail["outputTokens"]);
         assert_eq!(log["firstTokenMs"], detail["firstTokenMs"]);
     }
-    for id in ["missing", "untrusted", "codex", "opencode"] {
+    for id in ["missing"] {
         let detail =
             query::query(&s, "detail", &json!({"requestId":format!("{device}|{id}")})).unwrap();
         assert_eq!(detail["estimatedSpeed"]["basis"], "end_to_end");
+        assert_eq!(detail["estimatedSpeed"]["eligible"], true);
+    }
+    for (id, duration) in [("untrusted", 5000), ("codex", 6000), ("opencode", 5000)] {
+        let detail =
+            query::query(&s, "detail", &json!({"requestId":format!("{device}|{id}")})).unwrap();
+        assert_eq!(detail["estimatedSpeed"]["basis"], "decode");
+        assert_eq!(detail["estimatedSpeed"]["durationMs"], duration);
         assert_eq!(detail["estimatedSpeed"]["eligible"], true);
     }
     for request in ["remote|a".to_string(), format!("{device}|claude")] {
@@ -488,22 +495,22 @@ fn dsh_decode_speed_is_consistent_in_details_and_mixed_harness_statistics() {
     let rows = stats.as_array().unwrap();
     assert_eq!(rows.len(), 2); // Codex's unknown tier is separate from other harnesses.
     let sum = |key: &str| rows.iter().map(|r| r[key].as_u64().unwrap()).sum::<u64>();
-    assert_eq!(sum("estDecodeSpeedOutputTokens"), 688);
-    assert_eq!(sum("estDecodeSpeedGenerationMs"), 3482);
-    assert_eq!(sum("estDecodeSpeedSampleCount"), 2);
-    assert_eq!(sum("estSpeedOutputTokens"), 1400);
-    assert_eq!(sum("estSpeedDurationMs"), 24000);
-    assert_eq!(sum("estSpeedSampleCount"), 4);
+    assert_eq!(sum("estDecodeSpeedOutputTokens"), 1788);
+    assert_eq!(sum("estDecodeSpeedGenerationMs"), 19482);
+    assert_eq!(sum("estDecodeSpeedSampleCount"), 5);
+    assert_eq!(sum("estSpeedOutputTokens"), 300);
+    assert_eq!(sum("estSpeedDurationMs"), 4000);
+    assert_eq!(sum("estSpeedSampleCount"), 1);
     assert!(rows.iter().any(|r| r["requestMode"].is_null()));
     assert!(rows
         .iter()
         .any(|r| r["appType"] == "codex" && r["requestMode"] == "unknown"));
     let stats = query::query(&s, "providers", &json!({"filters":{"appType":"dsh"}})).unwrap();
-    assert_eq!(stats[0]["estDecodeSpeedOutputTokens"], 688);
-    assert_eq!(stats[0]["estDecodeSpeedGenerationMs"], 3482);
-    assert_eq!(stats[0]["estDecodeSpeedSampleCount"], 2);
-    assert_eq!(stats[0]["estSpeedOutputTokens"], 600);
-    assert_eq!(stats[0]["estSpeedDurationMs"], 10000);
+    assert_eq!(stats[0]["estDecodeSpeedOutputTokens"], 988);
+    assert_eq!(stats[0]["estDecodeSpeedGenerationMs"], 8482);
+    assert_eq!(stats[0]["estDecodeSpeedSampleCount"], 3);
+    assert_eq!(stats[0]["estSpeedOutputTokens"], 300);
+    assert_eq!(stats[0]["estSpeedDurationMs"], 4000);
     assert_eq!(before, s.records("all").unwrap());
     assert_eq!(before_pending, s.pending().unwrap());
     assert_eq!(before_version, s.usage_version().unwrap());

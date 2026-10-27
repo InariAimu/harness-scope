@@ -1,5 +1,6 @@
 import { Fragment, useState } from "react";
 import { CodexFastForecastRow } from "./CodexFastForecastRow";
+import { ProviderHelp } from "./ProviderHelp";
 import type { CodexSubscriptionSpeed } from "@/types/codexAllowances";
 import { codexDeadlineForecast } from "@/lib/codexDeadline";
 import { useQueries } from "@tanstack/react-query";
@@ -199,6 +200,12 @@ export function CodexForecastOverview({
               ? "Model target intensity"
               : "Recent model recommendations",
           )}
+          <ProviderHelp label={l("模型强度说明", "About model intensity")}>
+            {l(
+              "本地参考额度以 Standard 为基准；Standard / Fast 对比沿用相同请求内容与频率，Fast 仅按订阅额度倍率折算，不增加 API 折算金额。建议倍率相对采样强度，各模型分别假设后续只使用该模型，共享额度不能叠加。",
+              "Local reference allowances assume Standard. Standard / Fast compare identical content and cadence; the Fast multiplier changes subscription allowance, not API-equivalent cost. Multipliers are relative to sampled intensity. Each model assumes exclusive future use; shared allowances are not additive.",
+            )}
+          </ProviderHelp>
         </h3>
         {models.length === 0 ? (
           <p className="text-caption text-fg-3">
@@ -350,18 +357,11 @@ export function CodexForecastOverview({
             {forecastReason(w, zh)}
           </p>
         ))}
-      <p className="text-caption text-fg-3">
-        {l(
-          "本地参考额度以 Standard 为基准；Standard / Fast 对比沿用相同请求内容与频率，Fast 仅按订阅额度倍率折算，不增加 API 折算金额。",
-          "Local reference allowances assume Standard. Standard / Fast compare identical content and cadence; the Fast multiplier changes subscription allowance, not API-equivalent cost.",
-        )}{" "}
-        {l(
-          "建议倍率相对采样强度，各模型分别假设后续只使用该模型，共享额度不能叠加。",
-          "Multipliers are relative to sampled intensity. Each model assumes exclusive future use; shared allowances are not additive.",
-        )}
-        {summary?.basis === "reference" &&
-          ` ${l("校准样本积累中；当前显示参考估算。", "Calibration is collecting samples; reference estimates are shown.")}`}
-      </p>
+      {summary?.basis === "reference" && (
+        <p className="text-caption text-fg-3">
+          {l("校准样本积累中；当前显示参考估算。", "Calibration is collecting samples; reference estimates are shown.")}
+        </p>
+      )}
     </div>
   );
 }

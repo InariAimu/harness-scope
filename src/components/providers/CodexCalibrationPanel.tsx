@@ -6,6 +6,7 @@ import {
   forecastReason,
 } from "@/lib/goForecast";
 import { nativeMoney } from "@/lib/providerAccounts";
+import { ProviderHelp } from "./ProviderHelp";
 export function CodexCalibrationPanel({
   data,
   zh,
@@ -46,13 +47,13 @@ export function CodexCalibrationPanel({
     <section className="rounded-panel border border-border p-3 space-y-3">
       <h3 className="font-medium text-caption">
         {l("按官方额度变化自动校准", "Calibration from provider quota changes")}
+        <ProviderHelp label={l("自动校准说明", "About quota calibration")}>
+          {l(
+            "校准始终针对当前登录账号；套餐切换是参考情景，不表示实际升级。混合模型先按各自参考额度归一化，再与官方变化对齐。按共用订阅采样已同步设备的关联路由，假设额度变化主要来自这些日志；未同步用量、服务端延迟、缓存组成或模型切换会影响归因。账号或窗口重置后重新采样，同一窗口内额度回退的读数会被筛除。目标倍率相对原始采样速率，不随强度滑档改变；多个窗口需同时满足，不能把各窗口或模型额度相加。",
+            "Calibration targets the signed-in account; the selected plan is a scenario, not an upgrade. Mixed models are normalized by their reference allowances before fitting quota changes. Assumes a shared subscription and that quota changes primarily come from linked routes on synced devices. Unsynced usage, billing lag, cache mix or model switches affect attribution. Account/window changes restart sampling; regressing counters within a window are filtered out. Target multipliers are relative to the original sampled pace. All windows constrain usage; quotas are not additive.",
+          )}
+        </ProviderHelp>
       </h3>
-      <p className="text-caption text-fg-3">
-        {l(
-          "校准始终针对当前登录账号；上方套餐切换是参考情景，不表示账号实际升级。混合模型先按各自参考额度归一化，再与官方变化对齐。",
-          "Calibration always targets the signed-in account. Switching the reference plan is a scenario, not an account upgrade. Mixed models are normalized by their own reference allowances before fitting quota changes.",
-        )}
-      </p>
       {!calibration.identityVerified && (
         <p className="text-caption text-fg-3">
           {l(
@@ -161,12 +162,6 @@ export function CodexCalibrationPanel({
           </section>
         ))}
       </div>
-      <p className="text-caption text-fg-3">
-        {l(
-          "按共用订阅计算，采样包含所有已同步设备的关联路由。假设额度变化主要来自这些日志；尚未同步的用量、服务端延迟、缓存组成或模型切换会影响归因。账号或窗口重置后重新采样；同一窗口内额度回退的读数会被筛除。目标倍率相对原始采样速率，不随强度滑档改变；多个窗口需同时满足，不能把各窗口或模型额度相加。",
-          "Assumes a shared subscription and includes linked routes from all synced devices. Unsynced usage, billing lag, cache mix or model switches affect attribution. Account/window changes restart sampling; regressing counters within a window are filtered out. Target multipliers are relative to the original sampled pace. All windows constrain usage; quotas are not additive.",
-        )}
-      </p>
     </section>
   );
 }

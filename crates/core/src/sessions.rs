@@ -199,7 +199,7 @@ impl ReaderCache {
     pub fn metadata(&self, adapter: &dyn HarnessAdapter, path: &Path) -> Result<Vec<Session>> {
         let harness = adapter.descriptor().id;
         let key = (harness.to_owned(), path.to_owned());
-        let stamp = Stamp::read(path, harness == "opencode")?;
+        let stamp = Stamp::read(path, matches!(harness, "opencode" | "cherry"))?;
         if let Some((old, rows)) = self
             .metadata
             .lock()
@@ -211,7 +211,7 @@ impl ReaderCache {
             }
         }
         let rows = adapter.read_metadata(path)?;
-        if stamp == Stamp::read(path, harness == "opencode")? {
+        if stamp == Stamp::read(path, matches!(harness, "opencode" | "cherry"))? {
             self.metadata
                 .lock()
                 .map_err(|_| anyhow::anyhow!("Reader cache poisoned"))?
@@ -237,7 +237,7 @@ impl ReaderCache {
             path: path.to_owned(),
             session: session.map(str::to_owned),
         };
-        let stamp = Stamp::read(path, key.harness == "opencode")?;
+        let stamp = Stamp::read(path, matches!(key.harness.as_str(), "opencode" | "cherry"))?;
         // Serialize expensive loads; metadata queries use a separate lock and remain responsive.
         let mut entries = self
             .transcripts
@@ -264,11 +264,12 @@ impl ReaderCache {
         let messages = adapter.read_messages(path, session)?;
         // Pin a coherent read for later batches, even if the live log grows meanwhile.
         // A changed stamp never qualifies this snapshot for a fresh, unversioned read.
-        let token = if stamp == Stamp::read(path, key.harness == "opencode")? {
-            stamp.token()
-        } else {
-            uuid::Uuid::new_v4().to_string()
-        };
+        let token =
+            if stamp == Stamp::read(path, matches!(key.harness.as_str(), "opencode" | "cherry"))? {
+                stamp.token()
+            } else {
+                uuid::Uuid::new_v4().to_string()
+            };
         let transcript = Arc::new(Transcript::new(messages, token, session));
         if transcript.memory_bytes <= 96 * 1024 * 1024 {
             entries.push_back(Entry {

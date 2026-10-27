@@ -196,6 +196,14 @@ export function ApplicationsPage({
                 )}
               </p>
             )}
+            {h.id === "cherry" && (
+              <p className="mt-3 text-caption text-fg-2">
+                {l(
+                  "只采集能完整核对 Token 分类的逐次调用。未知的旧版汇总不计入；缺失分类的调用会在扫描诊断中提示。费用优先使用供应商上报的美元金额，否则按匹配价表估算。",
+                  "Only individual calls with a complete token breakdown are counted. Unknown legacy aggregates are excluded; calls with missing breakdowns are reported in scan diagnostics. Provider-reported USD costs take priority; otherwise matching prices provide estimates.",
+                )}
+              </p>
+            )}
             <div className="mt-5 space-y-3">
               {config.sources
                 .filter((s) => s.harness === h.id)

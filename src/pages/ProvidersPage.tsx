@@ -44,6 +44,7 @@ import { codexWindowLabel } from "@/lib/codexSubscription";
 import { cn } from "@/lib/utils";
 import { useProviderAccounts } from "@/lib/query/providerAccounts";
 import { CustomUsagePanel } from "@/components/providers/CustomUsagePanel";
+import { ProviderHelp } from "@/components/providers/ProviderHelp";
 import { ProviderHistoryPanel } from "@/components/providers/ProviderHistoryPanel";
 import { IconPickerPopover } from "@/components/icons/IconPickerPopover";
 import { ProviderGlyph } from "@/components/icons/ProviderGlyph";
@@ -335,9 +336,9 @@ export function ProvidersPage({
               </option>
             ))}
           </OptionSelect>
-          <span className="ms-auto text-caption text-fg-3">
+          <ProviderHelp label={l("账号存储说明", "About account storage")}>
             {l("账号与凭据仅本机保存", "Accounts and credentials stay on this device")}
-          </span>
+          </ProviderHelp>
         </div>
         {list.isError && (
           <section role="alert" className="scope-card text-danger-text">
@@ -399,16 +400,17 @@ export function ProvidersPage({
               {refreshing && (
                 <span>{l("正在查询官方数据…", "Fetching provider data…")}</span>
               )}
-              <span
-                title={l(
-                  "窗口有焦点且停留在此账号时使用前台间隔；其他情况使用后台间隔。",
-                  "The foreground interval applies while this account page has focus; otherwise the background interval applies.",
-                )}
-              >
+              <span>
                 {l("自动刷新", "Auto refresh")}: {l("前台", "Foreground")}{" "}
                 {intervalText(account!.refresh.foregroundSeconds)} ·{" "}
                 {l("后台", "Background")}{" "}
                 {intervalText(account!.refresh.backgroundSeconds)}
+                <ProviderHelp label={l("自动刷新说明", "About auto refresh")}>
+                  {l(
+                    "窗口有焦点且停留在此账号时使用前台间隔；其他情况使用后台间隔。",
+                    "The foreground interval applies while this account page has focus; otherwise the background interval applies.",
+                  )}
+                </ProviderHelp>
               </span>
             </div>
             {error && (
@@ -582,6 +584,14 @@ export function ProvidersPage({
               <div className="flex items-center justify-between mb-3">
                 <h2 className="font-semibold">
                   {l("订阅信息", "Subscription")}
+                  {account!.provider === "opencode-go" && (
+                    <ProviderHelp label={l("订阅信息说明", "About subscription details")}>
+                      {l(
+                        "套餐、月费和续费日期保留手动填写；官方额度重置时间不代表续费时间。",
+                        "Plan, monthly fee and renewal date remain manually entered. A quota reset is not a billing renewal.",
+                      )}
+                    </ProviderHelp>
+                  )}
                 </h2>
                 <span className="text-caption text-fg-3">
                   {l("手动记录", "Manually entered")}
@@ -605,7 +615,7 @@ export function ProvidersPage({
                   </div>
                 ))}
               </dl>
-              {account!.provider === "opencode-go" && (
+              {account!.provider === "opencode-go" && monthlyReset !== undefined && (
                 <div className="mt-3 border-t border-border pt-3 space-y-1 text-caption text-fg-3">
                   {monthlyReset !== undefined && (
                     <p>
@@ -615,12 +625,6 @@ export function ProvidersPage({
                       </span>
                     </p>
                   )}
-                  <p>
-                    {l(
-                      "套餐、月费和续费日期保留手动填写；官方额度重置时间不代表续费时间。",
-                      "Plan, monthly fee and renewal date remain manually entered. A quota reset is not a billing renewal.",
-                    )}
-                  </p>
                 </div>
               )}
             </section>
@@ -648,6 +652,14 @@ export function ProvidersPage({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="font-semibold">
                   {l("关联设备用量", "Linked device usage")}{" "}
+                  <ProviderHelp label={l("关联设备用量说明", "About linked device usage")}>
+                    {l(
+                      "按共用订阅汇总所有已同步设备的关联路由，不能区分同一路由的不同账号或 Key；尚未同步的用量不会计入。折算金额不代表实际扣款或套餐剩余。",
+                      "Includes linked routes from all synced devices, assuming a shared subscription. Accounts or keys on the same route cannot be distinguished; unsynced usage is absent. Priced usage is not an invoice or remaining allowance.",
+                    )}
+                    {usage.data && (effectiveRange !== "weekly" || weeklyReady) &&
+                      ` ${l("统计时区", "Time zone")}: ${usage.data.timezone}`}
+                  </ProviderHelp>{" "}
                   <span className="text-caption font-normal text-fg-3">
                     {l("日志估算", "From usage logs")}
                   </span>
@@ -822,15 +834,6 @@ export function ProvidersPage({
                   </>
                 )
               )}
-              <p className="text-caption text-fg-3">
-                {l(
-                  "按共用订阅汇总所有已同步设备的关联路由，不能区分同一路由的不同账号或 Key；尚未同步的用量不会计入。折算金额不代表实际扣款或套餐剩余。",
-                  "Includes linked routes from all synced devices, assuming a shared subscription. Accounts or keys on the same route cannot be distinguished; unsynced usage is absent. Priced usage is not an invoice or remaining allowance.",
-                )}{" "}
-                {usage.data &&
-                  (effectiveRange !== "weekly" || weeklyReady) &&
-                  `${l("统计时区", "Time zone")}: ${usage.data.timezone}`}
-              </p>
             </section>
           </>
         )}

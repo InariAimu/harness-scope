@@ -102,6 +102,7 @@ const APP_SHORT_NAME: Record<AppId, string> = {
   grokbuild: "Grok",
   opencode: "OpenCode",
   dsh: "DSH",
+  cherry: "Cherry Studio",
   openclaw: "OpenClaw",
   hermes: "Hermes",
   pi: "Pi",
@@ -262,7 +263,7 @@ export function RequestLogTable({
     const providerLabel = getUsageProviderLabel(log.providerName, t, providerNameFor(log.providerName, log.appType));
     const provider = providerLabel.shortLabel;
     const exactTps = formatOutputTokensPerSecond(log);
-    // 流片段与端到端两种日志估算都保留 ≈，口径由后端计时来源决定。
+    // 输出阶段与缺少首字时的端到端回退均为日志估算，保留 ≈。
     const estimatedTps =
       exactTps == null ? formatEstimatedTokensPerSecond(log) : null;
     const tps = exactTps ?? estimatedTps;

@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { PageTabs } from "@/components/ui/page-tabs";
 import { OptionSelect } from "@/components/ui/option-select";
+import { ProviderHelp } from "./ProviderHelp";
 import { providerAccountsApi as api } from "@/lib/api/providerAccounts";
 import { codexWindowLabel } from "@/lib/codexSubscription";
 import { nativeMoney } from "@/lib/providerAccounts";
@@ -249,6 +250,16 @@ export function ProviderHistoryPanel({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">
           {l("历史与分析", "History and analysis")}
+          <ProviderHelp label={l("历史与分析说明", "About history and analysis")}>
+            {view.account.sharedSubscriptionId && l(
+              "已合并此订阅各终端的同步历史。",
+              "Synchronized history includes all devices on this subscription. ",
+            )}
+            {l(
+              "同一重置窗口内，剩余额度回升的异常采样不参与趋势和测算；尚未同步的用量不计入测算。按当前价表重算同期所有已同步设备的关联请求，保留缓存组成。尚未同步或路由外的用量、统计延迟会影响结果。额度是 API 等效估算，不是现金余额或官方保证；各窗口不能相加。总额度 = 同期模型费用 × 100 ÷ 消耗百分点；样本模型与请求档位组合改变后需重新测算。",
+              "Samples with increasing remaining quota within a reset window are excluded; unsynced usage is not included. Concurrent linked requests from synced devices are repriced using current rates and cache composition. Unsynced or unlinked usage and reporting lag affect results. Capacity is an API-equivalent estimate, not cash or a provider guarantee; windows are not additive. Capacity = concurrent model cost × 100 ÷ percentage points consumed; recalculate when the sampled model and request-tier mix changes.",
+            )}
+          </ProviderHelp>
         </h2>
         <div className="flex flex-wrap items-center gap-2">
           {metrics.length > 1 && (
@@ -279,10 +290,11 @@ export function ProviderHistoryPanel({
       </div>
       {expanded && (
         <div id={`${prefix}-body`} className="space-y-3">
-          {view.account.sharedSubscriptionId && <p className="text-caption text-fg-3">
-            {l("已合并此订阅各终端的同步历史。同一重置窗口内，剩余额度回升的异常采样不参与趋势和测算；尚未同步的用量不计入测算。", "Includes synchronized history from all devices. Samples with increasing remaining quota within a reset window are excluded from trends and estimates; unsynced usage is not included.")}
-            {!!view.subscriptionSyncPending && l(` 本机有 ${view.subscriptionSyncPending} 项订阅数据待同步。`, ` ${view.subscriptionSyncPending} subscription items pending on this device.`)}
-          </p>}
+          {view.account.sharedSubscriptionId && !!view.subscriptionSyncPending && (
+            <p className="text-caption text-fg-3">
+              {l(`本机有 ${view.subscriptionSyncPending} 项订阅数据待同步。`, `${view.subscriptionSyncPending} subscription items pending on this device.`)}
+            </p>
+          )}
           {quota && (
             <PageTabs
               value={effectiveTab}
@@ -571,12 +583,6 @@ export function ProviderHistoryPanel({
                         )}
                         {result.status === "ready" && (
                           <>
-                            <p className="text-caption text-fg-3">
-                              {l(
-                                "总额度 = 同期模型费用 × 100 ÷ 消耗百分点；按本次样本的模型与请求档位组合折算，后续组合改变需重新测算。",
-                                "Capacity = concurrent model cost × 100 ÷ percentage points consumed. This reflects the sampled model and request-tier mix; recalculate when that mix changes.",
-                              )}
-                            </p>
                             {Number(result.deltaPercent) < 5 && (
                               <p className="text-caption text-fg-3">
                                 {l(
@@ -610,12 +616,6 @@ export function ProviderHistoryPanel({
                       </div>
                     )
                   )}
-                  <p className="text-caption text-fg-3">
-                    {l(
-                      "按当前价表重算同期所有已同步设备的关联请求，保留缓存组成。尚未同步或路由外的用量、统计延迟会影响结果。额度是 API 等效估算，不是现金余额或官方保证；各窗口不能相加。",
-                      "Concurrent linked requests from all synced devices are repriced with current rates and cache composition. Unsynced or unlinked usage and reporting lag affect results. Capacity is an API-equivalent estimate, not cash or a provider guarantee; windows are not additive.",
-                    )}
-                  </p>
                 </>
               )}
             </div>

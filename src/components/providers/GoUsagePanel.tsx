@@ -20,6 +20,7 @@ import type {
 } from "@/types/goCatalog";
 import { GoRulesEditor } from "./GoRulesEditor";
 import { GoForecastPanel } from "./GoForecastPanel";
+import { ProviderHelp } from "./ProviderHelp";
 const emptyTokens: GoTokens = {
   input: 0,
   output: 0,
@@ -153,6 +154,21 @@ export function GoUsagePanel({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">
           {l("Go 额度估算", "Go allowance estimates")}
+          <ProviderHelp label={l("Go 额度估算说明", "About Go allowance estimates")}>
+            {tab === "forecast" ? l(
+              "按近期同模型的请求频率与上下文／缓存分布预测续航和预算，平均频率包含空闲时间，不是模型生成速度。按共用订阅采样所有已同步设备的关联路由，使用当前本地规则和未来 UTC 高峰／非高峰单价，并补扣官方快照后的已知关联用量；假设后续只使用所选模型并保持样本请求与缓存分布。每日预算是关联设备合计，按均匀分布折算，集中高峰使用需降低用量；仅适用于当前窗口，最早重置后需重新计算，不提前计入未来补充额度。未同步用量、其他模型、计费延迟及缓存变化会影响结果。官方快照须在 10 分钟内，缺失或不足样本不推算无限可用；额度美元是折算量，不是新增账单。",
+              "Forecasts use recent request frequency and context/cache mix; averages include idle time and are not generation speed. Linked routes from synced devices are sampled as a shared subscription, using local rules, future UTC peak/off-peak rates and known linked usage since the official snapshot. The forecast assumes only the selected model and the sampled request and cache mix. Daily budgets are shared across devices and assume uniform traffic; use less when traffic is concentrated in peak hours. They apply to current windows; recalculate after the first reset, without counting future replenishments. Unsynced usage, other models, billing lag and cache changes affect accuracy. The quota snapshot must be under 10 minutes old; insufficient data does not imply unlimited use. Dollar values are allowance equivalents, not new charges.",
+            ) : tab === "usage" ? l(
+              "按当前本地表逐请求计价，再除以该模型的套餐额度；不同模型的额度比例相加，不改写历史费用。按共用订阅汇总已同步设备的关联路由，排除未匹配模型、未公布的缓存单价与旧日汇总。未同步用量、促销和窗口边界可能与官方统计不同；官方额度卡片以接口为准。",
+              "Prices each request with the current local table and divides by its model allowance; model percentages are added without changing historical costs. Includes linked routes from synced devices as a shared subscription. Unknown models, unprovided cache rates and legacy daily totals are excluded. Unsynced usage, promotions and window boundaries may differ from provider usage; official quota cards use provider data.",
+            ) : tab === "simulate" ? l(
+              "模拟不会发送模型请求或修改记录；它计算假设请求的额度占用，不代表新增账单或官方剩余额度。",
+              "Simulation sends no model requests and changes no records. It estimates hypothetical allowance usage, not a cash charge or official remaining quota.",
+            ) : l(
+              "单价 USD / 百万 Tokens；双值为非高峰 / 高峰；月额度不是订阅月费。— 为未公布，不能当作零价。",
+              "Rates are USD per million tokens; pairs show off-peak / peak. Monthly allowance is not the subscription fee. — means unprovided, not zero.",
+            )}
+          </ProviderHelp>
         </h2>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -196,12 +212,12 @@ export function GoUsagePanel({
           <option value="go">Go</option>
           <option value="goPlus">Go Plus</option>
         </OptionSelect>
-        <span className="text-caption text-fg-3">
+        <ProviderHelp label={l("估算套餐说明", "About estimation plan")}>
           {l(
             "仅用于估算，不修改手填订阅",
             "For estimates; does not change the manual subscription",
           )}
-        </span>
+        </ProviderHelp>
       </div>
       <div className="flex flex-wrap gap-1 border-b border-border pb-2">
         {[
@@ -235,12 +251,6 @@ export function GoUsagePanel({
       )}
       {tab === "usage" && (
         <div className="space-y-3">
-          <p className="text-caption text-fg-3">
-            {l(
-              "按当前本地表逐请求计价，再除以该模型的套餐额度；不同模型的额度比例相加。此处不会改写历史费用。",
-              "Each request is priced from the current local table and divided by its model allowance. Model percentages are added. Historical costs remain unchanged.",
-            )}
-          </p>
           {usage.isError ? (
             <p role="alert" className="text-caption text-danger-text">
               {goError(usage.error, zh)}
@@ -355,12 +365,6 @@ export function GoUsagePanel({
               )}
             </>
           )}
-          <p className="text-caption text-fg-3">
-            {l(
-              "按共用订阅汇总所有已同步设备的关联路由。未匹配模型、未公布的缓存单价与旧日汇总会明确排除；尚未同步的用量、促销和窗口边界可能与官方统计不同。上方三窗口卡片仍以官方接口为准。",
-              "Includes linked routes from all synced devices, assuming a shared subscription. Unknown models, unprovided cache rates and legacy daily totals are excluded. Unsynced usage, promotions and window boundaries may differ from provider usage. The provider quota cards above remain authoritative.",
-            )}
-          </p>
         </div>
       )}
       {tab === "simulate" && (
@@ -549,12 +553,6 @@ export function GoUsagePanel({
               </div>
             </div>
           )}
-          <p className="text-caption text-fg-3">
-            {l(
-              "模拟不会发送模型请求或修改记录；它计算假设请求的额度占用，不代表新增账单或官方剩余额度。",
-              "Simulation sends no model requests and changes no records. It estimates hypothetical allowance usage, not a cash charge or official remaining quota.",
-            )}
-          </p>
         </div>
       )}
       {tab === "rules" && catalog && (
@@ -637,12 +635,6 @@ export function GoUsagePanel({
               </tbody>
             </table>
           </div>
-          <p className="text-caption text-fg-3">
-            {l(
-              "单价 USD / 百万 Tokens；双值为非高峰 / 高峰；月额度不是订阅月费。— 为未公布，不能当作零价。",
-              "Rates are USD per million tokens; pairs show off-peak / peak. Monthly allowance is not the subscription fee. — means unprovided, not zero.",
-            )}
-          </p>
           <p className="text-caption text-fg-3 break-all">{rules.data?.path}</p>
           {rules.data?.file.error && (
             <p role="alert" className="text-caption text-danger-text">

@@ -1,6 +1,7 @@
 import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import type { CodexReference } from "@/types/providerAccounts";
 import { CodexCalibrationPanel } from "./CodexCalibrationPanel";
+import { ProviderHelp } from "./ProviderHelp";
 import {
   forecastDuration,
   forecastNumber,
@@ -43,6 +44,12 @@ export function CodexReferenceDetails({
           {data.model ?? l("未识别模型", "Unrecognized model")} ·{" "}
           {data.sample.requests.toLocaleString(locale)}{" "}
           {l("次样本请求", "sample requests")}
+          <ProviderHelp label={l("参考预算与采样说明", "About reference budget and sampling")}>
+            {l(
+              "采样包含空闲时间；按当前价表重新计算，不使用套餐上报的零费用，也不改写历史费用。按共用订阅采样所有已同步设备的关联路由，每日预算是关联设备合计。官方余量仅用于映射参考预算，不重复扣除快照已包含的日志费用。假设后续仅使用所选模型并保持样本规模、缓存比例和使用强度；尚未同步的用量、其他模型、Fast／Ultrafast 与服务端计费规则都可能改变实际消耗。日志不能区分同一路由的不同账号或 API Key。参考预算触限时间不是官方限流预测，最早窗口重置后重新计算。",
+              "Sampling includes idle time and requotes at current model prices without using reported subscription zeros or rewriting past costs. Samples linked routes from synced devices as a shared subscription; daily budgets are shared totals. Official remaining percentages scale the reference budget without deducting logged costs already included in the snapshot. Assumes continued use of this model with the sampled sizes, cache mix and intensity. Unsynced usage, other models, Fast/Ultrafast and provider rules can change actual burn. Logs cannot distinguish accounts or API keys on the same route. A reference-budget threshold is not a prediction of provider throttling; recalculate after the first reset.",
+            )}
+          </ProviderHelp>
         </p>
         <p>
           {l("当前价表折算速率", "Current API-price equivalent")}:{" "}
@@ -55,12 +62,6 @@ export function CodexReferenceDetails({
         {data.sample.reason && (
           <p className="text-fg-3">{forecastReason(data.sample.reason, zh)}</p>
         )}
-        <p className="text-fg-3">
-          {l(
-            "采样包含空闲时间；重新按当前价表计算，不使用套餐上报的零费用，也不改写历史费用。",
-            "Sampling includes idle time. Requotes at current model prices, rather than reported subscription zeros, without rewriting past costs.",
-          )}
-        </p>
       </div>
       {data.nextEvent && (
         <div
@@ -88,12 +89,6 @@ export function CodexReferenceDetails({
               {labels[data.dailyBudget.window]}
             </p>
           )}
-          <p className="text-fg-3">
-            {l(
-              "这是参考预算触限时间，不是官方限流预测。最早窗口重置后重新计算。",
-              "This is a reference-budget threshold, not a prediction of provider throttling. Recalculate after the first reset.",
-            )}
-          </p>
         </div>
       )}
       <div
@@ -192,12 +187,6 @@ export function CodexReferenceDetails({
         {data.quotaFetchedAt
           ? new Date(data.quotaFetchedAt * 1000).toLocaleString(locale)
           : "—"}
-      </p>
-      <p className="text-caption text-fg-3">
-        {l(
-          "按共用订阅采样所有已同步设备的关联路由，每日预算是关联设备合计。官方余量仅用于映射参考预算，不重复扣除快照已包含的日志费用。假设后续仅使用所选模型并保持样本规模、缓存比例和使用强度；尚未同步的用量、其他模型、Fast／Ultrafast 与服务端计费规则都可能改变实际消耗。日志不能区分同一路由的不同账号或 API Key。",
-          "Samples linked routes from all synced devices, assuming a shared subscription; daily budgets are shared totals. Official remaining percentages scale the reference budget without deducting logged costs already included in the snapshot. Assumes continued use of this model with the sampled sizes, cache mix and intensity. Unsynced usage, other models, Fast/Ultrafast and provider rules can change actual burn. Logs cannot distinguish accounts or API keys on the same route.",
-        )}
       </p>
     </div>
   );

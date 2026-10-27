@@ -16,7 +16,7 @@ Claude Code 适配器读取 `~/.claude/projects` 的 JSONL；新配置会优先�
 
 `claude-v2-request-timing` 使用同一会话的 `api-request.id` 与助手块的 `requestRef` 关联。只有请求引用唯一、一个请求仅归属一个原生消息、起止时间有效且存在完成标记时，才用请求时间到该消息最后助手内容块时间生成 `claude_api_request_blocks` 估算。范围沿用 100 ms–1 小时；后续工具结果、用户等待、其他请求和整轮耗时不参与计算。
 
-这表示客户端日志 E2E 窗口，包含客户端处理开销，不是精确网络耗时或纯模型生成耗时。速度沿用 E2E 的至少 200 输出 Tokens／1 秒门槛并显示 `≈`。助手块时间和 `thinkingDurationMs` 不能证明首 Token 到达时刻，首字保持未知。缺少请求关联的旧日志仍可统计 Tokens，耗时保持未知。
+这表示客户端日志 E2E 窗口，包含客户端处理开销，不是精确网络耗时或纯模型生成耗时。由于缺少首字时间，速度回退到 E2E 口径，采用至少 200 输出 Tokens／1 秒门槛并显示 `≈`。助手块时间和 `thinkingDurationMs` 不能证明首 Token 到达时刻，首字保持未知。缺少请求关联的旧日志仍可统计 Tokens，耗时保持未知。
 
 推理强度优先取关联请求的 `params.output_config.effort`，再使用该助手记录的 `perTurnEffort`／`effort`，不向其他请求继承。服务档位取同一条助手用量中的 `service_tier`，来源为 `claude_usage`，不代表供应商、账号或套餐；`usage.speed` 也不作为 tok/s。
 

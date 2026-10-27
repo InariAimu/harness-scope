@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
+import { ProviderHelp } from "./ProviderHelp";
 import { usageCalendarDate } from "@/lib/usageRange";
 import {
   deadlineDraft,
@@ -78,19 +79,13 @@ export function CodexDeadlineInput({
         >
           {l("使用官方周重置时间", "Use official weekly reset")}
         </Button>
-        <span>
+        <ProviderHelp label={l("目标时间说明", "About target time")}>
           {l(
-            "PST 固定 UTC−8，不随夏令时切换 PDT。两个时间框表示同一时刻。",
-            "PST is fixed UTC−8, without PDT. Both fields represent the same instant.",
+            "PST 固定 UTC−8，不随夏令时切换 PDT。两个时间框表示同一时刻。以当前每周剩余额度为目标，按各模型本次窗口的样本估算均匀使用强度。不会改写官方重置时间，也不计入下一窗口的补充额度。",
+            "PST is fixed UTC−8, without PDT. Both fields represent the same instant. Plans the current weekly remainder using each model's current-window samples. Official resets are kept; future replenishments are excluded.",
           )}
-        </span>
+        </ProviderHelp>
       </div>
-      <p className="text-caption text-fg-3">
-        {l(
-          "以当前每周剩余额度为目标，按各模型本次窗口的样本估算均匀使用强度。不会改写官方重置时间，也不计入下一窗口的补充额度。",
-          "Plans the current weekly remainder using each model's current-window samples. Official resets are kept; future replenishments are excluded.",
-        )}
-      </p>
     </div>
   );
 }

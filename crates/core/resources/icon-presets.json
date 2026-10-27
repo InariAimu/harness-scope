@@ -30,6 +30,12 @@
     "file": "copilot.svg"
   },
   {
+    "id": "cherry",
+    "name": "Cherry Studio",
+    "group": "brand",
+    "file": "cherry-studio.png"
+  },
+  {
     "id": "anthropic-portrait",
     "name": "Anthropic",
     "group": "portrait",

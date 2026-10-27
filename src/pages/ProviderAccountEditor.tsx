@@ -30,6 +30,7 @@ import { toast } from "@/lib/toast";
 import { CODEX_PLANS } from "@/lib/codexSubscription";
 import { codexAllowancesApi } from "@/lib/api/codexAllowances";
 import { CustomQueryEditor, defaultCustomQuery } from "@/components/providers/CustomQueryEditor";
+import { ProviderHelp } from "@/components/providers/ProviderHelp";
 import type {
   AccountProvider,
   AccountSave,
@@ -37,12 +38,15 @@ import type {
   CodexPlan,
 } from "@/types/providerAccounts";
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, children, help }: { label: string; children: ReactNode; help?: ReactNode }) {
   return (
-    <label className="flex flex-col gap-1.5 text-caption text-fg-2">
-      {label}
-      {children}
-    </label>
+    <div className="relative">
+      <label className="flex flex-col gap-1.5 text-caption text-fg-2">
+        <span className={help ? "pe-6" : undefined}>{label}</span>
+        {children}
+      </label>
+      {help && <span className="absolute end-0 top-0"><ProviderHelp label={`${label} · ?`}>{help}</ProviderHelp></span>}
+    </div>
   );
 }
 export function ProviderAccountEditor({
@@ -293,7 +297,10 @@ export function ProviderAccountEditor({
                 />
                 {l("在左侧供应商列表中显示", "Show in sidebar providers")}
               </label>
-              <Field label={l("跨终端订阅历史", "Subscription history across devices")}>
+              <Field label={l("跨终端订阅历史", "Subscription history across devices")} help={<>
+                {l("第一台终端创建共享订阅；其他终端同步后选择同一项。关联会补传本账号已有历史，请确认它们属于同一订阅。各终端可同时使用；保持同步以合并用量，额度回退的异常采样会被筛除。凭据和查询配置各端单独设置。", "Create a shared subscription on the first device; sync and select it on the next. Linking uploads this account’s existing history, so verify it belongs to that subscription. Devices can run concurrently; sync to merge usage. Regressing quota samples are filtered out. Credentials and query settings stay local.")}
+                {initial?.account.sharedSubscriptionId && l(" 已关联的账号不能改绑；使用另一份订阅时请添加新账号。", " This binding is fixed; add a new account for another subscription.")}
+              </>}>
                 <OptionSelect
                   aria-label={l("跨终端订阅历史", "Subscription history across devices")}
                   value={form.sharedSubscriptionId ?? ""}
@@ -315,19 +322,12 @@ export function ProviderAccountEditor({
                     <option value={initial.account.sharedSubscriptionId}>{initial.account.sharedSubscriptionId}</option>}
                 </OptionSelect>
               </Field>
-              <p className="text-caption text-fg-3">
-                {l("第一台终端创建共享订阅；其他终端同步后选择同一项。关联会补传本账号已有历史，请确认它们属于同一订阅。各终端可同时使用；保持同步以合并用量，额度回退的异常采样会被筛除。凭据和查询配置各端单独设置。", "Create a shared subscription on the first device; sync and select it on the next. Linking uploads this account’s existing history, so verify it belongs to that subscription. Devices can run concurrently; sync to merge usage. Regressing quota samples are filtered out. Credentials and query settings stay local.")}
-                {initial?.account.sharedSubscriptionId && l(" 已关联的账号不能改绑；使用另一份订阅时请添加新账号。", " This binding is fixed; add a new account for another subscription.")}
-              </p>
               {form.provider === "openai-codex" ? (
                 <section className="rounded-control border border-border p-3 space-y-3">
-                  <p className="text-caption text-fg-3">
-                    {l(
-                      "使用本机 Codex 的 ChatGPT 登录读取订阅额度，无需填写 API Key。",
-                      "Reads subscription limits from a local Codex ChatGPT login; no API key is needed.",
-                    )}
-                  </p>
-                  <Field label={l("参考套餐档位", "Reference plan")}>
+                  <Field label={l("参考套餐档位", "Reference plan")} help={l(
+                    "使用本机 Codex 的 ChatGPT 登录读取订阅额度，无需填写 API Key。月费只表示订阅价格；参考额度来自本地分模型配置，不会覆盖下方手动月费和续费日期。",
+                    "Reads subscription limits from a local Codex ChatGPT login; no API key is needed. Monthly fees are subscription prices; reference allowances come from local model-specific rules. Manual billing details below are kept.",
+                  )}>
                     <OptionSelect
                       aria-label={l("参考套餐档位", "Reference plan")}
                       className="scope-select w-full"
@@ -354,12 +354,6 @@ export function ProviderAccountEditor({
                       ))}
                     </OptionSelect>
                   </Field>
-                  <p className="text-caption text-fg-3">
-                    {l(
-                      "月费只表示订阅价格；参考额度来自本地分模型配置。不会覆盖下方手动月费和续费日期。",
-                      "Monthly fees are subscription prices; reference allowances come from local model-specific rules. Manual billing details below are kept.",
-                    )}
-                  </p>
                   <Field
                     label={l(
                       "Codex 程序路径（可选）",
@@ -512,6 +506,12 @@ export function ProviderAccountEditor({
               <section className="border-t border-border pt-4 space-y-3">
                 <h3 className="font-semibold text-fg-1">
                   {l("余额／额度自动刷新", "Automatic balance / quota refresh")}
+                  <ProviderHelp label={l("自动刷新设置说明", "About automatic refresh settings")}>
+                    {l(
+                      "0 关闭自动刷新；其余为 15–86400 秒。前台指当前供应商页有焦点；切换页面、窗口失焦或最小化后用后台间隔。关闭应用后停止。手动刷新始终可用。",
+                      "Use 0 to disable, or 15–86400 seconds. Foreground means the selected provider page has focus. Other pages, unfocused or minimized windows use the background interval. Refresh stops when the app closes. Manual refresh is always available.",
+                    )}
+                  </ProviderHelp>
                 </h3>
                 <div className="grid grid-cols-2 gap-3">
                   {(
@@ -548,22 +548,22 @@ export function ProviderAccountEditor({
                     </Field>
                   ))}
                 </div>
-                <p className="text-caption text-fg-3">
-                  {l(
-                    "0 关闭自动刷新；其余为 15–86400 秒。前台指当前供应商页有焦点；切换页面、窗口失焦或最小化后用后台间隔。关闭应用后停止。手动刷新始终可用。",
-                    "Use 0 to disable, or 15–86400 seconds. Foreground means the selected provider page has focus. Other pages, unfocused or minimized windows use the background interval. Refresh stops when the app closes. Manual refresh is always available.",
-                  )}
-                </p>
               </section>
               <section className="border-t border-border pt-4 space-y-2">
                 <h3 className="font-semibold text-fg-1">
                   {isCustomProvider(form.provider) ? l("Provider ID 归属", "Provider ID links") : l("关联跨设备用量", "Link usage across devices")}
+                  <ProviderHelp label={l("关联用量说明", "About linked usage")}>
+                    {isCustomProvider(form.provider) && l("按工具和原始 provider ID 精确关联，在会话与请求详情中显示此供应商名称。", "Match the tool and original provider ID exactly to display this provider in sessions and requests. ")}
+                    {l(
+                      "选择所有已同步设备日志中的路由，按共用同一组订阅汇总。一条路由只能关联一个账号，日志无法区分其不同账号或 Key。",
+                      "Choose routes from all synced devices, assuming they share a subscription. A route can belong to one account; logs cannot distinguish accounts or keys on the same route.",
+                    )}
+                  </ProviderHelp>
                 </h3>
                 {isCustomProvider(form.provider) && <div className="space-y-2">
-                  <p className="text-caption text-fg-3">{l("按工具和原始 provider ID 精确关联，在会话与请求详情中显示此供应商名称。", "Match the tool and original provider ID exactly to display this provider in sessions and requests.")}</p>
                   <div className="flex gap-2">
                     <OptionSelect aria-label={l("关联工具", "Linked tool")} className="scope-select w-28 shrink-0" value={routeHarness} onValueChange={setRouteHarness}>
-                      {["codex", "claude", "opencode", "dsh", "gemini", "copliot"].map(id => <option key={id} value={id}>{appShortName(id)}</option>)}
+                      {["codex", "claude", "opencode", "dsh", "cherry", "gemini", "copliot"].map(id => <option key={id} value={id}>{appShortName(id)}</option>)}
                     </OptionSelect>
                     <Input aria-label="Provider ID" placeholder="provider-id" maxLength={128} value={routeId} onChange={e => setRouteId(e.target.value)} />
                     <Button type="button" variant="neutral" disabled={!routeId.trim()} onClick={() => {
@@ -576,12 +576,6 @@ export function ProviderAccountEditor({
                     }}>{l("添加", "Add")}</Button>
                   </div>
                 </div>}
-                <p className="text-caption text-fg-3">
-                  {l(
-                    "选择所有已同步设备日志中的路由，按共用同一组订阅汇总。一条路由只能关联一个账号，日志无法区分其不同账号或 Key。",
-                    "Choose routes from all synced devices, assuming they share a subscription. A route can belong to one account; logs cannot distinguish accounts or keys on the same route.",
-                  )}
-                </p>
                 {routes.isError && (
                   <p role="alert" className="text-caption text-danger-text">
                     {l(

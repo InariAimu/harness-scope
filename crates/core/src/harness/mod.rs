@@ -1,4 +1,5 @@
 //! Adapters own formats, not persistence, pricing, networking or application state.
+pub mod cherry;
 pub mod claude;
 mod claude_requests;
 pub mod codex;
@@ -114,6 +115,7 @@ impl Default for Registry {
                 Arc::new(claude::Claude),
                 Arc::new(codex::Codex),
                 Arc::new(opencode::OpenCode),
+                Arc::new(cherry::Cherry),
                 Arc::new(dsh::Dsh),
                 Arc::new(copliot_deprecated::CopliotDeprecated),
                 Arc::new(copliot::Copliot),

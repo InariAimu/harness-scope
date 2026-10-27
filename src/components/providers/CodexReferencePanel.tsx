@@ -12,6 +12,7 @@ import { CodexAllowanceTable } from "./CodexAllowanceTable";
 import { CodexReferenceDetails } from "./CodexReferenceDetails";
 import { CodexForecastOverview } from "./CodexForecastOverview";
 import { CodexDeadlineInput } from "./CodexDeadlineInput";
+import { ProviderHelp } from "./ProviderHelp";
 import { deadlineDraft } from "@/lib/codexDeadline";
 import { PageTabs } from "@/components/ui/page-tabs";
 import { Button } from "@/components/ui/button";
@@ -112,6 +113,14 @@ export function CodexReferencePanel({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">
           {l("订阅参考续航与每日预算", "Subscription reference forecast")}
+          {tab === "config" && (
+            <ProviderHelp label={l("参考配置说明", "About reference rules")}>
+              {l(
+                "月费只表示订阅价格，参考额度按模型单独配置。Plus 有 5h 与每周，Pro 仅每周；理论倍率为相对 Plus 的 5×／10×／25×，ModelDial 样本不必严格符合该比例。外部文件是草稿，载入并校验应用后生效。更改参考档位和规则会保留手动订阅资料与历史费用。",
+                "Monthly fees are subscription prices, separate from model allowances. Plus has 5h and weekly references; Pro weekly only. Theoretical Plus multipliers are 5×/10×/25×; ModelDial estimates can differ. External files are drafts until loaded, validated and applied. Changing reference plans or rules keeps manual billing and historical costs.",
+              )}
+            </ProviderHelp>
+          )}
         </h2>
         <span className="text-caption text-fg-3">
           {plans.find((p) => p.id === plan)?.name} ·{" "}
@@ -331,12 +340,6 @@ export function CodexReferencePanel({
                 </label>
               )}
             </div>
-            <p className="text-caption text-fg-3">
-              {l(
-                "月费只表示订阅价格，参考额度按模型单独配置。Plus 有 5h 与每周，Pro 仅每周；理论倍率为相对 Plus 的 5×／10×／25×，ModelDial 样本不必严格符合该比例。",
-                "Monthly fees are subscription prices, separate from model allowances. Plus has 5h and weekly references; Pro weekly only. Theoretical Plus multipliers are 5×/10×/25×; ModelDial estimates can differ.",
-              )}
-            </p>
             <div className="flex flex-wrap gap-2">
               <Button
                 size="compact"
@@ -374,12 +377,6 @@ export function CodexReferencePanel({
               <>
                 <p className="text-caption text-fg-3 break-all">
                   {rules.data.path}
-                </p>
-                <p className="text-caption text-fg-3">
-                  {l(
-                    "外部文件是草稿，载入并校验应用后生效。更改参考档位和规则会保留手动订阅资料与历史费用。",
-                    "External files are drafts until loaded, validated and applied. Changing reference plans or rules keeps manual billing and historical costs.",
-                  )}
                 </p>
                 <CodexAllowanceTable
                   info={rules.data}

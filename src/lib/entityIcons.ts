@@ -15,7 +15,7 @@ const communityArtwork = import.meta.glob<string>("../../assets/icons/*.png", {
 export const ICON_PRESETS = presetCatalog.map(preset => ({
   ...preset,
   svg: preset.group === "brand" ? brandArtwork[preset.id] : undefined,
-  src: preset.group === "brand" ? undefined : communityArtwork[`../../assets/icons/${preset.file}`],
+  src: preset.file.endsWith(".png") ? communityArtwork[`../../assets/icons/${preset.file}`] : undefined,
 }));
 export type IconRef = `builtin:${string}` | `asset:${string}`;
 export interface IconTarget { kind: "harness" | "account"; id: string }
@@ -29,7 +29,7 @@ export interface IconLibrary {
 export const ICON_QUERY_KEY = ["icon-library"] as const;
 const HARNESS_DEFAULTS: Record<string, string> = {
   claude: "claude", "claude-desktop": "claude", codex: "openai", dsh: "deepseek",
-  opencode: "opencode", copliot: "copilot", "copliot-deprecated": "copilot",
+  opencode: "opencode", cherry: "cherry", copliot: "copilot", "copliot-deprecated": "copilot",
 };
 const PROVIDER_DEFAULTS: Record<string, string> = {
   deepseek: "deepseek", "openai-codex": "openai", "opencode-go": "opencode",

@@ -29,6 +29,7 @@
 | [Claude Code](CLAUDE.md) | 请求合并、计时、推理细分和供应商边界 |
 | [Codex](CODEX.md) | rollout 身份、分段与继承、初始 Fast 档位和回填 |
 | [DeepSeek Harness](DSH.md) | v0／v4 格式、流式日志和供应商计价 |
+| [Cherry Studio](CHERRY.md) | SQLite 会话、可确认用量和旧汇总限制 |
 | [Copilot 兼容导入与后续设计](COPILOT_IMPORT_DESIGN.md) | 已实现的 VS Code 导入，以及尚未实现的完整原生计量契约 |
 | [速度与首字](TIMING.md) | 估算来源、样本门槛、汇总和未知值 |
 

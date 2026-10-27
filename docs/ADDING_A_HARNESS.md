@@ -49,6 +49,7 @@ Copilot 兼容层受现有非空 Token 字段约束，缺失维度填 0；这是
 - [OpenCode](../crates/core/src/harness/opencode.rs)：V1／V2 SQLite，同会话优先新表；纯 V2 会话不能只靠旧 `session` 表发现，列表和用量来自一致性读取。
 - [Codex](CODEX.md)：逻辑会话与物理分段、祖先基线、运行日志档位证据和独立标题来源。
 - [DSH](DSH.md)：版本文件选择、多帧 Zstandard、稳定消息身份和继承边界。
+- [Cherry Studio](CHERRY.md)：SQLite 会话及逐次用量，未知旧汇总按统计口径排除。
 - [Claude](CLAUDE.md)：同请求内容块合并、请求计时关联和推理子集。
 - [Copilot](COPILOT_IMPORT_DESIGN.md)：固定历史清单划分两个已注册来源，未知用量不能伪装成已确认免费。
 

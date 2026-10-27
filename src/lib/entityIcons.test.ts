@@ -12,13 +12,14 @@ describe("entity icon identity and references", () => {
   it("uses stable provider types for brand defaults and leaves custom providers generic", () => {
     expect(defaultHarnessIcon("claude-desktop")).toBe("builtin:claude");
     expect(defaultHarnessIcon("dsh")).toBe("builtin:deepseek");
+    expect(defaultHarnessIcon("cherry")).toBe("builtin:cherry");
     expect(defaultProviderIcon("deepseek")).toBe("builtin:deepseek");
     expect(defaultProviderIcon("openai-codex")).toBe("builtin:openai");
     expect(defaultProviderIcon("custom:deepseek")).toBeUndefined();
   });
   it("resolves the shared preset catalog to bundled artwork for both community styles", () => {
     expect(new Set(ICON_PRESETS.map(p => p.id)).size).toBe(ICON_PRESETS.length);
-    expect(ICON_PRESETS.filter(p => p.group === "brand")).toHaveLength(5);
+    expect(ICON_PRESETS.filter(p => p.group === "brand")).toHaveLength(6);
     const providers = ["anthropic", "deepseek", "bytedance", "google", "zhipu", "openai", "xai", "moonshot"];
     for (const group of ["portrait", "pixel"]) {
       expect(ICON_PRESETS.filter(p => p.group === group)).toHaveLength(providers.length);
@@ -30,8 +31,13 @@ describe("entity icon identity and references", () => {
       }
     }
     for (const preset of ICON_PRESETS.filter(p => p.group === "brand")) {
-      expect(preset.svg).toContain("<svg");
-      expect(preset.src).toBeUndefined();
+      if (preset.id === "cherry") {
+        expect(preset.src).toBeTruthy();
+        expect(preset.svg).toBeUndefined();
+      } else {
+        expect(preset.svg).toContain("<svg");
+        expect(preset.src).toBeUndefined();
+      }
     }
   });
 });

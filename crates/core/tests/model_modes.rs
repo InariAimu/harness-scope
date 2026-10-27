@@ -96,14 +96,14 @@ fn modes_keep_weighted_timings_unknowns_and_other_tiers_separate_without_changin
     let mode = |name| stats.iter().find(|v| v["requestMode"] == name).unwrap();
     let standard = mode("standard");
     assert_eq!(standard["requestCount"], 2);
-    assert_eq!(standard["estSpeedOutputTokens"], 1200);
-    assert_eq!(standard["estSpeedDurationMs"], 10000);
-    assert_eq!(standard["estSpeedSampleCount"], 2);
+    assert_eq!(standard["estDecodeSpeedOutputTokens"], 1200);
+    assert_eq!(standard["estDecodeSpeedGenerationMs"], 9000);
+    assert_eq!(standard["estDecodeSpeedSampleCount"], 2);
     assert_eq!(standard["estFirstTokenMedianMs"], 500.0);
     let fast = mode("fast");
     assert_eq!(fast["requestCount"], 2);
-    assert_eq!(fast["estSpeedSampleCount"], 1);
-    assert_eq!(fast["estSpeedOutputTokens"], 1000);
+    assert_eq!(fast["estDecodeSpeedSampleCount"], 1);
+    assert_eq!(fast["estDecodeSpeedOutputTokens"], 1000);
     assert_eq!(fast["estFirstTokenMedianMs"], 200.0);
     assert_eq!(mode("unknown")["requestCount"], 1);
     let external_gpt = stats

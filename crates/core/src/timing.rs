@@ -24,24 +24,22 @@ pub(crate) struct SpeedEstimate {
     pub min_duration_ms: i64,
 }
 
-pub(crate) fn speed_estimate(harness: &str, timing: &UsageTiming, output: u64) -> SpeedEstimate {
-    // Only DSH currently records a first streamed token for the same request.
-    // Item creation (Codex/OpenCode) can precede or follow actual token delivery.
-    let decode = harness == "dsh"
-        && timing.duration_source == "dsh_step_message"
-        && timing.first_token_source.as_deref() == Some("dsh_stream_delta");
-    let (basis, duration) = if decode {
-        (
+pub(crate) fn speed_estimate(_harness: &str, timing: &UsageTiming, output: u64) -> SpeedEstimate {
+    // First-token timestamps vary by source and remain estimates. Use E2E
+    // only when no first-token time was recorded.
+    let (basis, duration_ms) = match timing.first_token_ms {
+        Some(first) => (
             SpeedBasis::Decode,
-            timing
-                .first_token_ms
-                .filter(|first| *first >= 0)
-                .and_then(|first| timing.duration_ms.checked_sub(first)),
-        )
-    } else {
-        (SpeedBasis::EndToEnd, Some(timing.duration_ms))
+            (first >= 0)
+                .then(|| timing.duration_ms.checked_sub(first))
+                .flatten()
+                .filter(|ms| *ms > 0),
+        ),
+        None => (
+            SpeedBasis::EndToEnd,
+            Some(timing.duration_ms).filter(|ms| *ms > 0),
+        ),
     };
-    let duration_ms = duration.filter(|ms| *ms > 0);
     SpeedEstimate {
         basis,
         duration_ms,
@@ -57,7 +55,7 @@ pub(crate) fn speed_estimate(harness: &str, timing: &UsageTiming, output: u64) -
 mod tests {
     use super::*;
     #[test]
-    fn stream_provenance_and_sensible_windows_are_required_for_decode_speed() {
+    fn first_token_and_sensible_windows_are_required_for_decode_speed() {
         let mut timing = UsageTiming {
             duration_ms: 6846,
             first_token_ms: Some(4364),
@@ -67,7 +65,7 @@ mod tests {
         let speed = speed_estimate("dsh", &timing, 488);
         assert!(speed.basis == SpeedBasis::Decode && speed.eligible);
         assert_eq!(speed.duration_ms, Some(2482));
-        for first in [None, Some(-1), Some(6846), Some(7000), Some(6800)] {
+        for first in [Some(-1), Some(6846), Some(7000), Some(6800)] {
             timing.first_token_ms = first;
             let speed = speed_estimate("dsh", &timing, 488);
             assert!(speed.basis == SpeedBasis::Decode && !speed.eligible);
@@ -75,11 +73,14 @@ mod tests {
         timing.first_token_ms = Some(4364);
         for harness in ["codex", "opencode", "claude"] {
             let speed = speed_estimate(harness, &timing, 488);
-            assert!(speed.basis == SpeedBasis::EndToEnd && speed.eligible);
-            assert_eq!(speed.duration_ms, Some(6846));
+            assert!(speed.basis == SpeedBasis::Decode && speed.eligible);
+            assert_eq!(speed.duration_ms, Some(2482));
         }
         timing.first_token_source = None;
-        assert!(speed_estimate("dsh", &timing, 488).basis == SpeedBasis::EndToEnd);
+        timing.first_token_ms = None;
+        let fallback = speed_estimate("dsh", &timing, 488);
+        assert!(fallback.basis == SpeedBasis::EndToEnd && fallback.eligible);
+        assert_eq!(fallback.duration_ms, Some(6846));
         timing.duration_ms = 3_600_001;
         assert!(!speed_estimate("dsh", &timing, 488).eligible);
     }
