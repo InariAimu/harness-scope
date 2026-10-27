@@ -125,6 +125,96 @@ fn separate_rollouts_union_and_compressed_moves_survive_restart_and_truncation()
     assert_eq!(e.lock().unwrap().pending_count().unwrap(), 0);
 }
 #[test]
+fn compressed_only_sources_are_not_scanned_even_when_forced() {
+    let (_dir, e, root) = setup();
+    let path = root.join(first_name());
+    write(&path, &[meta(THREAD), usage(1, Some(10), Some(10))]);
+    fs::write(
+        path.with_extension("jsonl.zst"),
+        zstd::stream::encode_all(fs::read(&path).unwrap().as_slice(), 1).unwrap(),
+    )
+    .unwrap();
+    fs::remove_file(&path).unwrap();
+    let compressed = path.with_extension("jsonl.zst");
+    let sessions = e.sessions().unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert!(!sessions[0].can_delete);
+    assert!(e
+        .execute(
+            "delete_session",
+            json!({
+                "providerId":"codex", "sourcePath":compressed, "sessionId":THREAD
+            })
+        )
+        .is_err());
+    assert!(compressed.exists());
+    for force in [false, true] {
+        let report = scan(&e, force);
+        assert_eq!(report.files_scanned, 0);
+        assert_eq!(report.imported, 0);
+        assert!(e.lock().unwrap().records("local").unwrap().is_empty());
+    }
+}
+
+/// Opt-in timing on an SQLite backup placed under output/, never the live DB.
+#[test]
+#[ignore]
+fn profile_codex_scan_on_database_copy() {
+    let copy = PathBuf::from(
+        std::env::var_os("HARNESS_SCOPE_PROFILE_COPY").expect("backup path required"),
+    );
+    let output = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../output")
+        .canonicalize()
+        .unwrap();
+    assert!(copy.canonicalize().unwrap().starts_with(output));
+    let engine = Engine::open(&copy).unwrap();
+    for pass in 1..=2 {
+        let start = std::time::Instant::now();
+        let r = engine.scan_harness("codex", false).unwrap();
+        println!(
+            "pass={pass} ms={} files={} imported={} updated={} deferred={} errors={}",
+            start.elapsed().as_millis(),
+            r.files_scanned,
+            r.imported,
+            r.updated,
+            r.deferred_files,
+            r.errors.len()
+        );
+    }
+}
+#[test]
+fn cached_compressed_parent_still_supplies_continuation_baseline() {
+    let (_dir, e, root) = setup();
+    let first = root.join(first_name());
+    write(&first, &[meta(THREAD), usage(1, Some(100), Some(100))]);
+    assert_eq!(scan(&e, false).imported, 1);
+    fs::write(
+        first.with_extension("jsonl.zst"),
+        zstd::stream::encode_all(fs::read(&first).unwrap().as_slice(), 1).unwrap(),
+    )
+    .unwrap();
+    fs::remove_file(&first).unwrap();
+    write(
+        &root.join(next_name()),
+        &[continuation(), usage(2, Some(120), None)],
+    );
+    let report = scan(&e, false);
+    assert_eq!(report.files_scanned, 1);
+    assert_eq!(report.imported, 1);
+    assert_eq!(
+        e.lock()
+            .unwrap()
+            .records("local")
+            .unwrap()
+            .iter()
+            .map(|r| r.tokens.input)
+            .sum::<u64>(),
+        120
+    );
+    assert_eq!(scan(&e, true).updated, 0);
+}
+#[test]
 fn lane_replays_and_zero_events_do_not_shift_ordinals_but_last_only_requests_count() {
     let mut rows = vec![meta(THREAD), usage(0, Some(0), Some(0))];
     for (at, total, last, lane) in [
@@ -208,6 +298,310 @@ fn parent_history_merges_pages_rejects_conflicting_copies_and_checks_precise_cut
         .unwrap()
         .extend(other[&format!("codex:{THREAD}")].clone());
     assert!(!Codex.parse(&path, &child, &conflict).unwrap().complete);
+}
+
+#[test]
+fn explicit_fork_boundary_excludes_later_parent_events_and_remains_idempotent() {
+    let (dir, e, root) = setup();
+    let parent = root.join(first_name());
+    let prefix = vec![
+        meta(THREAD),
+        usage(1, Some(100), Some(100)),
+        usage(2, Some(150), Some(50)),
+    ];
+    write(&parent, &prefix);
+    let bytes = fs::metadata(&parent).unwrap().len();
+    let mut parent_rows = prefix.clone();
+    parent_rows.push(usage(3, Some(200), Some(50)));
+    write(&parent, &parent_rows);
+    let mut child_meta = meta(CHILD);
+    child_meta["timestamp"] = json!("2026-10-22T01:00:10Z");
+    child_meta["payload"]["forked_from_id"] = json!(THREAD);
+    child_meta["payload"]["history_mode"] = json!("paginated");
+    child_meta["payload"]["history_base"] =
+        json!({"thread_id":THREAD,"end_ordinal_exclusive":3,"end_byte_offset":bytes});
+    let child = root.join(format!("rollout-2026-10-22T01-00-10-{CHILD}.jsonl"));
+    // The new event has the same signature as a parent event after the boundary.
+    let child_rows = vec![
+        child_meta,
+        prefix[1].clone(),
+        prefix[2].clone(),
+        usage(11, Some(200), Some(50)),
+    ];
+    write(&child, &child_rows);
+    assert_eq!(scan(&e, false).imported, 4);
+    let before = e.lock().unwrap().records("local").unwrap();
+    let child_records = before
+        .iter()
+        .filter(|r| r.session_id.as_deref() == Some(CHILD))
+        .collect::<Vec<_>>();
+    assert_eq!(child_records.len(), 1);
+    assert_eq!(child_records[0].tokens.input, 50);
+    assert_eq!(child_records[0].native_event_id.as_deref(), Some("token:3"));
+    assert_eq!(scan(&e, true).updated, 0);
+    drop(e);
+    let e = Engine::open(&dir.path().join("scope.db")).unwrap();
+    assert_eq!(scan(&e, false).imported, 0);
+    assert_eq!(e.lock().unwrap().records("local").unwrap(), before);
+}
+
+#[test]
+fn explicit_fork_boundary_validates_offsets_and_supports_total_only_child() {
+    let (_dir, e, root) = setup();
+    let parent = root.join(first_name());
+    let rows = vec![
+        meta(THREAD),
+        usage(1, Some(100), Some(100)),
+        usage(2, Some(150), Some(50)),
+    ];
+    write(&parent, &rows);
+    let bytes = fs::metadata(&parent).unwrap().len();
+    let mut child_meta = meta(CHILD);
+    child_meta["timestamp"] = json!("2026-10-22T01:00:10Z");
+    child_meta["payload"]["forked_from_id"] = json!(THREAD);
+    child_meta["payload"]["history_base"] =
+        json!({"thread_id":THREAD,"end_ordinal_exclusive":3,"end_byte_offset":bytes});
+    let child = root.join(format!("rollout-{CHILD}.jsonl"));
+    let child_usage = usage(11, Some(170), None);
+    write(&child, &[child_meta.clone(), child_usage.clone()]);
+    assert_eq!(scan(&e, false).imported, 3);
+    let before = e.lock().unwrap().records("local").unwrap();
+    assert_eq!(
+        before
+            .iter()
+            .find(|r| r.session_id.as_deref() == Some(CHILD))
+            .unwrap()
+            .tokens
+            .input,
+        20
+    );
+    for bad in [
+        json!({"thread_id":THREAD,"end_ordinal_exclusive":2,"end_byte_offset":bytes}),
+        json!({"thread_id":THREAD,"end_ordinal_exclusive":3,"end_byte_offset":bytes-1}),
+        json!({"thread_id":THREAD,"end_ordinal_exclusive":3,"end_byte_offset":bytes+1}),
+        json!({"thread_id":CHILD,"end_ordinal_exclusive":3,"end_byte_offset":bytes}),
+        json!({"thread_id":THREAD,"end_ordinal_exclusive":"3","end_byte_offset":bytes}),
+    ] {
+        let mut bad_meta = child_meta.clone();
+        bad_meta["payload"]["history_base"] = bad;
+        write(&child, &[bad_meta, child_usage.clone()]);
+        let report = e.scan_harness("codex", false).unwrap();
+        assert!(report.deferred_files > 0 && !report.errors.is_empty());
+        assert_eq!(e.lock().unwrap().records("local").unwrap(), before);
+    }
+    write(&child, &[child_meta, child_usage]);
+    assert_eq!(scan(&e, false).updated, 0);
+    assert_eq!(e.lock().unwrap().records("local").unwrap(), before);
+}
+
+#[test]
+fn explicit_fork_boundary_suppresses_supplemental_usage_in_inherited_replay() {
+    let (_dir, e, root) = setup();
+    let parent = root.join(first_name());
+    let zero = usage(1, Some(100), Some(0));
+    write(&parent, &[meta(THREAD), zero.clone()]);
+    let bytes = fs::metadata(&parent).unwrap().len();
+    let mut child_meta = meta(CHILD);
+    child_meta["timestamp"] = json!("2026-10-22T01:00:10Z");
+    child_meta["payload"]["forked_from_id"] = json!(THREAD);
+    child_meta["payload"]["history_base"] =
+        json!({"thread_id":THREAD,"end_ordinal_exclusive":2,"end_byte_offset":bytes});
+    let child = root.join(format!("rollout-{CHILD}.jsonl"));
+    let supplement = json!({"type":"token_usage_record","timestamp":"2026-10-22T01:00:01Z","payload":{"response_id":"replayed","usage":{"input_tokens":10,"output_tokens":1}}});
+    write(
+        &child,
+        &[child_meta, supplement, zero, usage(11, Some(120), Some(20))],
+    );
+    assert_eq!(scan(&e, false).imported, 1);
+    let records = e.lock().unwrap().records("local").unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].tokens.input, 20);
+    assert!(!records[0]
+        .native_event_id
+        .as_deref()
+        .unwrap()
+        .starts_with("usage:"));
+}
+
+#[test]
+fn legacy_fork_read_cache_is_refreshed_before_boundary_validation() {
+    let (_dir, e, root) = setup();
+    let parent = root.join(first_name());
+    write(&parent, &[meta(THREAD), usage(1, Some(100), Some(100))]);
+    let bytes = fs::metadata(&parent).unwrap().len();
+    let mut child_meta = meta(CHILD);
+    child_meta["timestamp"] = json!("2026-10-22T01:00:10Z");
+    child_meta["payload"]["forked_from_id"] = json!(THREAD);
+    child_meta["payload"]["history_base"] =
+        json!({"thread_id":THREAD,"end_ordinal_exclusive":2,"end_byte_offset":bytes});
+    let child = root.join(format!("rollout-{CHILD}.jsonl"));
+    write(&child, &[child_meta, usage(11, Some(120), Some(20))]);
+    assert_eq!(scan(&e, false).imported, 2);
+    let before = e.lock().unwrap().records("local").unwrap();
+    {
+        let s = e.lock().unwrap();
+        let path = child.to_string_lossy();
+        let payload: String = s
+            .conn
+            .query_row(
+                "SELECT payload FROM codex_source_cache WHERE path=?1",
+                [path.as_ref()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let mut cache: Value = serde_json::from_str(&payload).unwrap();
+        cache.as_object_mut().unwrap().remove("projection_version");
+        let meta = cache["context"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|v| v["type"] == "session_meta")
+            .unwrap();
+        meta["payload"]["history_base"]
+            .as_object_mut()
+            .unwrap()
+            .remove("end_byte_offset");
+        meta["payload"]["history_base"]
+            .as_object_mut()
+            .unwrap()
+            .remove("end_ordinal_exclusive");
+        s.conn
+            .execute(
+                "UPDATE codex_source_cache SET payload=?1 WHERE path=?2",
+                rusqlite::params![cache.to_string(), path.as_ref()],
+            )
+            .unwrap();
+        s.conn
+            .execute("DELETE FROM file_state WHERE path=?1", [path.as_ref()])
+            .unwrap();
+    }
+    let report = scan(&e, false);
+    assert_eq!((report.imported, report.updated), (0, 0));
+    assert_eq!(e.lock().unwrap().records("local").unwrap(), before);
+    let s = e.lock().unwrap();
+    let payload: String = s
+        .conn
+        .query_row(
+            "SELECT payload FROM codex_source_cache WHERE path=?1",
+            [child.to_string_lossy().as_ref()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let cache: Value = serde_json::from_str(&payload).unwrap();
+    assert_eq!(cache["projection_version"], 1);
+    assert!(cache["context"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|v| v["payload"]["history_base"]["end_byte_offset"] == bytes));
+}
+
+#[test]
+fn conflicting_parent_copies_defer_boundary_without_guessing() {
+    let (_dir, e, root) = setup();
+    let parent = root.join(first_name());
+    let rows = [meta(THREAD), usage(1, Some(100), Some(100))];
+    write(&parent, &rows);
+    let bytes = fs::metadata(&parent).unwrap().len();
+    let copy_dir = root.join("copy");
+    fs::create_dir(&copy_dir).unwrap();
+    write(
+        &copy_dir.join(first_name()),
+        &[meta(THREAD), usage(1, Some(101), Some(101))],
+    );
+    let mut child_meta = meta(CHILD);
+    child_meta["timestamp"] = json!("2026-10-22T01:00:10Z");
+    child_meta["payload"]["forked_from_id"] = json!(THREAD);
+    child_meta["payload"]["history_base"] =
+        json!({"thread_id":THREAD,"end_ordinal_exclusive":2,"end_byte_offset":bytes});
+    let child = root.join(format!("rollout-{CHILD}.jsonl"));
+    write(&child, &[child_meta, usage(11, Some(120), Some(20))]);
+    let report = e.scan_harness("codex", false).unwrap();
+    assert!(report.deferred_files > 0 && !report.errors.is_empty());
+    assert!(e
+        .lock()
+        .unwrap()
+        .records("local")
+        .unwrap()
+        .iter()
+        .all(|r| r.session_id.as_deref() != Some(CHILD)));
+}
+
+#[test]
+fn compressed_only_parent_cannot_validate_a_new_fork_boundary() {
+    let (_dir, e, root) = setup();
+    let parent = root.join(first_name());
+    write(&parent, &[meta(THREAD), usage(1, Some(100), Some(100))]);
+    let bytes = fs::metadata(&parent).unwrap().len();
+    assert_eq!(scan(&e, false).imported, 1);
+    let before = e.lock().unwrap().records("local").unwrap();
+    fs::write(
+        parent.with_extension("jsonl.zst"),
+        zstd::stream::encode_all(fs::read(&parent).unwrap().as_slice(), 1).unwrap(),
+    )
+    .unwrap();
+    fs::remove_file(&parent).unwrap();
+    let mut child_meta = meta(CHILD);
+    child_meta["timestamp"] = json!("2026-10-22T01:00:10Z");
+    child_meta["payload"]["forked_from_id"] = json!(THREAD);
+    child_meta["payload"]["history_base"] =
+        json!({"thread_id":THREAD,"end_ordinal_exclusive":2,"end_byte_offset":bytes});
+    let child = root.join(format!("rollout-{CHILD}.jsonl"));
+    write(&child, &[child_meta, usage(11, Some(120), Some(20))]);
+    let report = e.scan_harness("codex", false).unwrap();
+    assert!(report.deferred_files > 0 && !report.errors.is_empty());
+    assert_eq!(e.lock().unwrap().records("local").unwrap(), before);
+}
+
+#[test]
+fn total_only_fork_defers_without_a_known_parent_cumulative_baseline() {
+    let (_dir, e, root) = setup();
+    let parent = root.join(first_name());
+    write(&parent, &[meta(THREAD)]);
+    let bytes = fs::metadata(&parent).unwrap().len();
+    let mut child_meta = meta(CHILD);
+    child_meta["timestamp"] = json!("2026-10-22T01:00:10Z");
+    child_meta["payload"]["forked_from_id"] = json!(THREAD);
+    child_meta["payload"]["history_base"] =
+        json!({"thread_id":THREAD,"end_ordinal_exclusive":1,"end_byte_offset":bytes});
+    let child = root.join(format!("rollout-{CHILD}.jsonl"));
+    write(&child, &[child_meta.clone(), usage(11, Some(120), None)]);
+    let r = e.scan_harness("codex", false).unwrap();
+    assert!(r.deferred_files > 0 && !r.errors.is_empty());
+    assert!(e.lock().unwrap().records("local").unwrap().is_empty());
+    write(&child, &[child_meta, usage(11, Some(120), Some(20))]);
+    assert_eq!(scan(&e, false).imported, 1);
+    assert_eq!(
+        e.lock().unwrap().records("local").unwrap()[0].tokens.input,
+        20
+    );
+}
+
+#[test]
+fn total_only_fork_uses_full_parent_snapshot_when_only_part_is_replayed() {
+    let (_dir, e, root) = setup();
+    let parent = root.join(first_name());
+    let earlier = usage(1, Some(100), None);
+    write(
+        &parent,
+        &[meta(THREAD), earlier.clone(), usage(2, Some(150), None)],
+    );
+    let bytes = fs::metadata(&parent).unwrap().len();
+    let mut child_meta = meta(CHILD);
+    child_meta["timestamp"] = json!("2026-10-22T01:00:10Z");
+    child_meta["payload"]["forked_from_id"] = json!(THREAD);
+    child_meta["payload"]["history_base"] =
+        json!({"thread_id":THREAD,"end_ordinal_exclusive":3,"end_byte_offset":bytes});
+    let child = root.join(format!("rollout-{CHILD}.jsonl"));
+    write(&child, &[child_meta, earlier, usage(11, Some(170), None)]);
+    assert_eq!(scan(&e, false).imported, 3);
+    let s = e.lock().unwrap();
+    let records = s.records("local").unwrap();
+    let child = records
+        .iter()
+        .find(|r| r.session_id.as_deref() == Some(CHILD))
+        .unwrap();
+    assert_eq!(child.tokens.input, 20);
 }
 #[test]
 fn compaction_is_separate_from_token_ordinals_and_projection_preserves_physical_lines() {

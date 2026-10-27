@@ -196,7 +196,7 @@ fn conflicting_runtime_tiers_do_not_override_explicit_context_or_guess() {
     assert_eq!(speeds(&engine), vec![None, None, Some("standard".into())]);
 }
 #[test]
-fn compressed_rollout_and_explicit_usage_records_use_the_same_safe_evidence() {
+fn compressed_rollout_preserves_already_collected_usage_and_evidence() {
     let dir = tempfile::tempdir().unwrap();
     let mut rows = rollout();
     rows.truncate(3);
@@ -204,6 +204,9 @@ fn compressed_rollout_and_explicit_usage_records_use_the_same_safe_evidence() {
     rows.push(json!({"type":"event_msg","timestamp":"2026-10-23T00:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":0,"output_tokens":0}}}}));
     let engine = setup(dir.path(), &rows);
     let path = dir.path().join("sessions/fixture.jsonl");
+    let conn = logs(dir.path());
+    tag(&conn, THREAD, TURN, MODEL, json!("priority"), 0);
+    assert_eq!(engine.scan(false).unwrap().imported, 1);
     let data = fs::read(&path).unwrap();
     fs::write(
         path.with_extension("jsonl.zst"),
@@ -211,8 +214,8 @@ fn compressed_rollout_and_explicit_usage_records_use_the_same_safe_evidence() {
     )
     .unwrap();
     fs::remove_file(path).unwrap();
-    let conn = logs(dir.path());
-    tag(&conn, THREAD, TURN, MODEL, json!("priority"), 0);
-    assert_eq!(engine.scan(false).unwrap().imported, 1);
+    let report = engine.scan(true).unwrap();
+    assert_eq!(report.imported, 0);
+    assert_eq!(report.updated, 0);
     assert_eq!(speeds(&engine), vec![Some("fast".into())]);
 }

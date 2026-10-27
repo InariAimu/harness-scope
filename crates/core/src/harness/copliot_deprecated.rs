@@ -17,12 +17,20 @@ pub struct CopliotDeprecated;
 
 /// Both adapters share the same native discovery and the fixed historical boundary.
 pub(super) fn discover_sessions(root: &Path, historical: bool) -> Result<Vec<PathBuf>> {
+    let (old, new) = discover_both(root)?;
+    Ok(if historical { old } else { new })
+}
+
+/// Discover both ownership classes together. The result is scoped to one scan;
+/// newly created sessions and selection changes are observed on the next scan.
+pub(crate) fn discover_both(root: &Path) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
     let selection: Selection = serde_json::from_slice(
         &fs::read(root.join(SELECTION_FILE))
             .context("Select historical Copilot sessions before enabling this source")?,
     )?;
     selection.validate()?;
-    let mut paths = Vec::new();
+    let mut old = Vec::new();
+    let mut new = Vec::new();
     for entry in walkdir::WalkDir::new(root).follow_links(false) {
         let entry = entry?;
         let path = entry.path();
@@ -34,25 +42,31 @@ pub(super) fn discover_sessions(root: &Path, historical: bool) -> Result<Vec<Pat
             && path
                 .extension()
                 .is_some_and(|e| e == "json" || e == "jsonl")
-            && path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .is_some_and(|id| selection.session_ids.contains(id) == historical)
         {
-            paths.push(path.to_owned());
+            if let Some(id) = path.file_stem().and_then(|s| s.to_str()) {
+                if selection.session_ids.contains(id) {
+                    old.push(path.to_owned());
+                } else {
+                    new.push(path.to_owned());
+                }
+            }
         }
     }
-    paths.sort();
-    // A mutation log supersedes a snapshot of the same session in the same directory.
-    let logs: BTreeSet<_> = paths
-        .iter()
-        .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
-        .map(|p| p.with_extension(""))
-        .collect();
-    paths.retain(|p| {
-        p.extension().is_some_and(|e| e == "jsonl") || !logs.contains(&p.with_extension(""))
-    });
-    Ok(paths)
+    fn prefer_logs(paths: &mut Vec<PathBuf>) {
+        paths.sort();
+        // A mutation log supersedes a snapshot of the same session in the same directory.
+        let logs: BTreeSet<_> = paths
+            .iter()
+            .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
+            .map(|p| p.with_extension(""))
+            .collect();
+        paths.retain(|p| {
+            p.extension().is_some_and(|e| e == "jsonl") || !logs.contains(&p.with_extension(""))
+        });
+    }
+    prefer_logs(&mut old);
+    prefer_logs(&mut new);
+    Ok((old, new))
 }
 
 /// Local discovery control, not usage data or a change to native session files.

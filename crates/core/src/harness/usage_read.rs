@@ -15,8 +15,11 @@ use std::{
 enum Projection {
     All,
     Fields(&'static [(&'static str, Projection)]),
+    Loose(&'static [(&'static str, Projection)]),
+    List(&'static Projection),
+    Skip,
 }
-use Projection::{All, Fields};
+use Projection::{All, Fields, List, Loose, Skip};
 const ITEM: Projection = Fields(&[("type", All)]);
 const SOURCE: Projection = Fields(&[(
     "subagent",
@@ -36,7 +39,14 @@ const PAYLOAD: Projection = Fields(&[
     ("threadId", All),
     ("response_id", All),
     ("history_mode", All),
-    ("history_base", Fields(&[("thread_id", All)])),
+    (
+        "history_base",
+        Fields(&[
+            ("thread_id", All),
+            ("end_ordinal_exclusive", All),
+            ("end_byte_offset", All),
+        ]),
+    ),
     ("rate_limits", Fields(&[("limit_id", All)])),
     ("type", All),
     ("model", All),
@@ -75,13 +85,105 @@ const CLAUDE: Projection = Fields(&[
         ]),
     ),
 ]);
+const OPENCODE_TIME: Projection = Loose(&[
+    ("created", All),
+    ("start", All),
+    ("completed", All),
+    ("streamed", All),
+]);
+const OPENCODE_PART: Projection = Loose(&[("type", All), ("time", OPENCODE_TIME)]);
+const OPENCODE: Projection = Projection::Loose(&[
+    ("role", All),
+    ("time", OPENCODE_TIME),
+    (
+        "tokens",
+        Loose(&[
+            ("input", All),
+            ("output", All),
+            ("reasoning", All),
+            ("cache", Loose(&[("read", All), ("write", All)])),
+        ]),
+    ),
+    ("cost", All),
+    ("modelID", All),
+    ("providerID", All),
+    (
+        "model",
+        Projection::Loose(&[("id", All), ("providerID", All)]),
+    ),
+    ("content", List(&OPENCODE_PART)),
+]);
+
+/// Extract accounting fields while treating unrelated transcript text as opaque.
+/// JSON structure and every selected field are still validated by serde_json.
+pub(super) fn opencode(data: &str, part: bool) -> Result<Value> {
+    let mut de = serde_json::Deserializer::from_str(data);
+    let value = (if part { OPENCODE_PART } else { OPENCODE }).deserialize(&mut de)?;
+    de.end()?;
+    Ok(value)
+}
+
+/// Validate a plain Codex parent's exact physical prefix without retaining
+/// transcript bodies. Both byte and line boundaries must agree.
+pub(super) fn codex_prefix(path: &Path, bytes: u64, ordinal: u64) -> Result<(Vec<Value>, String)> {
+    anyhow::ensure!(
+        !path.to_string_lossy().ends_with(".zst") && !path.to_string_lossy().ends_with(".zstd"),
+        "Compressed Codex parent boundary is unavailable"
+    );
+    let before = crate::scan_cache::Stamp::read(path)?;
+    let file = File::open(path)?;
+    anyhow::ensure!(
+        file.metadata()?.len() >= bytes,
+        "Codex parent is shorter than its history boundary"
+    );
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+    let mut hash = Sha256::new();
+    let mut events = Vec::new();
+    let mut position = 0u64;
+    let mut count = 0u64;
+    while position < bytes {
+        line.clear();
+        let length = reader.read_line(&mut line)? as u64;
+        anyhow::ensure!(
+            length > 0 && line.ends_with('\n'),
+            "Incomplete Codex parent history line"
+        );
+        position = position
+            .checked_add(length)
+            .context("Codex parent boundary overflow")?;
+        anyhow::ensure!(
+            position <= bytes,
+            "Codex parent byte boundary splits a line"
+        );
+        count += 1;
+        hash.update(line.as_bytes());
+        let mut de = serde_json::Deserializer::from_str(&line);
+        let event = CODEX.deserialize(&mut de)?;
+        de.end()?;
+        events.push(event);
+    }
+    anyhow::ensure!(
+        position == bytes && count == ordinal,
+        "Codex parent history byte/ordinal mismatch"
+    );
+    anyhow::ensure!(
+        crate::scan_cache::Stamp::read(path)? == before,
+        "Codex parent changed while validating history boundary"
+    );
+    Ok((events, format!("{:x}", hash.finalize())))
+}
 
 impl<'de> DeserializeSeed<'de> for Projection {
     type Value = Value;
     fn deserialize<D: serde::Deserializer<'de>>(self, d: D) -> Result<Value, D::Error> {
         match self {
             All => serde::Deserialize::deserialize(d),
-            Fields(_) => d.deserialize_any(self),
+            Skip => {
+                <serde::de::IgnoredAny as serde::Deserialize>::deserialize(d)?;
+                Ok(Value::Null)
+            }
+            Fields(_) | Loose(_) | List(_) => d.deserialize_any(self),
         }
     }
 }
@@ -91,22 +193,39 @@ impl<'de> Visitor<'de> for Projection {
         f.write_str("a JSON value")
     }
     fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Value, M::Error> {
-        let Fields(fields) = self else { unreachable!() };
+        let (fields, loose) = match self {
+            Fields(fields) => (fields, false),
+            Projection::Loose(fields) => (fields, true),
+            _ => (&[][..], true),
+        };
         let mut out = serde_json::Map::new();
         while let Some(key) = map.next_key::<String>()? {
             if let Some((_, projection)) = fields.iter().find(|(name, _)| *name == key) {
                 out.insert(key, map.next_value_seed(*projection)?);
             } else {
-                // Decode skipped strings too: IgnoredAny would accept lone UTF-16
-                // surrogates that the complete Value reader correctly rejects.
-                map.next_value_seed(Fields(&[]))?;
+                // Codex/Claude retain strict whole-row validation; OpenCode usage
+                // skips unrelated transcript text while validating selected fields.
+                map.next_value_seed(if loose { Skip } else { Fields(&[]) })?;
             }
         }
         Ok(Value::Object(out))
     }
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Value, A::Error> {
-        while seq.next_element_seed(Fields(&[]))?.is_some() {}
-        Ok(Value::Null)
+        if let Projection::List(element) = self {
+            let mut values = Vec::new();
+            while let Some(value) = seq.next_element_seed(*element)? {
+                values.push(value);
+            }
+            Ok(Value::Array(values))
+        } else {
+            let skip = if matches!(self, Projection::Loose(_)) {
+                Projection::Skip
+            } else {
+                Fields(&[])
+            };
+            while seq.next_element_seed(skip)?.is_some() {}
+            Ok(Value::Null)
+        }
     }
     fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<Value, E> {
         Ok(Value::Null)

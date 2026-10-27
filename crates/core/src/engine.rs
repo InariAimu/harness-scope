@@ -609,6 +609,7 @@ impl Engine {
         }
         let mut index = TimelineIndex::new();
         let mut unavailable = HashSet::new();
+        let mut copilot_discovery = std::collections::HashMap::new();
         for source in config.sources.iter().filter(|s| {
             s.enabled
                 && crate::applications::get(&settings, &s.harness).collection_enabled
@@ -616,10 +617,30 @@ impl Engine {
                 && selected.is_none_or(|h| h == s.harness)
         }) {
             let adapter = self.registry.get(&source.harness)?;
-            let found = match adapter.discover(Path::new(&source.root)) {
+            let found = if matches!(source.harness.as_str(), "copliot" | "copliot-deprecated") {
+                let result = copilot_discovery
+                    .entry(source.root.clone())
+                    .or_insert_with(|| {
+                        crate::harness::copliot_deprecated::discover_both(Path::new(&source.root))
+                            .map_err(|e| e.to_string())
+                    });
+                match result {
+                    Ok((old, new)) => Ok(if source.harness == "copliot" {
+                        new.clone()
+                    } else {
+                        old.clone()
+                    }),
+                    Err(error) => Err(error.clone()),
+                }
+            } else {
+                adapter
+                    .discover(Path::new(&source.root))
+                    .map_err(|e| e.to_string())
+            };
+            let found = match found {
                 Ok(xs) => xs,
                 Err(e) => {
-                    report.errors.push(e.to_string());
+                    report.errors.push(e);
                     continue;
                 }
             };
@@ -651,6 +672,7 @@ impl Engine {
                         true,
                         cached.parent.clone(),
                         stamp,
+                        cached.deferred.clone(),
                     ));
                     continue;
                 }
@@ -695,6 +717,7 @@ impl Engine {
                             complete,
                             parent,
                             stamp,
+                            None,
                         ));
                     }
                     Err(e) => {
@@ -705,7 +728,7 @@ impl Engine {
                 }
             }
         }
-        for (harness, path, lines, fingerprint, read_complete, parent, stamp) in inputs {
+        for (harness, path, lines, fingerprint, read_complete, parent, stamp, deferred) in inputs {
             report.files_scanned += 1;
             let adapter = self.registry.get(&harness)?;
             let descriptor = adapter.descriptor();
@@ -750,6 +773,14 @@ impl Engine {
                 report.skipped += 1;
                 continue;
             }
+            if !force && read_complete {
+                if let Some(deferred) = deferred.filter(|d| d.fingerprint == fingerprint) {
+                    report.errors.extend(deferred.diagnostics);
+                    report.deferred_files += 1;
+                    report.skipped += 1;
+                    continue;
+                }
+            }
             drop(s);
             if let Some(parent) = parent.filter(|_| parent_fingerprint.is_some()) {
                 if let Entry::Vacant(entry) = index.entry(parent) {
@@ -791,7 +822,8 @@ impl Engine {
                     continue;
                 }
             };
-            report.errors.extend(result.diagnostics);
+            let diagnostics = result.diagnostics;
+            report.errors.extend(diagnostics.iter().cloned());
             let complete = read_complete && result.complete;
             if !complete {
                 report.deferred_files += 1
@@ -847,6 +879,36 @@ impl Engine {
                     s.conn.execute("INSERT INTO file_state(path,fingerprint,parser_version) VALUES(?1,?2,?3) ON CONFLICT(path) DO UPDATE SET fingerprint=excluded.fingerprint,parser_version=excluded.parser_version",params![key,fingerprint,descriptor.parser_version])?;
                 }Ok(())
             })?;
+            // Unchanged invalid records remain deferred and diagnosed, but need not
+            // be reparsed every interval. Source/parent changes or force retry them.
+            if read_complete {
+                let payload: Option<String> = s
+                    .conn
+                    .query_row(
+                        "SELECT payload FROM usage_read_cache WHERE path=?",
+                        [&key],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                if let Some(mut checkpoint) =
+                    payload.and_then(|p| serde_json::from_str::<Checkpoint>(&p).ok())
+                {
+                    if stamp
+                        .as_ref()
+                        .is_some_and(|stamp| checkpoint.matches(stamp, adapter))
+                    {
+                        checkpoint.deferred =
+                            (!result.complete).then(|| crate::scan_cache::Deferred {
+                                fingerprint: fingerprint.clone(),
+                                diagnostics,
+                            });
+                        s.conn.execute(
+                            "UPDATE usage_read_cache SET payload=?2 WHERE path=?1",
+                            params![key, serde_json::to_string(&checkpoint)?],
+                        )?;
+                    }
+                }
+            }
         }
         let s = self.lock()?;
         s.set_meta("last_scan_at", &chrono::Utc::now().timestamp_millis())?;
@@ -1016,6 +1078,8 @@ impl Engine {
                 if let Ok(rows) = self.reader.metadata(adapter, &path) {
                     source_sessions.extend(rows.into_iter().map(|mut session| {
                         session.can_delete = adapter.descriptor().delete
+                            && !(source.harness == "codex"
+                                && crate::codex_scan::is_compressed(&path))
                             && crate::applications::get(&settings, &source.harness)
                                 .collection_enabled;
                         session
@@ -1050,6 +1114,10 @@ impl Engine {
             .lock()
             .map_err(|_| anyhow::anyhow!("Scan lock poisoned"))?;
         let path = self.session_path(args)?;
+        anyhow::ensure!(
+            args["providerId"] != "codex" || !crate::codex_scan::is_compressed(&path),
+            "Compressed Codex sessions cannot be deleted here because they are excluded from usage collection"
+        );
         let config = self.lock()?.config()?;
         let settings = crate::applications::load(&*self.lock()?)?;
         anyhow::ensure!(

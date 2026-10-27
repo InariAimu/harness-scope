@@ -218,6 +218,38 @@ fn ordinary_scans_pick_up_new_sessions_and_requests_without_reclassifying_histor
 }
 
 #[test]
+fn full_scans_share_discovery_without_staling_new_sessions() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("logs");
+    source(&root, SID, "jsonl", MODERN);
+    source(&root, "synthetic-copliot-continued", "jsonl", CONTINUED);
+    selection(&root, &["synthetic-copliot-continued"]);
+    let e = engine(tmp.path(), &root);
+    let first = e.scan(false).unwrap();
+    assert!(first.errors.is_empty(), "{:?}", first.errors);
+    assert_eq!(first.imported, 5);
+    let mut state = events(
+        &root
+            .join("workspaceStorage/project/chatSessions")
+            .join(format!("{SID}.jsonl")),
+    )
+    .remove(0);
+    state["sessionId"] = json!("future-session");
+    source(&root, "future-session", "json", &state.to_string());
+    let second = e.scan(false).unwrap();
+    assert!(second.errors.is_empty(), "{:?}", second.errors);
+    assert_eq!(second.imported, 3);
+    let all = e.lock().unwrap().records("local").unwrap();
+    assert_eq!(all.iter().filter(|r| r.harness == ID).count(), 6);
+    assert_eq!(
+        all.iter()
+            .filter(|r| r.harness == "copliot-deprecated")
+            .count(),
+        2
+    );
+}
+
+#[test]
 fn model_totals_replace_last_call_output_without_inventing_extra_requests() {
     let tmp = tempfile::tempdir().unwrap();
     let path = source(tmp.path(), SID, "jsonl", MODERN);

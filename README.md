@@ -18,7 +18,7 @@ Harness Scope 是一个以本机数据为基础的桌面应用：从编程工具
 | 工具 | 数据来源 | 支持范围 |
 | --- | --- | --- |
 | Claude Code | JSONL 会话日志 | 用量、会话、请求计时估算 |
-| Codex | JSONL／Zstandard rollout | 用量、会话、分段与继承去重、请求档位 |
+| Codex | JSONL 用量；JSONL／Zstandard 会话 | 用量、会话、分段与继承去重、请求档位 |
 | OpenCode | V1／V2 SQLite | 用量、会话、原生费用、迁移副本去重 |
 | DeepSeek Harness | v0／v4 JSONL、Zstandard | 用量、会话、缓存与推理细分、流式计时估算 |
 | Cherry Studio | 2.x SQLite | 会话和可完整拆分的逐次用量；未知旧汇总不计入 |

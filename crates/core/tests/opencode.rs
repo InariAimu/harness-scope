@@ -148,6 +148,102 @@ fn a_pure_v2_database_lists_sessions_without_legacy_tables() {
 }
 
 #[test]
+fn usage_projection_matches_full_reader_and_tolerates_unrelated_invalid_text() {
+    for fixture in [V1, V2] {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("opencode.db");
+        let _c = seed(&path, fixture);
+        let full = OpenCode.read_source(&path).unwrap();
+        let projected = OpenCode.read_usage_source(&path).unwrap();
+        let a = OpenCode
+            .parse(&path, &full.0, &TimelineIndex::new())
+            .unwrap();
+        let b = OpenCode
+            .parse(&path, &projected.0, &TimelineIndex::new())
+            .unwrap();
+        assert_eq!(format!("{:?}", a.usage), format!("{:?}", b.usage));
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("opencode.db");
+    let c = seed(&path, V2);
+    let raw: String = c
+        .query_row(
+            "SELECT data FROM session_message WHERE id='msg_answer'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let bad_text = raw.replace("Synthetic reasoning", r"\ud800");
+    c.execute(
+        "UPDATE session_message SET data=?1 WHERE id='msg_answer'",
+        [&bad_text],
+    )
+    .unwrap();
+    assert!(!OpenCode.read_source(&path).unwrap().3);
+    let e = engine(tmp.path(), &path);
+    let report = e.scan(false).unwrap();
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    assert_eq!(report.imported, 2);
+    assert_eq!(e.scan(false).unwrap().imported, 0);
+    // The same malformed surrogate in a required token field is not accepted.
+    let bad_counter = raw.replace("\"input\":100", r#""input":"\ud800""#);
+    assert_ne!(bad_counter, raw);
+    c.execute(
+        "UPDATE session_message SET data=?1 WHERE id='msg_answer'",
+        [&bad_counter],
+    )
+    .unwrap();
+    let report = e.scan(false).unwrap();
+    assert!(report.deferred_files > 0 && !report.errors.is_empty());
+    assert_eq!(e.lock().unwrap().records("local").unwrap().len(), 2);
+}
+
+#[test]
+fn projection_upgrade_refreshes_old_read_cache_without_revising_facts() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("opencode.db");
+    let _c = seed(&path, V2);
+    let e = engine(tmp.path(), &path);
+    assert_eq!(e.scan(false).unwrap().imported, 2);
+    let before = e.lock().unwrap().records("local").unwrap();
+    {
+        let s = e.lock().unwrap();
+        let payload: String = s
+            .conn
+            .query_row(
+                "SELECT payload FROM usage_read_cache WHERE path=?1",
+                [path.to_string_lossy().as_ref()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let mut cache: Value = serde_json::from_str(&payload).unwrap();
+        cache["version"] = json!("usage-read-v2:opencode-sqlite-v3-provider");
+        s.conn
+            .execute(
+                "UPDATE usage_read_cache SET payload=?1 WHERE path=?2",
+                params![cache.to_string(), path.to_string_lossy().as_ref()],
+            )
+            .unwrap();
+    }
+    let report = e.scan(false).unwrap();
+    assert_eq!((report.imported, report.updated), (0, 0));
+    assert_eq!(e.lock().unwrap().records("local").unwrap(), before);
+    let s = e.lock().unwrap();
+    let payload: String = s
+        .conn
+        .query_row(
+            "SELECT payload FROM usage_read_cache WHERE path=?1",
+            [path.to_string_lossy().as_ref()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(serde_json::from_str::<Value>(&payload).unwrap()["version"]
+        .as_str()
+        .unwrap()
+        .starts_with("usage-read-v3-opencode-projection:"));
+}
+
+#[test]
 fn v1_to_v2_keeps_ids_and_deduplicates_migrated_sessions() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("opencode.db");
@@ -260,11 +356,38 @@ fn incomplete_and_invalid_rows_preserve_usage_and_completed_corrections_update_r
         [d.to_string()],
     )
     .unwrap();
-    assert_eq!(e.scan(false).unwrap().deferred_files, 1);
+    let first = e.scan(false).unwrap();
+    assert_eq!(first.deferred_files, 1);
+    let repeat = e.scan(false).unwrap();
+    assert_eq!(repeat.deferred_files, 1);
+    assert_eq!(repeat.errors, first.errors);
+    assert_eq!(repeat.imported, 0);
+    let s = e.lock().unwrap();
+    let cached: String = s
+        .conn
+        .query_row(
+            "SELECT payload FROM usage_read_cache WHERE path=?1",
+            [path.to_string_lossy().as_ref()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(serde_json::from_str::<Value>(&cached).unwrap()["deferred"].is_object());
+    drop(s);
+    assert_eq!(e.scan(true).unwrap().deferred_files, 1);
     assert_eq!(
         e.lock().unwrap().record(&r.id).unwrap().unwrap().revision,
         3
     );
+    d["tokens"]["input"] = json!(201);
+    c.execute(
+        "UPDATE session_message SET data=?1 WHERE id='msg_answer'",
+        [d.to_string()],
+    )
+    .unwrap();
+    let repaired = e.scan(false).unwrap();
+    assert_eq!(repaired.updated, 1);
+    assert_eq!(repaired.deferred_files, 0);
+    assert!(repaired.errors.is_empty());
 }
 
 #[test]

@@ -9,12 +9,6 @@ use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, str::FromStr};
 
-fn amount(r: &Row) -> Decimal {
-    r.amount
-        .as_deref()
-        .and_then(|s| Decimal::from_str(s).ok())
-        .unwrap_or_default()
-}
 struct SummaryValue<'a> {
     tokens: &'a Tokens,
     count: u64,
@@ -50,86 +44,126 @@ pub(crate) fn summary_rows(records: &[Row]) -> Value {
     }))
 }
 fn aggregate<'a>(records: impl Iterator<Item = SummaryValue<'a>>) -> Value {
-    let mut t = Tokens::default();
-    let mut count = 0;
-    let mut cost = Decimal::ZERO;
-    let mut known = 0;
-    let mut success = 0;
-    let mut unpriced = 0;
-    let mut converted = false;
-    let mut subscription = 0;
+    let mut total = SummaryAccumulator::default();
     for r in records {
-        count += r.count;
-        t.input += r.tokens.input;
-        t.output += r.tokens.output;
-        t.cache_read += r.tokens.cache_read;
-        t.cache_write += r.tokens.cache_write;
-        cost += r
+        total.add(r);
+    }
+    total.finish()
+}
+
+#[derive(Default)]
+struct SummaryAccumulator {
+    tokens: Tokens,
+    count: u64,
+    cost: Decimal,
+    known: u64,
+    success: u64,
+    unpriced: u64,
+    converted: bool,
+    subscription: u64,
+}
+impl SummaryAccumulator {
+    fn add_row(&mut self, r: &Row) {
+        self.add(SummaryValue {
+            tokens: &r.tokens,
+            count: r.count,
+            amount: r.amount.as_deref(),
+            status: r.status_code,
+            converted: r.converted,
+            subscription: r.billing_basis.as_deref() == Some("subscription_usage"),
+        });
+    }
+    fn add(&mut self, r: SummaryValue<'_>) {
+        self.count += r.count;
+        self.tokens.input += r.tokens.input;
+        self.tokens.output += r.tokens.output;
+        self.tokens.cache_read += r.tokens.cache_read;
+        self.tokens.cache_write += r.tokens.cache_write;
+        self.cost += r
             .amount
             .and_then(|s| Decimal::from_str(s).ok())
             .unwrap_or_default();
-        converted |= r.converted;
+        self.converted |= r.converted;
         if r.subscription {
-            subscription += r.count;
+            self.subscription += r.count;
         }
         if let Some(status) = r.status {
-            known += r.count;
+            self.known += r.count;
             if (200..300).contains(&status) {
-                success += r.count
+                self.success += r.count
             }
         }
         if r.amount.is_none() {
-            unpriced += r.count
+            self.unpriced += r.count
         }
     }
-    let cacheable = t.input + t.cache_read + t.cache_write;
-    json!({"totalRequests":count,"totalCost":cost.normalize().to_string(),"totalInputTokens":t.input,"totalOutputTokens":t.output,"totalCacheReadTokens":t.cache_read,"totalCacheCreationTokens":t.cache_write,"successRate":if known>0{Some(success as f64/known as f64*100.)}else{None},"realTotalTokens":t.total(),"cacheHitRate":if cacheable>0{t.cache_read as f64/cacheable as f64}else{0.},"unpricedCount":unpriced,"knownStatusCount":known,"subscriptionUsageCount":subscription,"costConverted":converted})
+    fn finish(&self) -> Value {
+        let Self {
+            tokens: t,
+            count,
+            cost,
+            known,
+            success,
+            unpriced,
+            converted,
+            subscription,
+        } = self;
+        let cacheable = t.input + t.cache_read + t.cache_write;
+        json!({"totalRequests":count,"totalCost":cost.normalize().to_string(),"totalInputTokens":t.input,"totalOutputTokens":t.output,"totalCacheReadTokens":t.cache_read,"totalCacheCreationTokens":t.cache_write,"successRate":if *known>0{Some(*success as f64 / *known as f64*100.)}else{None},"realTotalTokens":t.total(),"cacheHitRate":if cacheable>0{t.cache_read as f64/cacheable as f64}else{0.},"unpricedCount":unpriced,"knownStatusCount":known,"subscriptionUsageCount":subscription,"costConverted":converted})
+    }
 }
 fn provider(record: &UsageRecord) -> String {
     crate::providers::name(record)
 }
-fn timing_stats(records: &[Row]) -> Value {
-    let mut output = 0u64;
-    let mut duration = 0i64;
-    let mut speed_samples = 0u64;
-    let mut decode_output = 0u64;
-    let mut decode_duration = 0i64;
-    let mut decode_samples = 0u64;
-    let mut durations = Vec::new();
-    let mut firsts = Vec::new();
-    for r in records {
+#[derive(Default)]
+struct TimingAccumulator {
+    output: u64,
+    duration: i64,
+    speed_samples: u64,
+    decode_output: u64,
+    decode_duration: i64,
+    decode_samples: u64,
+    durations: usize,
+    duration_sum: f64,
+    firsts: Vec<i64>,
+}
+impl TimingAccumulator {
+    fn add(&mut self, r: &Row) {
         if let Some(t) = r
             .timing
             .as_ref()
             .filter(|_| r.grain == "event" && r.record_source == "session")
         {
-            durations.push(t.duration_ms);
+            self.durations += 1;
+            self.duration_sum += t.duration_ms as f64;
             let speed = crate::timing::speed_estimate(&r.harness, t, r.tokens.output);
             if speed.eligible {
                 let ms = speed.duration_ms.expect("eligible speed duration");
                 if speed.basis == crate::timing::SpeedBasis::Decode {
-                    decode_output = decode_output.saturating_add(r.tokens.output);
-                    decode_duration = decode_duration.saturating_add(ms);
-                    decode_samples += 1;
+                    self.decode_output = self.decode_output.saturating_add(r.tokens.output);
+                    self.decode_duration = self.decode_duration.saturating_add(ms);
+                    self.decode_samples += 1;
                 } else {
-                    output = output.saturating_add(r.tokens.output);
-                    duration = duration.saturating_add(ms);
-                    speed_samples += 1;
+                    self.output = self.output.saturating_add(r.tokens.output);
+                    self.duration = self.duration.saturating_add(ms);
+                    self.speed_samples += 1;
                 }
             }
             if let Some(first) = t.first_token_ms {
-                firsts.push(first);
+                self.firsts.push(first);
             }
         }
     }
-    firsts.sort_unstable();
-    let n = firsts.len();
-    let median = if n == 0 {
-        None
-    } else {
-        Some((firsts[(n - 1) / 2] as f64 + firsts[n / 2] as f64) / 2.)
-    };
-    json!({"speedOutputTokens":0,"speedGenerationMs":0,"estDecodeSpeedOutputTokens":decode_output,"estDecodeSpeedGenerationMs":decode_duration,"estDecodeSpeedSampleCount":decode_samples,"estSpeedOutputTokens":output,"estSpeedDurationMs":duration,"estSpeedSampleCount":speed_samples,"firstTokenMedianMs":null,"estFirstTokenMedianMs":median,"estFirstTokenSampleCount":n,"timingSampleCount":durations.len(),"avgLatencyMs":if durations.is_empty(){None}else{Some(durations.iter().map(|v|*v as f64).sum::<f64>()/durations.len() as f64)}})
+    fn finish(mut self) -> Value {
+        self.firsts.sort_unstable();
+        let n = self.firsts.len();
+        let median = if n == 0 {
+            None
+        } else {
+            Some((self.firsts[(n - 1) / 2] as f64 + self.firsts[n / 2] as f64) / 2.)
+        };
+        json!({"speedOutputTokens":0,"speedGenerationMs":0,"estDecodeSpeedOutputTokens":self.decode_output,"estDecodeSpeedGenerationMs":self.decode_duration,"estDecodeSpeedSampleCount":self.decode_samples,"estSpeedOutputTokens":self.output,"estSpeedDurationMs":self.duration,"estSpeedSampleCount":self.speed_samples,"firstTokenMedianMs":null,"estFirstTokenMedianMs":median,"estFirstTokenSampleCount":n,"timingSampleCount":self.durations,"avgLatencyMs":if self.durations == 0 {None}else{Some(self.duration_sum/self.durations as f64)}})
+    }
 }
 fn log(r: &UsageRecord, timing: Option<&UsageTiming>) -> Value {
     let mut v = json!({"requestId":format!("{}|{}",r.device_id,r.id),"providerId":provider(r),"providerName":provider(r),"appType":r.harness,"model":r.model,"requestModel":r.model,"pricingModel":r.cost.pricing_model,"costMultiplier":"1","inputTokens":r.tokens.input,"outputTokens":r.tokens.output,"cacheReadTokens":r.tokens.cache_read,"cacheCreationTokens":r.tokens.cache_write,"inputCostUsd":"0","outputCostUsd":"0","cacheReadCostUsd":"0","cacheCreationCostUsd":"0","totalCostUsd":r.cost.amount_usd,"isStreaming":false,"latencyMs":null,"firstTokenMs":null,"durationMs":null,"statusCode":r.status_code,"createdAt":r.occurred_at,"dataSource":"harness_scope","deviceId":r.device_id,"costSource":r.cost.method,"priceSource":r.cost.price_source,"pricingSnapshot":r.cost.snapshot,"recordSource":r.record_source});
@@ -187,7 +221,19 @@ fn log(r: &UsageRecord, timing: Option<&UsageTiming>) -> Value {
 
 // CC Switch v4.0.15 uses range-relative hourly buckets and local calendar days,
 // including zero buckets. See third_party/UPSTREAM.md for source provenance.
-fn trends(records: Vec<Row>, start: i64, end: i64, timezone: chrono_tz::Tz) -> Result<Value> {
+#[derive(Default)]
+struct TrendAccumulator {
+    summary: SummaryAccumulator,
+    models: BTreeMap<String, SummaryAccumulator>,
+}
+
+fn trends(
+    store: &Store,
+    selection: &Selection,
+    start: i64,
+    end: i64,
+    timezone: chrono_tz::Tz,
+) -> Result<Value> {
     anyhow::ensure!(start <= end, "Start time must not exceed end time");
     let local = |ts| {
         timezone
@@ -203,8 +249,18 @@ fn trends(records: Vec<Row>, start: i64, end: i64, timezone: chrono_tz::Tz) -> R
     } else {
         end_day.signed_duration_since(start_day).num_days() + 1
     };
-    let mut groups: BTreeMap<i64, Vec<Row>> = BTreeMap::new();
-    for r in records {
+    let mut groups: BTreeMap<i64, TrendAccumulator> = BTreeMap::new();
+    selection.visit_rows(store, false, false, |r| {
+        if !legacy_allowed(
+            &r.grain,
+            r.legacy_date.as_deref(),
+            r.legacy_timezone.as_deref(),
+            start,
+            end,
+            timezone,
+        ) {
+            return Ok(());
+        }
         let bucket = if hourly {
             ((r.occurred_at - start) / 3600).min(count - 1)
         } else {
@@ -214,9 +270,12 @@ fn trends(records: Vec<Row>, start: i64, end: i64, timezone: chrono_tz::Tz) -> R
             day.signed_duration_since(start_day).num_days()
         };
         if (0..count).contains(&bucket) {
-            groups.entry(bucket).or_default().push(r);
+            let group = groups.entry(bucket).or_default();
+            group.summary.add_row(&r);
+            group.models.entry(r.model.clone()).or_default().add_row(&r);
         }
-    }
+        Ok(())
+    })?;
     let mut rows = Vec::new();
     for bucket in 0..count {
         let date = if hourly {
@@ -237,17 +296,12 @@ fn trends(records: Vec<Row>, start: i64, end: i64, timezone: chrono_tz::Tz) -> R
             };
             first.to_rfc3339()
         };
-        let records = groups.remove(&bucket).unwrap_or_default();
-        let s = summary_rows(&records);
-        // Reuse the exact selected bucket, including its filters and legacy-day guard.
-        let mut models: BTreeMap<String, Vec<Row>> = BTreeMap::new();
-        for record in records {
-            models.entry(record.model.clone()).or_default().push(record);
-        }
-        let model_breakdown: Vec<Value> = models
+        let group = groups.remove(&bucket).unwrap_or_default();
+        let s = group.summary.finish();
+        let model_breakdown: Vec<Value> = group.models
             .into_iter()
-            .map(|(model, records)| {
-                let s = summary_rows(&records);
+            .map(|(model, summary)| {
+                let s = summary.finish();
                 json!({"model":model,"requestCount":s["totalRequests"],"totalTokens":s["realTotalTokens"],"totalCost":s["totalCost"],"costConverted":s["costConverted"]})
             })
             .collect();
@@ -324,32 +378,54 @@ pub fn query(store: &Store, kind: &str, args: &Value) -> Result<Value> {
     if kind == "firstDate" {
         return first_date(store, &selection, start, end, timezone);
     }
-    let rows = if kind == "models" {
-        selection.model_rows(store)?
-    } else {
-        selection.rows(store, kind == "providers")?
-    };
-    let selected: Vec<Row> = rows
-        .into_iter()
-        .filter(|r| {
-            legacy_allowed(
-                &r.grain,
-                r.legacy_date.as_deref(),
-                r.legacy_timezone.as_deref(),
-                start,
-                end,
-                timezone,
-            )
-        })
-        .collect();
-    match kind{
-        "summary"|"todaySummary"=>Ok(summary_rows(&selected)),
-        "summaryByApp"=>{let mut groups:BTreeMap<String,Vec<Row>>=BTreeMap::new();for r in selected{groups.entry(r.harness.clone()).or_default().push(r)}Ok(json!(groups.into_iter().map(|(app,rs)|json!({"appType":app,"summary":summary_rows(&rs)})).collect::<Vec<_>>()))},
-        "models"|"providers"=>Ok(grouped_stats(selected, kind == "models")),
-        "trends"=>trends(selected,start,end,timezone),
-        "sources"=>{let mut groups:BTreeMap<String,Vec<Row>>=BTreeMap::new();for r in selected{groups.entry(r.record_source.clone()).or_default().push(r)}Ok(json!(groups.into_iter().map(|(source,rs)|{let s=summary_rows(&rs);json!({"dataSource":source,"requestCount":s["totalRequests"],"totalCostUsd":s["totalCost"],"costConverted":s["costConverted"]})}).collect::<Vec<_>>()))},
-        "heatmap"=>Ok(json!(selected.iter().filter_map(|r|timezone.timestamp_opt(r.occurred_at,0).single().map(|d|json!({"date":d.format("%Y-%m-%d").to_string(),"weekday":d.weekday().num_days_from_monday(),"count":r.count}))).collect::<Vec<_>>())),
-        _=>anyhow::bail!("Unknown usage query: {kind}")
+    match kind {
+        "models" | "providers" => {
+            grouped_stats(store, &selection, kind == "models", start, end, timezone)
+        }
+        "trends" => trends(store, &selection, start, end, timezone),
+        "summary" | "todaySummary" | "summaryByApp" | "sources" => {
+            let mut groups: BTreeMap<String, SummaryAccumulator> = BTreeMap::new();
+            if matches!(kind, "summary" | "todaySummary") {
+                groups.insert(String::new(), SummaryAccumulator::default());
+            }
+            selection.visit_rows(store, false, false, |r| {
+                if legacy_allowed(
+                    &r.grain,
+                    r.legacy_date.as_deref(),
+                    r.legacy_timezone.as_deref(),
+                    start,
+                    end,
+                    timezone,
+                ) {
+                    let key = match kind {
+                        "summaryByApp" => r.harness.clone(),
+                        "sources" => r.record_source.clone(),
+                        _ => String::new(),
+                    };
+                    groups.entry(key).or_default().add_row(&r);
+                }
+                Ok(())
+            })?;
+            match kind {
+                "summary" | "todaySummary" => Ok(groups.remove("").unwrap().finish()),
+                "summaryByApp" => Ok(json!(groups.into_iter().map(|(app, summary)| json!({"appType":app,"summary":summary.finish()})).collect::<Vec<_>>())),
+                "sources" => Ok(json!(groups.into_iter().map(|(source, summary)| { let s=summary.finish(); json!({"dataSource":source,"requestCount":s["totalRequests"],"totalCostUsd":s["totalCost"],"costConverted":s["costConverted"]}) }).collect::<Vec<_>>())),
+                _ => unreachable!(),
+            }
+        }
+        "heatmap" => {
+            let mut values = Vec::new();
+            selection.visit_rows(store, false, false, |r| {
+                if legacy_allowed(&r.grain, r.legacy_date.as_deref(), r.legacy_timezone.as_deref(), start, end, timezone) {
+                    if let Some(d) = timezone.timestamp_opt(r.occurred_at,0).single() {
+                        values.push(json!({"date":d.format("%Y-%m-%d").to_string(),"weekday":d.weekday().num_days_from_monday(),"count":r.count}));
+                    }
+                }
+                Ok(())
+            })?;
+            Ok(json!(values))
+        }
+        _ => anyhow::bail!("Unknown usage query: {kind}"),
     }
 }
 
@@ -373,32 +449,69 @@ fn request_mode(row: &Row) -> String {
         .into()
 }
 
-fn grouped_stats(records: Vec<Row>, models: bool) -> Value {
-    let mut groups: BTreeMap<(String, Option<String>), Vec<Row>> = BTreeMap::new();
-    for row in records {
+#[derive(Default)]
+struct GroupAccumulator {
+    summary: SummaryAccumulator,
+    timing: TimingAccumulator,
+    harness: Option<String>,
+    mixed: bool,
+}
+impl GroupAccumulator {
+    fn add(&mut self, row: &Row) {
+        if let Some(first) = &self.harness {
+            self.mixed |= first != &row.harness;
+        } else {
+            self.harness = Some(row.harness.clone());
+        }
+        self.summary.add_row(row);
+        self.timing.add(row);
+    }
+}
+
+fn grouped_stats(
+    store: &Store,
+    selection: &Selection,
+    models: bool,
+    start: i64,
+    end: i64,
+    timezone: chrono_tz::Tz,
+) -> Result<Value> {
+    let mut groups: BTreeMap<(String, Option<String>), GroupAccumulator> = BTreeMap::new();
+    selection.visit_rows(store, true, models, |row| {
+        if !legacy_allowed(
+            &row.grain,
+            row.legacy_date.as_deref(),
+            row.legacy_timezone.as_deref(),
+            start,
+            end,
+            timezone,
+        ) {
+            return Ok(());
+        }
         let mode = (models && row.harness == "codex").then(|| request_mode(&row));
         let key = if models {
             row.model.clone()
         } else {
             row.provider_name()
         };
-        groups.entry((key, mode)).or_default().push(row);
-    }
-    json!(groups.into_iter().map(|((key, mode), rows)| {
-        let s = summary_rows(&rows);
+        groups.entry((key, mode)).or_default().add(&row);
+        Ok(())
+    })?;
+    Ok(json!(groups.into_iter().map(|((key, mode), group)| {
+        let s = group.summary.finish();
         let requests = s["totalRequests"].as_u64().unwrap_or(0);
         let mut row = json!({"model":key,"providerId":key,"providerName":key,
-            "appType":if rows.iter().all(|r|r.harness==rows[0].harness){rows[0].harness.as_str()}else{"all"},
+            "appType":if !group.mixed { group.harness.as_deref().unwrap_or("all") } else {"all"},
             "requestCount":requests,"totalTokens":s["realTotalTokens"],"totalCost":s["totalCost"],
             "costConverted":s["costConverted"],"successRate":s["successRate"],
-            "avgCostPerRequest":if requests>0{(rows.iter().map(amount).sum::<Decimal>()/Decimal::from(requests)).normalize().to_string()}else{"0".into()}});
+            "avgCostPerRequest":if requests>0{(group.summary.cost/Decimal::from(requests)).normalize().to_string()}else{"0".into()}});
         if models {
             row["rowKey"] = json!(json!([key, mode]).to_string());
             row["requestMode"] = json!(mode);
         }
-        row.as_object_mut().unwrap().extend(timing_stats(&rows).as_object().unwrap().clone());
+        row.as_object_mut().unwrap().extend(group.timing.finish().as_object().unwrap().clone());
         row
-    }).collect::<Vec<_>>())
+    }).collect::<Vec<_>>()))
 }
 
 fn legacy_allowed(

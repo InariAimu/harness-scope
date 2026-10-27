@@ -345,6 +345,70 @@ fn parent_signatures(
     );
     Ok(merged)
 }
+
+/// An explicit history_base names the exact parent snapshot, not the child's
+/// creation time. Validate it against the physical parent before trusting it.
+fn bounded_parent(
+    index: &TimelineIndex,
+    parent: &str,
+    base: &Value,
+    cutoff: DateTime<Utc>,
+) -> Result<(Vec<String>, Option<Counters>)> {
+    anyhow::ensure!(
+        string(&base["thread_id"]).as_deref() == Some(parent),
+        "Codex history boundary parent mismatch"
+    );
+    let bytes = base["end_byte_offset"]
+        .as_u64()
+        .context("Invalid Codex parent byte boundary")?;
+    let ordinal = base["end_ordinal_exclusive"]
+        .as_u64()
+        .context("Invalid Codex parent ordinal boundary")?;
+    let mut rollout = None;
+    let mut digest = None;
+    let mut result = None;
+    for (path, context) in segments(index, parent)? {
+        let id = identity(Path::new(&path), context)?;
+        anyhow::ensure!(
+            id.session == parent,
+            "Codex history boundary does not identify the parent thread"
+        );
+        if let Some(previous) = &rollout {
+            anyhow::ensure!(
+                previous == &id.rollout,
+                "Codex parent boundary is ambiguous across rollout segments"
+            );
+        } else {
+            rollout = Some(id.rollout.clone());
+        }
+        let (events, hash) = super::usage_read::codex_prefix(Path::new(&path), bytes, ordinal)?;
+        let verified = identity(Path::new(&path), &events)?;
+        anyhow::ensure!(
+            verified.session == parent && verified.rollout == id.rollout,
+            "Codex parent history identity changed"
+        );
+        anyhow::ensure!(
+            events
+                .iter()
+                .filter_map(|v| timestamp(&v["timestamp"]))
+                .all(|at| at <= cutoff),
+            "Codex parent boundary contains events after the fork"
+        );
+        if let Some(previous) = &digest {
+            anyhow::ensure!(previous == &hash, "Conflicting Codex parent history copies");
+        } else {
+            let mut signatures = Vec::new();
+            for event in events.iter().filter(|v| is_usage(v)) {
+                timestamp(&event["timestamp"])
+                    .context("Parent Codex usage has no valid timestamp")?;
+                signatures.push(signature(&event["payload"]["info"]));
+            }
+            result = Some((signatures, high_water(&events)?));
+            digest = Some(hash);
+        }
+    }
+    result.context("Missing Codex parent history boundary")
+}
 fn make_usage(
     id: &Identity,
     suffix: String,
@@ -395,15 +459,30 @@ pub(crate) fn parse(path: &Path, lines: &[Value], index: &TimelineIndex) -> Resu
 fn parse_complete(path: &Path, lines: &[Value], index: &TimelineIndex) -> Result<ParseResult> {
     let id = identity(path, lines)?;
     let meta = lines.iter().find(|v| v["type"] == "session_meta").unwrap();
+    let base = &meta["payload"]["history_base"];
+    let has_boundary = !id.continuation
+        && (!base["end_byte_offset"].is_null() || !base["end_ordinal_exclusive"].is_null());
+    if has_boundary {
+        anyhow::ensure!(
+            id.parent.is_some(),
+            "Codex history boundary has no parent thread"
+        );
+    }
+    let mut boundary_high = None;
     let parent = if !id.continuation {
         id.parent
             .as_ref()
             .map(|p| {
-                parent_signatures(
-                    index,
-                    p,
-                    timestamp(&meta["timestamp"]).context("Missing Codex fork timestamp")?,
-                )
+                let cutoff =
+                    timestamp(&meta["timestamp"]).context("Missing Codex fork timestamp")?;
+                let base = &meta["payload"]["history_base"];
+                if !base["end_byte_offset"].is_null() || !base["end_ordinal_exclusive"].is_null() {
+                    let (signatures, high) = bounded_parent(index, p, base, cutoff)?;
+                    boundary_high = high;
+                    Ok(signatures)
+                } else {
+                    parent_signatures(index, p, cutoff)
+                }
             })
             .transpose()?
     } else {
@@ -488,12 +567,16 @@ fn parse_complete(path: &Path, lines: &[Value], index: &TimelineIndex) -> Result
         }
         let total = counters(&info["total_token_usage"])?;
         let last = counters(&info["last_token_usage"])?;
-        if let Some((c, usage)) = pending.take() {
+        let supplemental = if let Some((c, usage)) = pending.take() {
             let covered = last.is_some_and(|l| l[..4] == c[..4]);
             if !covered && last.is_some_and(|l| l[..4].iter().all(|n| *n == 0)) {
-                out.usage.push(usage);
+                Some(usage)
+            } else {
+                None
             }
-        }
+        } else {
+            None
+        };
         if total.is_none() && last.is_none() {
             continue;
         }
@@ -509,23 +592,6 @@ fn parse_complete(path: &Path, lines: &[Value], index: &TimelineIndex) -> Result
             last_by_source.insert(lane, sig.clone());
         }
         previous = Some(sig.clone());
-        let delta = if duplicate {
-            [0; 5]
-        } else if let Some(c) = last {
-            c
-        } else if let Some(total) = total {
-            if id.continuation && high.is_none() {
-                high = continuation_baseline(path, &id, index)?.filter(|h| total[0] >= h[0]);
-            }
-            high.map_or(total, |h: Counters| {
-                std::array::from_fn(|i| total[i].saturating_sub(h[i]))
-            })
-        } else {
-            unreachable!()
-        };
-        if let Some(c) = total {
-            update_high(&mut high, c);
-        }
         let inherited = if replay {
             let parent = parent.as_ref().unwrap();
             if let Some(n) = parent[parent_offset..].iter().position(|s| s == &sig) {
@@ -538,6 +604,38 @@ fn parse_complete(path: &Path, lines: &[Value], index: &TimelineIndex) -> Result
         } else {
             false
         };
+        if !inherited {
+            if let Some(usage) = supplemental {
+                out.usage.push(usage);
+            }
+        }
+        let delta = if duplicate {
+            [0; 5]
+        } else if let Some(c) = last {
+            c
+        } else if let Some(total) = total {
+            if id.continuation && high.is_none() {
+                high = continuation_baseline(path, &id, index)?.filter(|h| total[0] >= h[0]);
+            }
+            if !inherited && has_boundary {
+                let baseline = boundary_high.context(
+                    "Missing Codex parent cumulative baseline for total-only fork usage",
+                )?;
+                // Replayed child history may be only a prefix of the captured
+                // parent snapshot. Use the full snapshot high-water mark.
+                if total[0] >= baseline[0] {
+                    update_high(&mut high, baseline);
+                }
+            }
+            high.map_or(total, |h: Counters| {
+                std::array::from_fn(|i| total[i].saturating_sub(h[i]))
+            })
+        } else {
+            unreachable!()
+        };
+        if let Some(c) = total {
+            update_high(&mut high, c);
+        }
         if !nonzero(delta) {
             continue;
         }

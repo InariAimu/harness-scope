@@ -69,13 +69,24 @@ pub(crate) struct Checkpoint {
     pub fingerprint: String,
     pub context_id: Option<String>,
     pub parent: Option<String>,
+    #[serde(default)]
+    pub deferred: Option<Deferred>,
+}
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct Deferred {
+    pub fingerprint: String,
+    pub diagnostics: Vec<String>,
 }
 impl Checkpoint {
     pub fn matches(&self, stamp: &Stamp, adapter: &dyn HarnessAdapter) -> bool {
         self.stamp == *stamp && self.version == Self::version(adapter)
     }
     fn version(adapter: &dyn HarnessAdapter) -> String {
-        format!("usage-read-v2:{}", adapter.descriptor().parser_version)
+        format!(
+            "{}:{}",
+            adapter.usage_reader_version(),
+            adapter.descriptor().parser_version
+        )
     }
     pub fn new(
         stamp: Stamp,
@@ -89,6 +100,7 @@ impl Checkpoint {
             fingerprint,
             context_id: adapter.context_id(events),
             parent: adapter.parent_context(events),
+            deferred: None,
         }
     }
 }

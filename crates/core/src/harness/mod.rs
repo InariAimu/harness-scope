@@ -70,6 +70,10 @@ pub trait HarnessAdapter: Send + Sync {
     fn read_usage_source(&self, path: &Path) -> Result<(Vec<Value>, String, Vec<String>, bool)> {
         self.read_source(path)
     }
+    /// Bump when a usage projection changes independently of accounting rules.
+    fn usage_reader_version(&self) -> &'static str {
+        "usage-read-v2"
+    }
     /// Reader projections are independent of complete, hash-verified usage ingestion.
     fn read_metadata(&self, path: &Path) -> Result<Vec<Session>> {
         let (events, _, _, _) = self.read_source(path)?;

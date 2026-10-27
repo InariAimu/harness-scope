@@ -133,15 +133,26 @@ impl Selection {
     pub fn rows_with_metadata(&self, store: &Store) -> Result<Vec<Row>> {
         self.select_rows(store, false, true)
     }
-    pub fn model_rows(&self, store: &Store) -> Result<Vec<Row>> {
-        self.select_rows(store, true, true)
-    }
     fn select_rows(
         &self,
         store: &Store,
         with_timing: bool,
         with_metadata: bool,
     ) -> Result<Vec<Row>> {
+        let mut rows = Vec::new();
+        self.visit_rows(store, with_timing, with_metadata, |row| {
+            rows.push(row);
+            Ok(())
+        })?;
+        Ok(rows)
+    }
+    pub fn visit_rows(
+        &self,
+        store: &Store,
+        with_timing: bool,
+        with_metadata: bool,
+        mut visit: impl FnMut(Row) -> Result<()>,
+    ) -> Result<()> {
         let join = if with_timing {
             "LEFT JOIN record_timings t ON t.device_id=u.device_id AND t.id=u.id"
         } else {
@@ -154,59 +165,60 @@ impl Selection {
             "NULL"
         };
         let mut stmt = store.conn.prepare_cached(&format!("SELECT u.harness,u.provider,u.model,u.occurred_at,u.grain,u.request_count,u.input_tokens,u.output_tokens,u.cache_read,u.cache_write,u.amount_usd,u.status_code,u.record_source,u.legacy_date,u.legacy_timezone,u.cost_converted,u.billing_basis,{timing},{metadata} FROM usage_index u {join} WHERE {}", self.sql))?;
-        let rows = stmt
-            .query_map(params_from_iter(self.params.iter()), |r| {
-                Ok(Row {
-                    harness: r.get(0)?,
-                    provider: r.get(1)?,
-                    model: r.get(2)?,
-                    occurred_at: r.get(3)?,
-                    grain: r.get(4)?,
-                    count: r.get(5)?,
-                    tokens: Tokens {
-                        input: r.get(6)?,
-                        output: r.get(7)?,
-                        cache_read: r.get(8)?,
-                        cache_write: r.get(9)?,
-                        ..Default::default()
-                    },
-                    amount: r.get(10)?,
-                    status_code: r.get(11)?,
-                    record_source: r.get(12)?,
-                    legacy_date: r.get(13)?,
-                    legacy_timezone: r.get(14)?,
-                    converted: r.get(15)?,
-                    billing_basis: r.get(16)?,
-                    timing: None,
-                    request_metadata: None,
-                })
-                .and_then(|mut row| {
-                    let timing: Option<String> = r.get(17)?;
-                    let metadata: Option<String> = r.get(18)?;
-                    row.request_metadata = metadata
-                        .map(|s| serde_json::from_str(&s))
-                        .transpose()
-                        .map_err(|e| {
+        let rows = stmt.query_map(params_from_iter(self.params.iter()), |r| {
+            Ok(Row {
+                harness: r.get(0)?,
+                provider: r.get(1)?,
+                model: r.get(2)?,
+                occurred_at: r.get(3)?,
+                grain: r.get(4)?,
+                count: r.get(5)?,
+                tokens: Tokens {
+                    input: r.get(6)?,
+                    output: r.get(7)?,
+                    cache_read: r.get(8)?,
+                    cache_write: r.get(9)?,
+                    ..Default::default()
+                },
+                amount: r.get(10)?,
+                status_code: r.get(11)?,
+                record_source: r.get(12)?,
+                legacy_date: r.get(13)?,
+                legacy_timezone: r.get(14)?,
+                converted: r.get(15)?,
+                billing_basis: r.get(16)?,
+                timing: None,
+                request_metadata: None,
+            })
+            .and_then(|mut row| {
+                let timing: Option<String> = r.get(17)?;
+                let metadata: Option<String> = r.get(18)?;
+                row.request_metadata = metadata
+                    .map(|s| serde_json::from_str(&s))
+                    .transpose()
+                    .map_err(|e| {
                         rusqlite::Error::FromSqlConversionFailure(
                             18,
                             rusqlite::types::Type::Text,
                             Box::new(e),
                         )
                     })?;
-                    row.timing = timing
-                        .map(|s| serde_json::from_str(&s))
-                        .transpose()
-                        .map_err(|e| {
-                            rusqlite::Error::FromSqlConversionFailure(
-                                17,
-                                rusqlite::types::Type::Text,
-                                Box::new(e),
-                            )
-                        })?;
-                    Ok(row)
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(rows)
+                row.timing = timing
+                    .map(|s| serde_json::from_str(&s))
+                    .transpose()
+                    .map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            17,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?;
+                Ok(row)
+            })
+        })?;
+        for row in rows {
+            visit(row?)?;
+        }
+        Ok(())
     }
 }

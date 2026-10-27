@@ -18,6 +18,8 @@ use std::{
 #[derive(Serialize, Deserialize)]
 struct Cache {
     version: String,
+    #[serde(default)]
+    projection_version: u32,
     stamp: Stamp,
     fingerprint: String,
     context: Vec<Value>,
@@ -42,6 +44,37 @@ struct Group {
     blocked: bool,
 }
 
+pub(crate) fn is_compressed(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|ext| ext == "zst" || ext == "zstd")
+}
+
+// Canonical rollout filenames constrain the session and rollout IDs. Unknown
+// filename formats must still be read and checked against their metadata.
+fn may_match_dependencies(path: &Path, needed: &HashSet<String>) -> bool {
+    let name = codex::logical_name(path);
+    let stem = name.strip_suffix(".jsonl").unwrap_or(&name);
+    let Some(last) = stem
+        .len()
+        .checked_sub(36)
+        .and_then(|at| stem.get(at..))
+        .and_then(|s| uuid::Uuid::parse_str(s).ok())
+    else {
+        return true;
+    };
+    if needed.contains(&last.to_string()) {
+        return true;
+    }
+    let leading = stem
+        .len()
+        .checked_sub(73)
+        .and_then(|at| stem.get(at..))
+        .filter(|pair| pair.as_bytes().get(36) == Some(&b'_'))
+        .and_then(|pair| pair.get(..36))
+        .and_then(|s| uuid::Uuid::parse_str(s).ok());
+    leading.is_some_and(|id| needed.contains(&id.to_string()))
+}
+
 pub(crate) fn scan(engine: &Engine, force: bool, report: &mut ScanReport) -> Result<()> {
     let config = engine.lock()?.config()?;
     let mut paths = BTreeSet::new();
@@ -55,25 +88,13 @@ pub(crate) fn scan(engine: &Engine, force: bool, report: &mut ScanReport) -> Res
             Err(e) => report.errors.push(e.to_string()),
         }
     }
-    // Compression and decompression temporarily leave both files present.
-    paths.retain(|p| !p.to_string_lossy().ends_with(".zst") || !p.with_extension("").exists());
-    let mut caches: BTreeMap<String, Cache> = {
-        let s = engine.lock()?;
-        let mut stmt = s
-            .conn
-            .prepare("SELECT path,payload FROM codex_source_cache")?;
-        let rows = stmt
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
-            .collect::<Result<Vec<_>, _>>()?;
-        rows.into_iter()
-            .filter_map(|(p, v)| {
-                serde_json::from_str::<Cache>(&v)
-                    .ok()
-                    .filter(|c| c.version == codex::VERSION)
-                    .map(|c| (p, c))
-            })
-            .collect()
-    };
+    // Compressed rollouts are archived history. Keep already imported facts and
+    // cached parent contexts, but do not decompress them during collection.
+    paths.retain(|p| !is_compressed(p));
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let mut caches: BTreeMap<String, Cache> = BTreeMap::new();
     let mut inputs = Vec::new();
     let mut unavailable = HashSet::new();
     let mut blocked_sessions = HashSet::new();
@@ -81,10 +102,28 @@ pub(crate) fn scan(engine: &Engine, force: bool, report: &mut ScanReport) -> Res
         report.files_scanned += 1;
         let key = path.to_string_lossy().to_string();
         let stamp = Stamp::read(&path).ok();
-        if let Some(c) = caches
-            .get(&key)
-            .filter(|c| !force && Some(&c.stamp) == stamp.as_ref())
+        let cached: Option<String> = engine
+            .lock()?
+            .conn
+            .query_row(
+                "SELECT payload FROM codex_source_cache WHERE path=?",
+                [&key],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(cache) = cached
+            .and_then(|v| serde_json::from_str::<Cache>(&v).ok())
+            .filter(|c| c.version == codex::VERSION)
         {
+            caches.insert(key.clone(), cache);
+        }
+        if let Some(c) = caches.get(&key).filter(|c| {
+            !force
+                && Some(&c.stamp) == stamp.as_ref()
+                && !(c.projection_version == 0
+                    && codex::identity(&path, &c.context)
+                        .is_ok_and(|id| !id.continuation && id.history_base.is_some()))
+        }) {
             inputs.push(Input {
                 path,
                 stamp,
@@ -103,6 +142,7 @@ pub(crate) fn scan(engine: &Engine, force: bool, report: &mut ScanReport) -> Res
                 if complete && codex::identity(&path, &context).is_ok() {
                     let cache = Cache {
                         version: codex::VERSION.into(),
+                        projection_version: 1,
                         stamp: stamp.clone().unwrap(),
                         fingerprint: fingerprint.clone(),
                         context: context.clone(),
@@ -151,22 +191,51 @@ pub(crate) fn scan(engine: &Engine, force: bool, report: &mut ScanReport) -> Res
         .filter_map(|i| codex::identity(&i.path, &i.context).ok())
         .map(|i| (i.session, i.rollout))
         .collect();
-    for (path, cache) in &caches {
-        // A moved/compressed source supersedes its cached old path. Retain a
-        // deleted parent's context only when there is no live replacement.
-        if !live_paths.contains(path)
-            && !unavailable.contains(path)
-            && codex::identity(Path::new(path), &cache.context)
-                .is_ok_and(|i| live_rollouts.contains(&(i.session, i.rollout)))
-        {
-            continue;
+    let needed: HashSet<_> = inputs
+        .iter()
+        .filter_map(|i| codex::identity(&i.path, &i.context).ok())
+        .flat_map(|id| codex::dependencies(&id))
+        .collect();
+    {
+        let s = engine.lock()?;
+        let mut stmt = s.conn.prepare("SELECT path FROM codex_source_cache")?;
+        let mut payload_query = s
+            .conn
+            .prepare("SELECT payload FROM codex_source_cache WHERE path=?")?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let path: String = row.get(0)?;
+            if !may_match_dependencies(Path::new(&path), &needed) {
+                continue;
+            }
+            let payload: String = payload_query.query_row([&path], |r| r.get(0))?;
+            let Some(cache) = serde_json::from_str::<Cache>(&payload)
+                .ok()
+                .filter(|c| c.version == codex::VERSION)
+            else {
+                continue;
+            };
+            let Ok(id) = codex::identity(Path::new(&path), &cache.context) else {
+                continue;
+            };
+            if !needed.contains(&id.session) && !needed.contains(&id.rollout) {
+                continue;
+            }
+            // A moved/compressed source supersedes its cached old path. Retain a
+            // deleted parent's context only when there is no live replacement.
+            if !live_paths.contains(&path)
+                && !unavailable.contains(&path)
+                && live_rollouts.contains(&(id.session, id.rollout))
+            {
+                continue;
+            }
+            codex::add_context(
+                &mut index,
+                Path::new(&path),
+                &cache.context,
+                !unavailable.contains(&path),
+            )?;
         }
-        codex::add_context(
-            &mut index,
-            Path::new(path),
-            &cache.context,
-            !unavailable.contains(path),
-        )?;
     }
     for input in inputs.iter().filter(|i| !i.complete) {
         let key = input.path.to_string_lossy().to_string();
@@ -180,13 +249,15 @@ pub(crate) fn scan(engine: &Engine, force: bool, report: &mut ScanReport) -> Res
         let s = engine.lock()?;
         let mut stmt = s
             .conn
-            .prepare("SELECT id,payload FROM usage_contexts WHERE id LIKE 'codex:%'")?;
-        let rows = stmt
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
-            .collect::<Result<Vec<_>, _>>()?;
-        for (id, payload) in rows {
+            .prepare("SELECT payload FROM usage_contexts WHERE id=?")?;
+        for id in needed.iter().map(|id| format!("codex:{id}")) {
             if let std::collections::hash_map::Entry::Vacant(e) = index.entry(id) {
-                e.insert(serde_json::from_str(&payload)?);
+                if let Some(payload) = stmt
+                    .query_row([e.key()], |r| r.get::<_, String>(0))
+                    .optional()?
+                {
+                    e.insert(serde_json::from_str(&payload)?);
+                }
             }
         }
     }
@@ -219,11 +290,24 @@ pub(crate) fn scan(engine: &Engine, force: bool, report: &mut ScanReport) -> Res
             })
             .collect::<Vec<_>>();
         let evidence = runtime.read(engine, &input.path, &id.session)?;
+        let boundary = input
+            .context
+            .iter()
+            .find(|v| v["type"] == "session_meta")
+            .is_some_and(|meta| {
+                !meta["payload"]["history_base"]["end_byte_offset"].is_null()
+                    || !meta["payload"]["history_base"]["end_ordinal_exclusive"].is_null()
+            });
         let fingerprint = format!(
-            "{}:{}:{}",
+            "{}:{}:{}{}",
             input.fingerprint,
             files::hash(serde_json::to_string(&deps)?.as_bytes()),
-            evidence.fingerprint()
+            evidence.fingerprint(),
+            if !id.continuation && boundary {
+                ":parent-boundary-v1"
+            } else {
+                ""
+            }
         );
         let previous: Option<(String, String)> = engine
             .lock()?
@@ -335,11 +419,16 @@ fn apply(engine: &Engine, session: &str, work: &[Work]) -> Result<(u64, u64, u64
         .into_iter()
         .map(|(v, p)| Ok((serde_json::from_str(&v)?, p)))
         .collect::<Result<_>>()?;
-    let bound: HashSet<String> = s
+    // Only this session's legacy records can be candidates for rebinding.
+    let mut bound = HashSet::new();
+    let mut binding_query = s
         .conn
-        .prepare("SELECT record_id FROM codex_event_bindings")?
-        .query_map([], |r| r.get(0))?
-        .collect::<Result<_, _>>()?;
+        .prepare("SELECT 1 FROM codex_event_bindings WHERE record_id=?")?;
+    for (record, _) in &old {
+        if binding_query.exists([&record.id])? {
+            bound.insert(record.id.clone());
+        }
+    }
     let mut legacy: HashMap<String, Vec<&UsageRecord>> = HashMap::new();
     for (r, _) in &old {
         if !r.deleted && r.parser_version != codex::VERSION && !bound.contains(&r.id) {

@@ -184,14 +184,20 @@ impl HarnessAdapter for OpenCode {
     }
 
     fn read_source(&self, path: &Path) -> Result<(Vec<Value>, String, Vec<String>, bool)> {
-        read_events(path, None, false)
+        read_events(path, None, false, false)
+    }
+    fn read_usage_source(&self, path: &Path) -> Result<(Vec<Value>, String, Vec<String>, bool)> {
+        read_events(path, None, false, true)
+    }
+    fn usage_reader_version(&self) -> &'static str {
+        "usage-read-v3-opencode-projection"
     }
     fn read_metadata(&self, path: &Path) -> Result<Vec<Session>> {
-        Ok(self.sessions(path, &read_events(path, None, true)?.0))
+        Ok(self.sessions(path, &read_events(path, None, true, false)?.0))
     }
     fn read_messages(&self, path: &Path, session: Option<&str>) -> Result<Vec<Value>> {
         let session = session.context("Missing OpenCode session ID")?;
-        let (events, _, errors, complete) = read_events(path, Some(session), false)?;
+        let (events, _, errors, complete) = read_events(path, Some(session), false, false)?;
         anyhow::ensure!(
             complete && errors.is_empty(),
             "Session contains incomplete or invalid data"
@@ -347,6 +353,7 @@ fn read_events(
     path: &Path,
     session: Option<&str>,
     metadata_only: bool,
+    usage_only: bool,
 ) -> Result<(Vec<Value>, String, Vec<String>, bool)> {
     let header_filter = if session.is_some() { "WHERE id=?1" } else { "" };
     let message_filter = if session.is_some() {
@@ -403,17 +410,28 @@ fn read_events(
                 "SELECT id,session_id,type,data FROM session_message {message_filter} ORDER BY session_id,seq,id"
             ))?;
         let rows = stmt.query_map(rusqlite::params_from_iter(session), |r| {
+            let role: String = r.get(2)?;
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?,
+                if usage_only && role != "assistant" {
+                    None
+                } else {
+                    Some(r.get::<_, String>(3)?)
+                },
+                role,
             ))
         })?;
         for row in rows {
-            let (id, session, role, data) = row?;
+            let (id, session, data, role) = row?;
             migrated.insert(session.clone());
-            match serde_json::from_str::<Value>(&data) {
+            let Some(data) = data else { continue };
+            let parsed = if usage_only {
+                super::usage_read::opencode(&data, false)
+            } else {
+                serde_json::from_str::<Value>(&data).map_err(Into::into)
+            };
+            match parsed {
                 Ok(mut data) if data.is_object() => {
                     data["role"] = json!(role);
                     events.push(json!({"kind":"message","id":id,"sessionId":session,"data":data}));
@@ -424,8 +442,13 @@ fn read_events(
         }
     }
     if v1 && !metadata_only {
+        let legacy_filter = if v2 && session.is_none() {
+            "WHERE session_id NOT IN (SELECT session_id FROM session_message WHERE session_id IS NOT NULL)"
+        } else {
+            message_filter
+        };
         let mut stmt = tx.prepare(&format!(
-                "SELECT id,session_id,data FROM message {message_filter} ORDER BY session_id,time_created,id"
+                "SELECT id,session_id,data FROM message {legacy_filter} ORDER BY session_id,time_created,id"
             ))?;
         let rows = stmt.query_map(rusqlite::params_from_iter(session), |r| {
             Ok((
@@ -439,7 +462,12 @@ fn read_events(
             if migrated.contains(&session) {
                 continue;
             }
-            match serde_json::from_str::<Value>(&data) {
+            let parsed = if usage_only {
+                super::usage_read::opencode(&data, false)
+            } else {
+                serde_json::from_str::<Value>(&data).map_err(Into::into)
+            };
+            match parsed {
                 Ok(data) if data.is_object() => {
                     events.push(json!({"kind":"message","id":id,"sessionId":session,"data":data}))
                 }
@@ -448,7 +476,7 @@ fn read_events(
             }
         }
         if table_exists(&tx, "part")? {
-            let mut stmt = tx.prepare(&format!("SELECT id,message_id,session_id,data FROM part {message_filter} ORDER BY session_id,time_created,id"))?;
+            let mut stmt = tx.prepare(&format!("SELECT id,message_id,session_id,data FROM part {legacy_filter} ORDER BY session_id,time_created,id"))?;
             let rows = stmt.query_map(rusqlite::params_from_iter(session), |r| {
                 Ok((
                     r.get::<_, String>(0)?,
@@ -462,7 +490,12 @@ fn read_events(
                 if migrated.contains(&session) {
                     continue;
                 }
-                match serde_json::from_str::<Value>(&data) {
+                let parsed = if usage_only {
+                    super::usage_read::opencode(&data, true)
+                } else {
+                    serde_json::from_str::<Value>(&data).map_err(Into::into)
+                };
+                match parsed {
                         Ok(data) if data.is_object() => events.push(json!({"kind":"part","id":id,"messageId":message,"sessionId":session,"data":data})),
                         Ok(_) => diagnostics.push(format!("OpenCode part {id}: expected an object")),
                         Err(e) => diagnostics.push(format!("OpenCode part {id}: {e}")),
