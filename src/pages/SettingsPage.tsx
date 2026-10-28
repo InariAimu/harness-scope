@@ -1,9 +1,9 @@
 import { OptionSelect } from "@/components/ui/option-select";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { isTauri } from "@tauri-apps/api/core";
 import {
-  Save,
   Cloud,
   Database,
   SlidersHorizontal,
@@ -19,6 +19,10 @@ import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { AccentColorSettings } from "@/components/settings/AccentColorSettings";
 import { NetworkSettings } from "@/components/settings/NetworkSettings";
+import { DesktopSettings } from "@/components/settings/DesktopSettings";
+import { AutoSaveInput } from "@/components/settings/AutoSaveInput";
+import { SettingsAutosave } from "@/lib/settingsAutosave";
+import { isWindows } from "@/lib/platform";
 import { useAccentThemePreview } from "@/components/theme/AccentThemeProvider";
 import { DEFAULT_ACCENT_COLOR, normalizeAccentColor } from "@/lib/accentColor";
 import { INTERFACE_SKINS, normalizeInterfaceSkin } from "@/lib/interfaceSkins";
@@ -54,12 +58,63 @@ export function SettingsPage({
     skinTransparency: skinPercentage(snapshot.config.skinTransparency, DEFAULT_SKIN_TRANSPARENCY),
     skinMaskStrength: skinPercentage(snapshot.config.skinMaskStrength, DEFAULT_SKIN_MASK_STRENGTH),
   }));
+  const client = useQueryClient();
+  const mounted = useRef(true);
+  const committed = useRef(snapshot.config);
+  const pending = useRef(new Set<keyof Config>());
+  const [autosaving, setAutosaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
   const [accentValid, setAccentValid] = useState(true);
-  const build = snapshot.appBuild ?? APP_BUILD;
-  // A rename from the sidebar must not be reverted by an already-open settings draft.
+  const autosave = useRef<SettingsAutosave<Config>>();
+  if (!autosave.current) autosave.current = new SettingsAutosave<Config>({
+    save: (patch) => command<Config>("patch_config", { patch }),
+    saved: (latest, result) => {
+      committed.current = result;
+      const applied: Partial<Config> = {};
+      for (const key of Object.keys(latest) as (keyof Config)[]) {
+        pending.current.delete(key);
+        Object.assign(applied, { [key]: result[key] });
+      }
+      client.setQueryData<Snapshot>(["snapshot"], (current) => current ? { ...current, config: result } : current);
+      if (mounted.current) {
+        setConfig((current) => ({ ...current, ...applied }));
+        setSaveFailed(false);
+      }
+      void client.invalidateQueries({ queryKey: ["snapshot"] });
+    },
+    failed: (latest, error) => {
+      const restored: Partial<Config> = {};
+      for (const key of Object.keys(latest) as (keyof Config)[]) {
+        pending.current.delete(key);
+        Object.assign(restored, { [key]: committed.current[key] });
+      }
+      if (mounted.current && Object.keys(latest).length) {
+        setConfig((current) => ({ ...current, ...restored }));
+        setSaveFailed(true);
+      }
+      toast.error(l("设置保存失败：", "Could not save settings: ") + String(error));
+    },
+    busy: (value) => { if (mounted.current) setAutosaving(value); },
+  });
   useEffect(() => {
-    setConfig((current) => ({ ...current, deviceName: snapshot.config.deviceName }));
-  }, [snapshot.config.deviceName]);
+    mounted.current = true;
+    // Requests keep running after navigation; callbacks still update the cache.
+    return () => { mounted.current = false; };
+  }, []);
+  const build = snapshot.appBuild ?? APP_BUILD;
+  // Polling must not replace an optimistic edit or an explicit sync-form draft.
+  useEffect(() => {
+    committed.current = snapshot.config;
+    setConfig((current) => {
+      const next = { ...current };
+      for (const key of Object.keys(snapshot.config) as (keyof Config)[]) {
+        if (!pending.current.has(key) && key !== "serverUrl" && key !== "serverToken") {
+          Object.assign(next, { [key]: snapshot.config[key] });
+        }
+      }
+      return next;
+    });
+  }, [snapshot.config]);
   const setThemePreview = useAccentThemePreview();
   useEffect(() => {
     setThemePreview({
@@ -80,8 +135,11 @@ export function SettingsPage({
     timezone: snapshot.config.timezone,
   });
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
-  const update = <K extends keyof Config>(key: K, value: Config[K]) =>
+  const update = <K extends keyof Config>(key: K, value: Config[K]) => {
+    pending.current.add(key);
     setConfig((c) => ({ ...c, [key]: value }));
+    autosave.current!.enqueue({ [key]: value } as Pick<Config, K>);
+  };
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     try {
@@ -93,11 +151,6 @@ export function SettingsPage({
       setBusy(false);
     }
   };
-  const save = () =>
-    run(async () => {
-      await command("save_config", { config });
-      toast.success(l("设置已保存", "Settings saved"));
-    });
   const migrate = async (commit = false) =>
     run(async () => {
       const value = await command<Record<string, unknown>>(
@@ -124,12 +177,6 @@ export function SettingsPage({
     <>
       <AppPageHeader
         title={l("设置", "Settings")}
-        actions={section !== "network" && (
-          <Button onClick={() => void save()} disabled={busy || !accentValid}>
-            <Save size={14} />
-            {l("保存设置", "Save settings")}
-          </Button>
-        )}
       />
       <div className="scope-page flex flex-col gap-4 md:flex-row md:gap-6">
         <nav className="scope-settings-nav flex flex-wrap gap-1 md:block md:space-y-1">
@@ -163,10 +210,14 @@ export function SettingsPage({
           {section === "general" && (
             <section className="scope-card">
               <h2 className="font-semibold mb-5">{l("通用", "General")}</h2>
+              <p role="status" className={`mb-5 text-caption ${saveFailed || !accentValid ? "text-danger-text" : "text-fg-3"}`}>
+                {autosaving ? l("正在保存…", "Saving…") : saveFailed ? l("保存失败，已恢复上次保存的设置。请重试。", "Save failed; restored the saved settings. Please try again.") : !accentValid ? l("色值无效，已保留上次有效配色。", "Invalid color; the last valid color is kept.") : l("更改自动保存。文字输入在回车或离开输入框时保存。", "Changes save automatically. Press Enter or leave a text field to save it.")}
+              </p>
+              {isTauri() && isWindows() && <DesktopSettings />}
               <Field label={l("设备名称", "Device name")}>
-                <Input
+                <AutoSaveInput
                   value={config.deviceName}
-                  onChange={(e) => update("deviceName", e.target.value)}
+                  onCommit={(value) => update("deviceName", value)}
                 />
               </Field>
               <Field label={l("主题", "Theme")}>
@@ -193,8 +244,8 @@ export function SettingsPage({
                 </OptionSelect>
                 <p className="text-caption text-fg-3">
                   {l(
-                    "右侧角色搭配半透明遮罩，保留内容阅读空间。皮肤和重点色可分别选择，保存设置后保留。",
-                    "Right-side artwork with a translucent veil keeps content readable. Choose skin and accent independently, then save to keep them.",
+                    "右侧角色搭配半透明遮罩，保留内容阅读空间。皮肤和重点色可分别选择，更改自动保存。",
+                    "Right-side artwork with a translucent veil keeps content readable. Choose skin and accent independently; changes save automatically.",
                   )}
                 </p>
               </Field>
@@ -231,18 +282,17 @@ export function SettingsPage({
                 <Button
                   type="button"
                   variant="neutral"
-                  onClick={() => setConfig((current) => ({
-                    ...current,
-                    skinTransparency: DEFAULT_SKIN_TRANSPARENCY,
-                    skinMaskStrength: DEFAULT_SKIN_MASK_STRENGTH,
-                  }))}
+                  onClick={() => {
+                    update("skinTransparency", DEFAULT_SKIN_TRANSPARENCY);
+                    update("skinMaskStrength", DEFAULT_SKIN_MASK_STRENGTH);
+                  }}
                 >
                   {l("恢复皮肤默认", "Reset skin appearance")}
                 </Button>
                 <p className="text-caption text-fg-3">
                   {l(
-                    "拖动即时预览，保存设置后保留；未保存离开将恢复原设置。请先选择皮肤以启用调节。",
-                    "Drag to preview, then save to keep changes. Leaving without saving restores saved values. Select a skin to enable these controls.",
+                    "拖动即时生效并自动保存。请先选择皮肤以启用调节。",
+                    "Changes apply and save as you drag. Select a skin to enable these controls.",
                   )}
                 </p>
               </fieldset>
@@ -264,9 +314,9 @@ export function SettingsPage({
               <Field
                 label={l("统计时区（IANA）", "Statistics timezone (IANA)")}
               >
-                <Input
+                <AutoSaveInput
                   value={config.timezone}
-                  onChange={(e) => update("timezone", e.target.value)}
+                  onCommit={(value) => update("timezone", value.trim())}
                 />
               </Field>
               <Field
@@ -275,14 +325,12 @@ export function SettingsPage({
                   "Background collection interval (seconds)",
                 )}
               >
-                <Input
+                <AutoSaveInput
                   type="number"
-                  min={10}
+                  min={5}
                   max={86400}
                   value={config.scanIntervalSeconds}
-                  onChange={(e) =>
-                    update("scanIntervalSeconds", Number(e.target.value))
-                  }
+                  onCommit={(value) => update("scanIntervalSeconds", Number(value))}
                 />
               </Field>
               <p className="text-caption text-fg-3">{snapshot.deviceId}</p>
@@ -297,7 +345,7 @@ export function SettingsPage({
                 <Input
                   placeholder="https://usage.example.com"
                   value={config.serverUrl}
-                  onChange={(e) => update("serverUrl", e.target.value)}
+                  onChange={(e) => setConfig((current) => ({ ...current, serverUrl: e.target.value }))}
                 />
               </Field>
               <Field label={l("访问令牌", "Access token")}>
@@ -310,7 +358,7 @@ export function SettingsPage({
                       : l("输入服务器令牌", "Enter server token")
                   }
                   value={config.serverToken}
-                  onChange={(e) => update("serverToken", e.target.value)}
+                  onChange={(e) => setConfig((current) => ({ ...current, serverToken: e.target.value }))}
                 />
               </Field>
               <p className="text-body text-fg-2 mb-4">
@@ -325,7 +373,8 @@ export function SettingsPage({
                   disabled={busy}
                   onClick={() =>
                     void run(async () => {
-                      await command("save_config", { config });
+                      await command("patch_config", { patch: { serverUrl: config.serverUrl, serverToken: config.serverToken } });
+                      setConfig((current) => ({ ...current, serverToken: "" }));
                       const result = await command<{
                         uploaded: number;
                         downloaded: number;

@@ -13,6 +13,7 @@
     "windows": [
       {
         "title": "Harness Scope",
+        "visible": false,
         "width": 1000,
         "height": 667,
         "minWidth": 900,

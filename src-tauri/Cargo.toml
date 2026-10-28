@@ -15,3 +15,13 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 harness-scope-core = { path = "../crates/core" }
 serde_json.workspace = true
+serde.workspace = true
+anyhow.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+auto-launch = "0.6"
+tauri-plugin-single-instance = "2"
+
+[dev-dependencies]
+tempfile = "3"

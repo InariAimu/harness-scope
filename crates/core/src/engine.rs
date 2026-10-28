@@ -193,8 +193,48 @@ impl Engine {
                 s.set_meta("config", &config)?;
                 Ok(json!(name))
             }
-            "save_config" => {
-                let mut c: Config = serde_json::from_value(args["config"].clone())?;
+            "save_config" | "patch_config" => {
+                // Merge under the write lock: an autosave must not restore a stale
+                // device name, source list, sync credential or another preference.
+                let s = self.lock()?;
+                let old = s.config()?;
+                let mut value = args["config"].clone();
+                if name == "patch_config" {
+                    let patch = args["patch"]
+                        .as_object()
+                        .context("Missing settings patch")?;
+                    anyhow::ensure!(!patch.is_empty(), "Empty settings patch");
+                    value = serde_json::to_value(&old)?;
+                    for (key, next) in patch {
+                        anyhow::ensure!(
+                            matches!(
+                                key.as_str(),
+                                "deviceName"
+                                    | "theme"
+                                    | "accentColor"
+                                    | "interfaceSkin"
+                                    | "skinTransparency"
+                                    | "skinMaskStrength"
+                                    | "language"
+                                    | "timezone"
+                                    | "scanIntervalSeconds"
+                                    | "serverUrl"
+                                    | "serverToken"
+                            ),
+                            "Unsupported setting: {key}"
+                        );
+                        value[key] = next.clone();
+                    }
+                }
+                let mut c: Config = serde_json::from_value(value)?;
+                anyhow::ensure!(
+                    matches!(c.theme.as_str(), "system" | "light" | "dark"),
+                    "Unsupported theme"
+                );
+                anyhow::ensure!(
+                    matches!(c.language.as_str(), "zh" | "en"),
+                    "Unsupported language"
+                );
                 let accent = c.accent_color.as_bytes();
                 anyhow::ensure!(
                     accent.len() == 7
@@ -229,8 +269,6 @@ impl Engine {
                     );
                     anyhow::ensure!(ids.insert(source.id.clone()), "Duplicate source ID");
                 }
-                let s = self.lock()?;
-                let old = s.config()?;
                 let collection_changed = old.scan_interval_seconds != c.scan_interval_seconds
                     || old
                         .sources
@@ -261,7 +299,13 @@ impl Engine {
                 if collection_changed {
                     self.wake_collection();
                 }
-                Ok(json!(true))
+                if name == "patch_config" {
+                    let mut saved = serde_json::to_value(c)?;
+                    saved["serverToken"] = json!("");
+                    Ok(saved)
+                } else {
+                    Ok(json!(true))
+                }
             }
             "scan" => Ok(serde_json::to_value(self.scan(false)?)?),
             "rescan" => Ok(serde_json::to_value(self.scan(true)?)?),

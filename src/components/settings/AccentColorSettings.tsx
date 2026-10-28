@@ -240,8 +240,8 @@ export function AccentColorSettings({
       </div>
       <p className="text-caption text-fg-2">
         {l(
-          "即时预览整个界面，保存设置后保留；未保存就离开将恢复原配色。灰阶、成功、警告和错误颜色保持独立。",
-          "Preview across the interface now; save to keep it. Leaving without saving restores the saved colors. Neutral and status colors stay independent.",
+          "更改即时生效并自动保存。灰阶、成功、警告和错误颜色保持独立。",
+          "Changes apply and save automatically. Neutral and status colors stay independent.",
         )}
       </p>
     </fieldset>

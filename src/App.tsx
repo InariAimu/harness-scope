@@ -24,6 +24,7 @@ import { ProvidersPage } from "@/pages/ProvidersPage";
 import { syncModelsDevPricingOnStartup } from "@/lib/modelsDevAutoSync";
 import { Button } from "@/components/ui/button";
 import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { isWindows, DRAG_REGION_ATTR } from "@/lib/platform";
 import {
   AppPageHeader,
@@ -94,6 +95,22 @@ export interface Snapshot {
 export default function App() {
   const { t, i18n } = useTranslation();
   const client = useQueryClient();
+  useEffect(() => {
+    if (!isTauri()) return;
+    let disposed = false;
+    const stops: (() => void)[] = [];
+    const subscribe = async () => {
+      for (const [event, handler] of [
+        ["desktop-restored", () => { void client.invalidateQueries(); }],
+        ["desktop-error", (event: { payload: string }) => toast.error(event.payload)],
+      ] as const) {
+        const stop = await listen<string>(event, handler);
+        if (disposed) stop(); else stops.push(stop);
+      }
+    };
+    void subscribe().catch(console.error);
+    return () => { disposed = true; stops.forEach((stop) => stop()); };
+  }, [client]);
   const state = useQuery({
     queryKey: ["snapshot"],
     queryFn: () => command<Snapshot>("snapshot"),
