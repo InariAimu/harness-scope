@@ -163,6 +163,9 @@ function useDetailSections(request: RequestLog) {
       mono: true,
     });
   }
+  if (request.appType === "lmstudio") {
+    basic.push({ key: "generation-time-source", label: t("scope.generationTimeSource"), value: t("scope.lmstudioStepTime") });
+  }
   if (request.pricingModel && request.pricingModel !== request.model) {
     basic.push({
       key: "pricingModel",
@@ -191,7 +194,7 @@ function useDetailSections(request: RequestLog) {
   const tokens: DetailRow[] = [
     {
       key: "fresh",
-      label: t("usage.freshInput"),
+      label: t(request.appType === "lmstudio" ? "usage.inputTokens" : "usage.freshInput"),
       value: isCacheInclusive
         ? `${fmtInt(freshInput, locale)} (${t("usage.rawInputLabel")}: ${fmtInt(request.inputTokens, locale)})`
         : fmtInt(freshInput, locale),
@@ -204,12 +207,12 @@ function useDetailSections(request: RequestLog) {
     {
       key: "read",
       label: t("usage.cacheReadTokens"),
-      value: fmtInt(request.cacheReadTokens, locale),
+      value: request.appType === "lmstudio" ? t("scope.lmstudioUnreported") : fmtInt(request.cacheReadTokens, locale),
     },
     {
       key: "write",
       label: t("usage.pricing.cacheWrite"),
-      value: fmtInt(request.cacheCreationTokens, locale),
+      value: request.appType === "lmstudio" ? t("scope.lmstudioUnreported") : fmtInt(request.cacheCreationTokens, locale),
     },
   ];
 
@@ -226,7 +229,7 @@ function useDetailSections(request: RequestLog) {
   const cost: DetailRow[] = [
     {
       key: "input",
-      label: t("usage.freshInput"),
+      label: t(request.appType === "lmstudio" ? "usage.inputTokens" : "usage.freshInput"),
       value: unpriced ? "—" : usd(request.inputCostUsd),
     },
     {
@@ -348,7 +351,7 @@ function useDetailSections(request: RequestLog) {
 
   let performance: DetailRow[];
   if (!isProxy) {
-    // 会话日志的耗时和首字是导入时按日志时间戳估的（耗时 0 = 没估出来）
+    // Most session timings are inferred; LM Studio reports native durations.
     if (latency == null || latency <= 0) {
       performance = [
         {
@@ -387,7 +390,7 @@ function useDetailSections(request: RequestLog) {
             },
         {
           key: "duration",
-          label: t("usage.detail.durationEstimated"),
+          label: t(request.timingMethod === "reported" ? "usage.detail.duration" : "usage.detail.durationEstimated"),
           value: `${(latency / 1000).toFixed(1)}s`,
           title: `${fmtInt(latency, locale)} ms`,
         },
@@ -407,7 +410,7 @@ function useDetailSections(request: RequestLog) {
       if (firstToken != null) {
         performance.splice(1, 0, {
           key: "ttft",
-          label: t("usage.detail.firstTokenEstimated"),
+          label: t(request.timingMethod === "reported" ? "usage.detail.firstToken" : "usage.detail.firstTokenEstimated"),
           value: `${(firstToken / 1000).toFixed(1)}s`,
         });
       }
@@ -458,11 +461,11 @@ function useDetailSections(request: RequestLog) {
     }
   }
 
-  if (request.timingMethod === "estimated") {
+  if (request.timingMethod === "estimated" || request.timingMethod === "reported") {
     performance.push({
       key: "timing-method",
       label: t("scope.timingMethod"),
-      value: t("scope.logTimingEstimate"),
+      value: t(request.appType === "lmstudio" ? "scope.lmstudioNativeTiming" : "scope.logTimingEstimate"),
     });
     for (const [key, source, label] of [
       ["duration-source", request.timingSource, "scope.durationSource"],

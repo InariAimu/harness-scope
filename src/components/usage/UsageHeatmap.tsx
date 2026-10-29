@@ -408,7 +408,7 @@ export function UsageHeatmap({
                 {t("usage.heatmap.spanSummary", {
                   tokens: formatQuantity(span.totals.tokens),
                   requests: formatQuantity(span.totals.requests),
-                  cost: costMoney(
+                  cost: appType === "lmstudio" && span.totals.requests > 0 ? t("usage.unpriced") : costMoney(
                     span.totals.cost,
                     2,
                     span.totals.costConverted,
@@ -484,7 +484,7 @@ export function UsageHeatmap({
             })}
             tokens={hover.cell.tokens}
             requests={hover.cell.requests}
-            cost={hover.cell.cost}
+            cost={appType === "lmstudio" && hover.cell.requests > 0 ? null : hover.cell.cost}
             costConverted={hover.cell.costConverted}
           />
         </div>

@@ -22,6 +22,7 @@ Harness Scope 是一个以本机数据为基础的桌面应用：从编程工具
 | OpenCode | V1／V2 SQLite | 用量、会话、原生费用、迁移副本去重 |
 | DeepSeek Harness | v0／v4 JSONL、Zstandard | 用量、会话、缓存与推理细分、流式计时估算 |
 | Cherry Studio | 2.x SQLite | 会话和可完整拆分的逐次用量；未知旧汇总不计入 |
+| LM Studio | 0.4.x 桌面会话 JSON | 历史会话、全部生成版本和增量 Token；费用未计价，不采集服务器 API 日志 |
 | GitHub Copilot（兼容导入） | VS Code chatSessions JSON／JSONL | 用户请求、会话和可确认的输出 Tokens；需先配置历史来源边界 |
 
 Copilot 的完整 Credits／PRU 计量、Agent Host 和 CLI 导入仍未实现。各工具的格式限制和配置方法见[使用指南](docs/USAGE.md)及[兼容说明](docs/README.md#工具兼容与计量)。

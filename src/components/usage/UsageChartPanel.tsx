@@ -32,7 +32,9 @@ export function UsageChartPanel(props: UsageChartPanelProps) {
         }))} />
     </div>
   );
-  const composition = view === "trend" ? undefined : (
+  const composition = props.appType === "lmstudio" && metric === "cost" ? (
+    <div className="flex h-full items-center justify-center text-body text-fg-3">{t("scope.lmstudioCostUnknown")}</div>
+  ) : view === "trend" ? undefined : (
     <UsageCompositionChart {...props} dimension={view} metric={metric} />
   );
   const title = view === "trend" ? undefined

@@ -187,6 +187,10 @@ export interface MessageMeta {
 
 export interface SessionMessage {
   role: string;
+  /** Native alternatives; selecting one only changes this reader, never the source. */
+  versionGroup?: string;
+  versionIndex?: number;
+  versionSelected?: boolean;
   /**
    * 旧格式的纯文本内容：只有 blocks 缺失时（旧后端）才下发，
    * 有 blocks 时前端一律从 blocks 推导（见 reader/turns.ts `messageText`）

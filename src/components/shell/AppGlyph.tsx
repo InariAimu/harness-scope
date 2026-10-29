@@ -13,6 +13,7 @@ export const APP_DISPLAY_NAME: Record<AppId, string> = {
   opencode: "OpenCode",
   dsh: "DeepSeek Harness",
   cherry: "Cherry Studio",
+  lmstudio: "LM Studio",
   "copliot-deprecated": "copliot-deprecated",
   copliot: "Github Copliot",
   openclaw: "OpenClaw",

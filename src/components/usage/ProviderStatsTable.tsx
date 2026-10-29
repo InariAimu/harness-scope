@@ -108,9 +108,9 @@ export function ProviderStatsTable({
                     </td>
                     <td
                       className={cn(usageTable.td, "font-medium")}
-                      title={moneyTitle(stat.totalCost, 6)}
+                      title={stat.appType === "lmstudio" ? undefined : moneyTitle(stat.totalCost, 6)}
                     >
-                      {costMoney(stat.totalCost, 2, stat.costConverted)}
+                      {stat.appType === "lmstudio" ? t("usage.unpriced") : costMoney(stat.totalCost, 2, stat.costConverted)}
                     </td>
                     <PerformanceCells stat={stat} />
                   </tr>

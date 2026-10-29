@@ -10,6 +10,7 @@ pub mod copliot;
 pub mod copliot_deprecated;
 pub mod dsh;
 pub mod files;
+pub mod lmstudio;
 pub mod opencode;
 mod transcript;
 mod usage_read;
@@ -46,6 +47,10 @@ pub type TimelineIndex = HashMap<String, Vec<Value>>;
 pub trait HarnessAdapter: Send + Sync {
     fn descriptor(&self) -> Descriptor;
     fn allows_price_estimates(&self, _has_tokens: bool) -> bool {
+        true
+    }
+    /// New local timing sources can remain device-local until peers support them.
+    fn syncs_timing(&self) -> bool {
         true
     }
     fn parse(&self, path: &Path, lines: &[Value], index: &TimelineIndex) -> Result<ParseResult>;
@@ -120,6 +125,7 @@ impl Default for Registry {
                 Arc::new(codex::Codex),
                 Arc::new(opencode::OpenCode),
                 Arc::new(cherry::Cherry),
+                Arc::new(lmstudio::LmStudio),
                 Arc::new(dsh::Dsh),
                 Arc::new(copliot_deprecated::CopliotDeprecated),
                 Arc::new(copliot::Copliot),

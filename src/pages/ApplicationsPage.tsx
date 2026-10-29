@@ -204,6 +204,14 @@ export function ApplicationsPage({
                 )}
               </p>
             )}
+            {h.id === "lmstudio" && (
+              <p className="mt-3 text-caption text-fg-2">
+                {l(
+                  "只读本机桌面会话，统计所有生成版本；不采集服务器日志或 API 历史。输入为原始 prompt 总量，缓存与推理 Token 细分未提供，费用未计价。生成时间取自会话步骤标识，耗时与首字延迟取自生成统计并仅保留在本机。",
+                  "Reads local desktop conversations and counts every generation version. Server logs and API history are excluded. Input is the original prompt total; cache/reasoning breakdowns are unreported and costs remain unpriced. Generation time comes from the step identity; reported duration and TTFT stay on this device.",
+                )}
+              </p>
+            )}
             <div className="mt-5 space-y-3">
               {config.sources
                 .filter((s) => s.harness === h.id)

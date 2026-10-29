@@ -1,0 +1,22 @@
+{
+  "name": "Synthetic local chat",
+  "createdAt": 1793000000000,
+  "userLastMessagedAt": 1793000001000,
+  "assistantLastMessagedAt": 1793000006000,
+  "systemPrompt": "Private fixture instructions",
+  "messages": [
+    {"currentlySelected": 0, "versions": [{"type": "singleStep", "role": "user", "content": [
+      {"type": "text", "text": "Private fixture question"},
+      {"type": "file", "fileIdentifier": "fixture-file", "fileType": "image/png", "sizeBytes": 42}
+    ]}]},
+    {"currentlySelected": 1, "versions": [
+      {"type": "multiStep", "role": "assistant", "steps": [
+        {"type": "contentBlock", "stepIdentifier": "1793000002000-0.1", "style": {"type": "thinking"}, "content": [{"type": "text", "text": "Private fixture reasoning", "tokensCount": 2}]},
+        {"type": "contentBlock", "stepIdentifier": "1793000002000-0.2", "content": [{"type": "text", "text": "Private fixture original answer", "tokensCount": 2}], "genInfo": {"identifier": "local/fixture-model", "predictionConfig": {"private": "must not be cached"}, "stats": {"promptTokensCount": 10, "predictedTokensCount": 5, "totalTokensCount": 15, "timeToFirstTokenSec": 0.2, "totalTimeSec": 1.2, "stopReason": "eosFound", "private": "must not be cached"}}}
+      ]},
+      {"type": "multiStep", "role": "assistant", "steps": [
+        {"type": "contentBlock", "stepIdentifier": "1793000004000-0.3", "content": [{"type": "text", "text": "Private fixture selected answer", "tokensCount": 5}], "genInfo": {"identifier": "local/fixture-model", "stats": {"promptTokensCount": 20, "predictedTokensCount": 7, "totalTokensCount": 27, "timeToFirstTokenSec": 0.3, "totalTimeSec": 1.5, "stopReason": "userStopped"}}}
+      ]}
+    ]}
+  ]
+}

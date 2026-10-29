@@ -27,6 +27,7 @@
 | `read_messages()` / `messages_for_session()` | 按原生会话读取正文 |
 | `delete_session()` / `delete_source()` | 在能力允许时执行删除 |
 | `allows_price_estimates(has_tokens)` | 限制不具备可靠计费维度的来源参与估价 |
+| `syncs_timing()` | 默认同步已支持的计时；新增计时来源可只保留在本机，兼容现有服务器 |
 
 SQLite 来源应使用只读一致性事务，同时考虑 WAL。一个数据库包含多个会话时，发现、列表、正文与删除均须保留原生 session ID。摘要采样只用于展示，不能替代完整用量计数。
 
@@ -50,6 +51,7 @@ Copilot 兼容层受现有非空 Token 字段约束，缺失维度填 0；这是
 - [Codex](CODEX.md)：逻辑会话与物理分段、祖先基线、运行日志档位证据和独立标题来源。
 - [DSH](DSH.md)：版本文件选择、多帧 Zstandard、稳定消息身份和继承边界。
 - [Cherry Studio](CHERRY.md)：SQLite 会话及逐次用量，未知旧汇总按统计口径排除。
+- [LM Studio](LMSTUDIO.md)：本机桌面会话的全部生成版本，以原始 prompt/output 总量统计；缺失细分显式标注，费用未计价。
 - [Claude](CLAUDE.md)：同请求内容块合并、请求计时关联和推理子集。
 - [Copilot](COPILOT_IMPORT_DESIGN.md)：固定历史清单划分两个已注册来源，未知用量不能伪装成已确认免费。
 

@@ -60,7 +60,7 @@ export interface RequestLog {
   /** 路由服务记的是精确首字；会话日志导入的是按时间戳推出来的估算值（看 dataSource） */
   firstTokenMs?: number | null;
   durationMs?: number | null;
-  timingMethod?: "estimated";
+  timingMethod?: "estimated" | "reported";
   timingSource?: string;
   firstTokenSource?: string | null;
   /** Query-time speed policy; absent on older local services. */
@@ -139,6 +139,8 @@ export interface ModelsDevSyncState {
 }
 
 export interface UsageSummary {
+  /** False when the scope includes a source with unsplit prompt totals. */
+  cacheBreakdownKnown?: boolean;
   subscriptionUsageCount?: number;
   costConverted?: boolean;
   unpricedCount?: number;

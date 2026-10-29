@@ -14,6 +14,8 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { OptionSelect } from "@/components/ui/option-select";
+import { messageVersionGroups, selectMessageVersions } from "./versions";
 import type { SessionTranscriptResult } from "@/lib/query/sessions";
 import { toast } from "@/lib/toast";
 
@@ -187,6 +189,8 @@ export function SessionReader({
   const [findIndex, setFindIndex] = useState(1);
   const [flashKey, setFlashKey] = useState<string | null>(null);
   const [atBottom, setAtBottom] = useState<boolean | null>(null);
+  const [versionChoices, setVersionChoices] = useState<Record<string, number>>({});
+  useEffect(() => setVersionChoices({}), [session.providerId, session.sourcePath, session.sessionId]);
   // 右侧对话目录：默认打开，开关记在本地
   const [outlineOpen, setOutlineOpen] = useState(() => {
     try {
@@ -213,7 +217,9 @@ export function SessionReader({
   const failed = transcript.isError;
 
   // 流式数据每到一批就重建 turn；交给低优先级渲染，滚动和点击不被打断
-  const messages = useDeferredValue(transcript.messages);
+  const versionGroups = useMemo(() => messageVersionGroups(transcript.messages), [transcript.messages]);
+  const selectedMessages = useMemo(() => selectMessageVersions(transcript.messages, versionChoices), [transcript.messages, versionChoices]);
+  const messages = useDeferredValue(selectedMessages);
   const turns = useMemo(
     () => buildTurns(messages, { style }),
     [messages, style],
@@ -408,22 +414,22 @@ export function SessionReader({
     async (turnKey: string) => {
       try {
         const full = await sessionsApi.getMessages(session.providerId, session.sourcePath!, session.sessionId);
-        const turn = buildTurns(full, { style }).find((item) => item.key === turnKey);
+        const turn = buildTurns(selectMessageVersions(full, versionChoices), { style }).find((item) => item.key === turnKey);
         if (turn) onCopy(turnToMarkdown(turn, exportOptions), rt("turnCopied"));
       } catch (error) { toast.error(extractErrorMessage(error)); }
     },
-    [exportOptions, onCopy, rt, session, style],
+    [exportOptions, onCopy, rt, session, style, versionChoices],
   );
 
   const copyMarkdown = useCallback(async () => {
     try {
       const full = await sessionsApi.getMessages(session.providerId, session.sourcePath!, session.sessionId);
       onCopy(
-        transcriptToMarkdown(title, buildTurns(full, { style }), exportOptions),
+        transcriptToMarkdown(title, buildTurns(selectMessageVersions(full, versionChoices), { style }), exportOptions),
         t("sessionManager.markdownCopied", { defaultValue: "已复制整段对话（Markdown）" }),
       );
     } catch (error) { toast.error(extractErrorMessage(error)); }
-  }, [exportOptions, onCopy, t, title, session, style]);
+  }, [exportOptions, onCopy, t, title, session, style, versionChoices]);
 
   const exportMarkdownFile = useCallback(async () => {
     const name = `${toFileName(title) || session.sessionId}.md`;
@@ -431,13 +437,13 @@ export function SessionReader({
       const full = await sessionsApi.getMessages(session.providerId, session.sourcePath!, session.sessionId);
       const path = await sessionsApi.exportMarkdown(
         name,
-        transcriptToMarkdown(title, buildTurns(full, { style }), exportOptions),
+        transcriptToMarkdown(title, buildTurns(selectMessageVersions(full, versionChoices), { style }), exportOptions),
       );
       if (path) toast.success(rt("exported", { path }));
     } catch (error) {
       toast.error(rt("exportFailed", { error: extractErrorMessage(error) }));
     }
-  }, [exportOptions, rt, session, title, style]);
+  }, [exportOptions, rt, session, title, style, versionChoices]);
 
   const openFind = () => {
     setFindOpen(true);
@@ -505,7 +511,7 @@ export function SessionReader({
     messages.length === 0 &&
     (transcript.isLoading || transcript.isStreaming);
   const progress =
-    transcript.isStreaming || messages !== transcript.messages
+    transcript.isStreaming || messages !== selectedMessages
       ? transcript.progress
       : null;
   // 正文顶部停在哪一轮：目录据此高亮（虚拟列表滚动时会重渲染，这里直接算）
@@ -793,6 +799,22 @@ export function SessionReader({
           onStepFind={stepFind}
           onExportMarkdown={exportMarkdownFile}
         />
+        {versionGroups.size > 0 && <details className="shrink-0 border-b border-border px-5 py-2 text-caption">
+          <summary className="cursor-pointer">{t("scope.messageVersions")}</summary>
+          <p className="my-2 text-fg-3">{t("scope.messageVersionsNote")}</p>
+          <div className="flex max-h-32 flex-wrap gap-3 overflow-auto">
+            {[...versionGroups].map(([group, versions], index) => <label key={group} className="flex items-center gap-2">
+              <span>{t("scope.versionMessage", { number: index + 1 })}</span>
+              <OptionSelect className="scope-select w-auto" aria-label={t("scope.versionMessage", { number: index + 1 })}
+                value={String(versionChoices[group] ?? versions.find(v => v.versionSelected)?.versionIndex ?? "")}
+                onValueChange={value => setVersionChoices(current => ({ ...current, [group]: Number(value) }))}>
+                {versions.map(version => <option key={version.versionIndex} value={String(version.versionIndex)}>
+                  {t(version.versionSelected ? "scope.nativeVersion" : "scope.otherVersion", { number: (version.versionIndex ?? 0) + 1 })}
+                </option>)}
+              </OptionSelect>
+            </label>)}
+          </div>
+        </details>}
         <div className="flex min-h-0 flex-1">
           <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
             {body}

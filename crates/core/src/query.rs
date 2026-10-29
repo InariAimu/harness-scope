@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use std::{collections::BTreeMap, str::FromStr};
 
 struct SummaryValue<'a> {
+    cache_breakdown_unknown: bool,
     tokens: &'a Tokens,
     count: u64,
     amount: Option<&'a str>,
@@ -20,6 +21,7 @@ struct SummaryValue<'a> {
 pub fn summary(records: &[UsageRecord]) -> Value {
     aggregate(records.iter().map(|r| {
         SummaryValue {
+            cache_breakdown_unknown: r.harness == "lmstudio",
             tokens: &r.tokens,
             count: r.count,
             amount: r.cost.amount_usd.as_deref(),
@@ -35,6 +37,7 @@ pub fn summary(records: &[UsageRecord]) -> Value {
 }
 pub(crate) fn summary_rows(records: &[Row]) -> Value {
     aggregate(records.iter().map(|r| SummaryValue {
+        cache_breakdown_unknown: r.harness == "lmstudio",
         tokens: &r.tokens,
         count: r.count,
         amount: r.amount.as_deref(),
@@ -53,6 +56,7 @@ fn aggregate<'a>(records: impl Iterator<Item = SummaryValue<'a>>) -> Value {
 
 #[derive(Default)]
 struct SummaryAccumulator {
+    cache_breakdown_unknown: bool,
     tokens: Tokens,
     count: u64,
     cost: Decimal,
@@ -65,6 +69,7 @@ struct SummaryAccumulator {
 impl SummaryAccumulator {
     fn add_row(&mut self, r: &Row) {
         self.add(SummaryValue {
+            cache_breakdown_unknown: r.harness == "lmstudio",
             tokens: &r.tokens,
             count: r.count,
             amount: r.amount.as_deref(),
@@ -74,6 +79,7 @@ impl SummaryAccumulator {
         });
     }
     fn add(&mut self, r: SummaryValue<'_>) {
+        self.cache_breakdown_unknown |= r.cache_breakdown_unknown && r.count > 0;
         self.count += r.count;
         self.tokens.input += r.tokens.input;
         self.tokens.output += r.tokens.output;
@@ -107,9 +113,10 @@ impl SummaryAccumulator {
             unpriced,
             converted,
             subscription,
+            cache_breakdown_unknown,
         } = self;
         let cacheable = t.input + t.cache_read + t.cache_write;
-        json!({"totalRequests":count,"totalCost":cost.normalize().to_string(),"totalInputTokens":t.input,"totalOutputTokens":t.output,"totalCacheReadTokens":t.cache_read,"totalCacheCreationTokens":t.cache_write,"successRate":if *known>0{Some(*success as f64 / *known as f64*100.)}else{None},"realTotalTokens":t.total(),"cacheHitRate":if cacheable>0{t.cache_read as f64/cacheable as f64}else{0.},"unpricedCount":unpriced,"knownStatusCount":known,"subscriptionUsageCount":subscription,"costConverted":converted})
+        json!({"totalRequests":count,"totalCost":cost.normalize().to_string(),"totalInputTokens":t.input,"totalOutputTokens":t.output,"totalCacheReadTokens":t.cache_read,"totalCacheCreationTokens":t.cache_write,"successRate":if *known>0{Some(*success as f64 / *known as f64*100.)}else{None},"realTotalTokens":t.total(),"cacheHitRate":if cacheable>0{t.cache_read as f64/cacheable as f64}else{0.},"cacheBreakdownKnown":!cache_breakdown_unknown,"unpricedCount":unpriced,"knownStatusCount":known,"subscriptionUsageCount":subscription,"costConverted":converted})
     }
 }
 fn provider(record: &UsageRecord) -> String {
@@ -172,7 +179,13 @@ fn log(r: &UsageRecord, timing: Option<&UsageTiming>) -> Value {
         v["latencyMs"] = json!(t.duration_ms);
         v["durationMs"] = json!(t.duration_ms);
         v["firstTokenMs"] = json!(t.first_token_ms);
-        v["timingMethod"] = json!("estimated");
+        v["timingMethod"] = json!(if r.harness == "lmstudio"
+            && t.duration_source == "lmstudio_prediction_stats"
+        {
+            "reported"
+        } else {
+            "estimated"
+        });
         v["timingSource"] = json!(t.duration_source);
         v["firstTokenSource"] = json!(t.first_token_source);
         v["estimatedSpeed"] = json!(crate::timing::speed_estimate(

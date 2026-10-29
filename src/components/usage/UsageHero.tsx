@@ -64,6 +64,7 @@ export function aggregateSummaries(items: UsageSummary[]): UsageSummary {
 
   const cacheableInput = input + cacheCreation + cacheRead;
   return {
+    cacheBreakdownKnown: items.every(item => item.cacheBreakdownKnown !== false),
     costConverted: items.some((item) => item.costConverted),
     subscriptionUsageCount: items.reduce(
       (sum, item) => sum + (item.subscriptionUsageCount ?? 0),
@@ -203,6 +204,7 @@ export function UsageHero({
   const hitRate = summary?.cacheHitRate ?? 0;
   const totalCost = parseFiniteNumber(summary?.totalCost);
   const requests = summary?.totalRequests ?? 0;
+  const allUnpriced = requests > 0 && summary?.unpricedCount === requests;
 
   const hitPercent = Math.max(0, Math.min(100, hitRate * 100));
   const hitPercentLabel = hitPercent.toFixed(hitPercent >= 99.95 ? 0 : 1);
@@ -235,9 +237,9 @@ export function UsageHero({
                   : t("usage.totalCost")
               }
               value={
-                placeholder ?? (totalCost == null ? "--" : money(totalCost, 2))
+                placeholder ?? (allUnpriced ? t("usage.unpriced") : totalCost == null ? "--" : money(totalCost, 2))
               }
-              title={totalCost == null ? undefined : moneyTitle(totalCost, 6)}
+              title={allUnpriced || totalCost == null ? undefined : moneyTitle(totalCost, 6)}
               help={
                 summary?.subscriptionUsageCount
                   ? {
@@ -259,7 +261,7 @@ export function UsageHero({
               label={t("usage.realTotal")}
               help={{
                 title: t("usage.metrics.realTotalHelpTitle"),
-                body: t("usage.metrics.realTotalHelp"),
+                body: t(summary?.cacheBreakdownKnown === false ? "scope.lmstudioTotalHelp" : "usage.metrics.realTotalHelp"),
               }}
               value={placeholder ?? formatQuantity(realTotal)}
               title={fmtInt(realTotal, locale)}
@@ -268,9 +270,9 @@ export function UsageHero({
               label={t("usage.cacheHitRate")}
               help={{
                 title: t("usage.metrics.hitRateHelpTitle"),
-                body: t("usage.metrics.hitRateHelp"),
+                body: t(summary?.cacheBreakdownKnown === false ? "scope.lmstudioCacheUnknown" : "usage.metrics.hitRateHelp"),
               }}
-              value={placeholder ?? `${hitPercentLabel}%`}
+              value={placeholder ?? (summary?.cacheBreakdownKnown === false ? "—" : `${hitPercentLabel}%`)}
             />
           </div>
           {moreOpen && (
@@ -281,7 +283,7 @@ export function UsageHero({
               )}
             >
               <MiniMetric
-                label={t("usage.freshInput")}
+                label={t(summary?.cacheBreakdownKnown === false ? "usage.inputTokens" : "usage.freshInput")}
                 value={formatQuantity(input)}
                 title={fmtInt(input, locale)}
               />
@@ -293,12 +295,12 @@ export function UsageHero({
               <MiniMetric
                 label={t("usage.cacheWrite")}
                 value={
-                  cacheWriteState === "na"
+                  summary?.cacheBreakdownKnown === false ? "—" : cacheWriteState === "na"
                     ? "N/A"
                     : formatQuantity(cacheWrite)
                 }
                 title={
-                  cacheWriteState === "na" ? undefined : fmtInt(cacheWrite)
+                  summary?.cacheBreakdownKnown === false ? t("scope.lmstudioCacheUnknown") : cacheWriteState === "na" ? undefined : fmtInt(cacheWrite)
                 }
                 muted={cacheWriteState === "na"}
                 help={
@@ -309,8 +311,8 @@ export function UsageHero({
               />
               <MiniMetric
                 label={t("usage.cacheRead")}
-                value={formatQuantity(cacheRead)}
-                title={fmtInt(cacheRead, locale)}
+                value={summary?.cacheBreakdownKnown === false ? "—" : formatQuantity(cacheRead)}
+                title={summary?.cacheBreakdownKnown === false ? t("scope.lmstudioCacheUnknown") : fmtInt(cacheRead, locale)}
               />
             </div>
           )}

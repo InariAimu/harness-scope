@@ -103,6 +103,7 @@ const APP_SHORT_NAME: Record<AppId, string> = {
   opencode: "OpenCode",
   dsh: "DSH",
   cherry: "Cherry Studio",
+  lmstudio: "LM Studio",
   openclaw: "OpenClaw",
   hermes: "Hermes",
   pi: "Pi",
@@ -125,6 +126,7 @@ const DEFAULT_COLUMNS = resolveRequestLogColumns(undefined);
 export function getRequestCacheHitRate(
   log: RequestLog,
 ): { rate: number; cacheable: number } | null {
+  if (log.appType === "lmstudio") return null;
   const cacheable =
     getFreshInputTokens(log) + log.cacheCreationTokens + log.cacheReadTokens;
   if (cacheable <= 0) return null;
@@ -238,7 +240,8 @@ export function RequestLogTable({
     },
   };
   const renderHeader = (id: RequestLogColumnId) => {
-    const label = t(REQUEST_LOG_COLUMN_LABEL_KEYS[id]);
+    const label = t(id === "freshInput" && (dashboardAppType === "lmstudio" || logs.some(log => log.appType === "lmstudio"))
+      ? "usage.inputTokens" : REQUEST_LOG_COLUMN_LABEL_KEYS[id]);
     const help = headerHelp[id];
     if (!help) return label;
     return (
@@ -271,7 +274,7 @@ export function RequestLogTable({
     const firstToken = parseFiniteNumber(log.firstTokenMs);
     const firstTokenText = formatFirstTokenSeconds(firstToken);
     // 会话日志的耗时和首字都是按时间戳估的，带 ≈
-    const isSession = isSessionLogRequest(log);
+    const isSession = isSessionLogRequest(log) && log.timingMethod !== "reported";
     const timing =
       latency != null && latency > 0
         ? {
@@ -313,7 +316,7 @@ export function RequestLogTable({
     const hasCache = log.cacheReadTokens > 0;
     // OpenAI 协议不单报缓存写入，这几个应用的 0 是「不知道」，不是「没写」
     const cacheWriteUnknown =
-      CACHE_INCLUSIVE_APP_TYPES.has(log.appType) &&
+      (log.appType === "lmstudio" || CACHE_INCLUSIVE_APP_TYPES.has(log.appType)) &&
       log.cacheCreationTokens <= 0;
     const hitRate = getRequestCacheHitRate(log);
     const success = isSuccessStatus(log.statusCode);
@@ -423,7 +426,7 @@ export function RequestLogTable({
       cacheRead: (
         <td
           className={cn(usageTable.td, !hasCache && usageTable.muted)}
-          title={t("usage.cacheTip", {
+          title={log.appType === "lmstudio" ? t("scope.lmstudioUnreported") : t("usage.cacheTip", {
             read: fmtInt(log.cacheReadTokens, locale),
             write: fmtInt(log.cacheCreationTokens, locale),
           })}
@@ -439,7 +442,7 @@ export function RequestLogTable({
               usageTable.muted,
           )}
           title={
-            cacheWriteUnknown
+            log.appType === "lmstudio" ? t("scope.lmstudioUnreported") : cacheWriteUnknown
               ? t("usage.cacheWriteNotReported")
               : fmtInt(log.cacheCreationTokens, locale)
           }

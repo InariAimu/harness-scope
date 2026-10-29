@@ -37,7 +37,7 @@ export function UsageTooltipCard({
     },
     {
       label: t("usage.trend.cost"),
-      value: cost == null ? "--" : costMoney(cost, 2, costConverted),
+      value: cost == null ? t("usage.unpriced") : costMoney(cost, 2, costConverted),
     },
   ];
 

@@ -78,6 +78,30 @@ impl Engine {
             }
             store.set_meta("cherry_source_initialized", &true)?;
         }
+        // Desktop conversations only; a removed/disabled source stays that way.
+        if !store
+            .meta::<bool>("lmstudio_source_initialized")?
+            .unwrap_or(false)
+        {
+            if !config.sources.iter().any(|s| s.harness == "lmstudio") {
+                for (i, root) in registry
+                    .get("lmstudio")?
+                    .descriptor()
+                    .default_roots
+                    .iter()
+                    .enumerate()
+                {
+                    config.sources.push(Source {
+                        id: format!("lmstudio-{i}"),
+                        harness: "lmstudio".into(),
+                        root: root.clone(),
+                        enabled: Path::new(root).is_dir(),
+                    });
+                }
+                store.set_meta("config", &config)?;
+            }
+            store.set_meta("lmstudio_source_initialized", &true)?;
+        }
         Ok(Self {
             account_vault: crate::account_credentials::Vault::new(path),
             account_polling: Default::default(),
@@ -892,6 +916,14 @@ impl Engine {
                 for mut parsed in result.usage{
                     if parsed.occurred_at<cutoff{continue}
                     active.insert(parsed.id.clone());let old=s.record(&parsed.id)?;
+                    // Duplicated LM Studio conversations retain inherited generation
+                    // IDs. Attribute shared generations to the earliest conversation
+                    // seen, so later copies cannot keep moving the same fact around.
+                    if harness=="lmstudio" {
+                        if let Some(session)=old.as_ref().and_then(|r|r.session_id.as_ref()).filter(|s|s.starts_with("conversation:")&&*s<&parsed.session_id) {
+                            parsed.session_id=session.clone();
+                        }
+                    }
                     if parsed.provider.is_none() { parsed.provider = old.as_ref().and_then(|r| r.provider.clone()); }
                     let metadata_upgrade=old.as_ref().filter(|r| {
                         let mut billing_tokens = parsed.tokens.clone();
@@ -909,12 +941,14 @@ impl Engine {
                         cost.priced_at=old.cost.priced_at;
                         if cost!=old.cost {cost.priced_at=quoted_at;}
                     }
-                    s.save_timing(&parsed.id, parsed.timing.as_ref())?;
+                    let timing = parsed.timing.clone();
+                    let timing_id = parsed.id.clone();
                     let r=UsageRecord{
-        timing: parsed.timing.clone(),
+        timing: if adapter.syncs_timing() { parsed.timing.clone() } else { None },
         request_metadata: parsed.request_metadata,provider:parsed.provider,device_id:device.clone(),id:parsed.id,harness:harness.clone(),parser_version:descriptor.parser_version.into(),session_id:Some(parsed.session_id),native_event_id:Some(parsed.native_event_id),occurred_at:parsed.occurred_at,model:parsed.model,grain:"event".into(),count:1,tokens:parsed.tokens,cost,record_source:"session".into(),revision:1,deleted:false,status_code:None,legacy_date:None,legacy_timezone:None};
                     sync::validate_record(&r)?;
                     if s.upsert(r,&key)?{if old.is_some(){report.updated+=1}else{report.imported+=1}}else{report.skipped+=1}
+                    s.save_timing(&timing_id, timing.as_ref())?;
                 }
                 if complete{
                     let mut stmt=s.conn.prepare("SELECT payload FROM records WHERE source_path=?1")?;
