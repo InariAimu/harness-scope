@@ -66,7 +66,7 @@ fn same(a: &Observation, b: &Observation) -> bool {
         && a.plan == b.plan
         && a.bucket == b.bucket
         && a.minutes == b.minutes
-        && a.reset == b.reset
+        && quota_history::same_codex_reset(a.reset, b.reset)
 }
 pub(crate) fn record(
     store: &Store,
@@ -100,7 +100,7 @@ pub(crate) fn record(
                 continue;
             }
             let before = Decimal::from_str(&history[last].used).unwrap_or_default();
-            if value < before {
+            if value < before && !quota_history::is_adjustment(before, value) {
                 // This cache is derived; the complete observation remains in history.
                 continue;
             } else if history[last].at == point.at {
@@ -213,19 +213,32 @@ pub(super) fn calculate(
                 })
                 .collect();
             samples.sort_by_key(|p| p.at);
-            let count = samples.len();
             let mut high_water = Decimal::ZERO;
-            samples.retain(|p| {
+            let mut segment_start = 0;
+            let mut ignored = 0;
+            let mut accepted = Vec::new();
+            for p in samples {
                 let Ok(used) = Decimal::from_str(&p.used) else {
-                    return false;
+                    ignored += 1;
+                    continue;
                 };
-                if used < high_water || used > Decimal::from(100) {
-                    return false;
+                if used < Decimal::ZERO || used > Decimal::from(100) {
+                    ignored += 1;
+                    continue;
                 }
+                if quota_history::is_adjustment(high_water, used) {
+                    // Earlier observations are valid, but belong to an older
+                    // measurement interval and must not price this interval.
+                    segment_start = accepted.len();
+                } else if used < high_water {
+                    ignored += 1;
+                    continue;
+                }
+                accepted.push(p);
                 high_water = used;
-                true
-            });
-            result["ignoredObservations"] = json!(count - samples.len());
+            }
+            let samples = &accepted[segment_start..];
+            result["ignoredObservations"] = json!(ignored);
             result["observations"] = json!(samples.len());
             anyhow::ensure!(samples.len() >= 2, "insufficient_quota_history");
             let first = samples[0];

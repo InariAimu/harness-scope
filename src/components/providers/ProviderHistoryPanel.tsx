@@ -24,6 +24,7 @@ import {
   historyMetrics,
   historyPoints,
   historyPlotPoints,
+  QUOTA_ADJUSTMENT_PERCENT_POINTS,
   type HistoryMetric,
   type HistoryPoint,
 } from "@/lib/providerHistory";
@@ -119,6 +120,7 @@ export function ProviderHistoryPanel({
     [points, metric, since],
   );
   const resetAnchors = chartPoints.filter((p) => p.resetAnchor).length;
+  const adjustments = samples.filter((p) => p.quotaAdjustment).length;
   const selected = pair ?? defaultHistoryPair(points);
   const ignoredSamples = observations.length - points.filter((p) => p.sample).length;
   const first = samples.find((p) => p.sequence === selected[0]);
@@ -256,8 +258,8 @@ export function ProviderHistoryPanel({
               "Synchronized history includes all devices on this subscription. ",
             )}
             {l(
-              "同一重置窗口内，剩余额度回升的异常采样不参与趋势和测算；尚未同步的用量不计入测算。按当前价表重算同期所有已同步设备的关联请求，保留缓存组成。尚未同步或路由外的用量、统计延迟会影响结果。额度是 API 等效估算，不是现金余额或官方保证；各窗口不能相加。总额度 = 同期模型费用 × 100 ÷ 消耗百分点；样本模型与请求档位组合改变后需重新测算。",
-              "Samples with increasing remaining quota within a reset window are excluded; unsynced usage is not included. Concurrent linked requests from synced devices are repriced using current rates and cache composition. Unsynced or unlinked usage and reporting lag affect results. Capacity is an API-equivalent estimate, not cash or a provider guarantee; windows are not additive. Capacity = concurrent model cost × 100 ÷ percentage points consumed; recalculate when the sampled model and request-tier mix changes.",
+              `同一重置窗口内，余量较当前测量区间的最低值回升至少 ${QUOTA_ADJUSTMENT_PERCENT_POINTS} 个百分点时开始新的测量区间，保留原重置时间；小幅回升仍按延迟采样筛除，测算不能跨越额度上调点。按当前价表重算同期所有已同步设备的关联请求，保留缓存组成。尚未同步或路由外的用量、统计延迟会影响结果。额度是 API 等效估算，不是现金余额或官方保证；各窗口不能相加。总额度 = 同期模型费用 × 100 ÷ 消耗百分点；样本模型与请求档位组合改变后需重新测算。`,
+              `A rise of at least ${QUOTA_ADJUSTMENT_PERCENT_POINTS} percentage points above the current measurement interval's lowest remaining quota starts a new interval without changing the reset time. Smaller rises are filtered as delayed readings; estimates cannot cross a quota adjustment. Concurrent linked requests from synced devices are repriced using current rates and cache composition. Unsynced or unlinked usage and reporting lag affect results. Capacity is an API-equivalent estimate, not cash or a provider guarantee; windows are not additive. Capacity = concurrent model cost × 100 ÷ percentage points consumed; recalculate when the sampled model and request-tier mix changes.`,
             )}
           </ProviderHelp>
         </h2>
@@ -413,6 +415,7 @@ export function ProviderHistoryPanel({
                                     {valueText(point.value)}
                                   </p>
                                   {point.resetAnchor && <p>{l("周期重置起点（按重置时间与周期长度推算）", "Cycle start (derived from reset time and duration)")}</p>}
+                                  {point.quotaAdjustment && <p>{l("额度上调，新的测量区间（重置时间不变）", "Quota increased; new measurement interval (reset unchanged)")}</p>}
                                 </div>
                               ) : null;
                             }}
@@ -422,7 +425,7 @@ export function ProviderHistoryPanel({
                             dataKey="value"
                             stroke="var(--chart-1)"
                             strokeWidth={2}
-                            dot={(props) => samples.length < 100 || props.payload?.resetAnchor
+                            dot={(props) => samples.length < 100 || props.payload?.resetAnchor || props.payload?.quotaAdjustment
                               ? sampleDot(props, 3) : <g />}
                             activeDot={(props) => sampleDot(props, 5)}
                             connectNulls={false}
@@ -449,6 +452,7 @@ export function ProviderHistoryPanel({
                       {samples.length} {l("次真实采样", "actual observations")}{" "}
                       · {date(samples[0].at)} → {date(samples.at(-1)!.at)}
                       {ignoredSamples > 0 && ` · ${l(`已筛除 ${ignoredSamples} 次额度回退采样`, `Excluded ${ignoredSamples} regressing quota samples`)}`}
+                      {adjustments > 0 && ` · ${l(`${adjustments} 次额度上调，已分段测算`, `${adjustments} quota adjustments; estimates use separate intervals`)}`}
                       {resetAnchors > 0 && ` · ${l("空心点为周期重置的 100% 起点", "Hollow points mark 100% at cycle resets")}`}
                       {quota &&
                         ` · ${picking != null ? l("已选起点，请点击另一个采样点", "Start selected; click another observation") : l("点击两个采样点可查看区间测算，也可在测算页选择时间", "Click two observations to estimate, or select times in the estimate tab")}`}

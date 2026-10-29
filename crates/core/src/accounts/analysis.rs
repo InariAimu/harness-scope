@@ -54,8 +54,7 @@ fn group(sample: &Value, w: &Value) -> Value {
         custom_definition,
         w["bucketId"],
         w["windowId"],
-        w["durationMinutes"],
-        w["resetsAt"]
+        w["durationMinutes"]
     ])
 }
 
@@ -117,7 +116,16 @@ fn calculate(store: &Store, query: &Query) -> Result<Value> {
         let a = window(&first, query).context("missing_window")?;
         let b = window(&last, query).context("missing_window")?;
         let expected = group(&first, a);
-        anyhow::ensure!(group(&last, b) == expected, "different_window");
+        let same_window = |sample: &Value, w: &Value| {
+            group(sample, w) == expected
+                && (w["resetsAt"] == a["resetsAt"]
+                    || (item.account.provider == "openai-codex"
+                        && a["resetsAt"]
+                            .as_i64()
+                            .zip(w["resetsAt"].as_i64())
+                            .is_some_and(|(a, b)| quota_history::same_codex_reset(a, b))))
+        };
+        anyhow::ensure!(same_window(&last, b), "different_window");
         if item.account.provider == "openai-codex" {
             let identity = last["data"]["identity"].as_str().unwrap_or("");
             anyhow::ensure!(
@@ -156,7 +164,7 @@ fn calculate(store: &Store, query: &Query) -> Result<Value> {
                 anyhow::ensure!(definition["windowType"] == "fixed", "unsupported_window");
             }
             let w = window(&sample, query).context("missing_window")?;
-            anyhow::ensure!(group(&sample, w) == expected, "different_window");
+            anyhow::ensure!(same_window(&sample, w), "different_window");
             let at = sample["observedAtMs"].as_i64().context("invalid_time")?;
             anyhow::ensure!(
                 previous_at.is_none_or(|p| at >= p) && at >= start && at <= end,
@@ -176,6 +184,12 @@ fn calculate(store: &Store, query: &Query) -> Result<Value> {
                 "quota_out_of_range"
             );
             if previous.is_some_and(|p| used < p) {
+                // A large replenishment starts a new measurement interval even
+                // when the provider leaves the reset deadline unchanged.
+                anyhow::ensure!(
+                    !quota_history::is_adjustment(previous.unwrap(), used),
+                    "quota_adjusted"
+                );
                 // Devices can see delayed provider counters. Keep the raw sample, but
                 // exclude the regression from this fixed window's derived estimate.
                 // Never silently substitute a user-selected endpoint.

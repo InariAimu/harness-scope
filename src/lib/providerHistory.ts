@@ -3,6 +3,9 @@ import type {
   ProviderData,
 } from "@/types/providerAccounts";
 
+// Keep in sync with accounts/quota_history.rs. These are percentage points.
+export const QUOTA_ADJUSTMENT_PERCENT_POINTS = 20;
+
 export interface HistoryMetric {
   key: string;
   kind: "balance" | "custom" | "quota";
@@ -21,6 +24,10 @@ export interface HistoryPoint {
   sample?: ProviderAccountObservation;
   /** Display-only start of a known quota cycle; never an observation for estimates. */
   resetAnchor?: true;
+  /** A same-cycle replenishment starts a new measurement interval, not a reset. */
+  quotaAdjustment?: true;
+  /** Canonical deadline for derived Codex cycle keys and inferred anchors only. */
+  cycleResetAt?: number;
 }
 
 function numeric(value: unknown) {
@@ -107,6 +114,7 @@ export function historyMetrics(data?: ProviderData): HistoryMetric[] {
 export function observationPoint(
   sample: ProviderAccountObservation,
   metric: HistoryMetric,
+  canonicalReset?: number,
 ): HistoryPoint {
   const data = sample.data;
   let value: number | null = null;
@@ -132,7 +140,7 @@ export function observationPoint(
         ? data.buckets.find((b) => b.id === metric.bucketId)
         : null;
     boundary = [
-      w?.resetsAt,
+      canonicalReset ?? w?.resetsAt,
       w?.durationMinutes,
       bucket?.planType,
       custom?.windowType,
@@ -163,10 +171,11 @@ export function observationPoint(
     value,
     segment,
     sample,
+    cycleResetAt: canonicalReset,
   };
 }
 
-/** Preserve raw samples; omit stale quota readings only within known fixed reset windows. */
+/** Small regressions are stale readings; large replenishments start measurement intervals. */
 export function historyPoints(
   samples: ProviderAccountObservation[],
   metric: HistoryMetric,
@@ -177,24 +186,40 @@ export function historyPoints(
   );
   const points: HistoryPoint[] = [];
   const revisions = new Map<string, string>();
-  const remainingFloor = new Map<string, number>();
+  const intervals = new Map<string, { floor: number; revision: number }>();
+  const codexResets = new Map<string, number>();
   let epoch = 0;
   for (const sample of ordered) {
-    const point = observationPoint(sample, metric);
+    let point = observationPoint(sample, metric);
     if (sample.subscriptionId) {
       const source = sample.deviceId ?? "local";
       const previousRevision = revisions.get(source);
       if (previousRevision != null && previousRevision !== sample.accountRevision) epoch++;
       revisions.set(source, sample.accountRevision);
-      point.segment = `${point.segment}:${epoch}`;
     }
     const w = sample.windows.find((w) => w.bucketId === metric.bucketId && w.windowId === metric.id);
+    if (metric.kind === "quota" && sample.provider === "openai-codex" && w?.resetsAt != null) {
+      // Normalize derived cycle keys only; keep the original deadline in the sample.
+      const key = `${observationPoint(sample, metric, 0).segment}:${epoch}`;
+      const previousReset = codexResets.get(key);
+      const reset = previousReset != null && Math.abs(w.resetsAt - previousReset) <= 1
+        ? previousReset : w.resetsAt;
+      codexResets.set(key, reset);
+      point = observationPoint(sample, metric, reset);
+    }
+    point.segment = `${point.segment}:${epoch}`;
     const fixed = metric.kind === "quota" && w?.resetsAt != null &&
       (sample.data.kind !== "customUsage" || sample.data.items.find((i) => i.id === metric.id)?.windowType === "fixed");
     if (fixed && point.value != null) {
-      const floor = remainingFloor.get(point.segment);
-      if (floor != null && point.value > floor) continue;
-      remainingFloor.set(point.segment, point.value);
+      const interval = intervals.get(point.segment) ?? { floor: point.value, revision: 0 };
+      if (point.value > interval.floor) {
+        if (point.value - interval.floor < QUOTA_ADJUSTMENT_PERCENT_POINTS) continue;
+        interval.revision++;
+        point.quotaAdjustment = true;
+      }
+      interval.floor = point.value;
+      intervals.set(point.segment, interval);
+      point.segment = `${point.segment}:measurement:${interval.revision}`;
     }
     const previous = points.at(-1);
     if (
@@ -206,14 +231,14 @@ export function historyPoints(
           point.value != null &&
           point.value > previous.value))
     ) {
-      points.push({ ...point, value: null, sample: undefined });
+      points.push({ ...point, value: null, sample: undefined, quotaAdjustment: undefined });
     }
     points.push(point);
   }
   return points;
 }
 
-/** Join display gaps; only a known 100% cycle start begins a new line. */
+/** Join display gaps, but preserve resets and quota-adjustment boundaries. */
 export function historyPlotPoints(
   points: HistoryPoint[],
   metric: HistoryMetric,
@@ -232,7 +257,8 @@ export function historyPlotPoints(
         w.durationMinutes == null || w.durationMinutes <= 0 ||
         anchor.at !== w.startsAt || anchor.at !== w.resetsAt - w.durationMinutes * 60
       ) continue;
-      const at = anchor.at * 1000;
+      const at = (point.cycleResetAt == null
+        ? anchor.at : point.cycleResetAt - w.durationMinutes * 60) * 1000;
       if (!Number.isSafeInteger(at) || at < 0 || at < startAtMs || at > point.at) continue;
       anchors.set(at, { at, value: 100, sequence: 0, segment: `reset:${at}`, resetAnchor: true });
     }
@@ -246,9 +272,9 @@ export function historyPlotPoints(
   const result: HistoryPoint[] = [];
   const breaks = new Set<number>();
   for (const point of ordered) {
-    if (anchors.has(point.at) && !breaks.has(point.at)) {
+    if ((anchors.has(point.at) || point.quotaAdjustment) && !breaks.has(point.at)) {
       if (result.length) {
-        result.push({ at: point.at, value: null, sequence: 0, segment: `reset:${point.at}` });
+        result.push({ at: point.at, value: null, sequence: 0, segment: point.segment });
       }
       breaks.add(point.at);
     }
@@ -322,6 +348,10 @@ export function historyEstimateReason(reason: string | null, zh: boolean) {
     quota_decreased: [
       "结束点的额度读数已回退，请选择未被筛除的最新采样点。",
       "The ending quota reading regressed. Choose a latest sample that has not been filtered out.",
+    ],
+    quota_adjusted: [
+      "所选区间跨越额度上调，请选择同一测量区间内的两个采样点。",
+      "Quota increased substantially within this interval. Choose two observations in the same measurement interval.",
     ],
     invalid_time: [
       "区间内的采样时钟不连续，请重新选择采样点。",

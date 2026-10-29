@@ -162,6 +162,108 @@ fn mixed_model_charges_calibrate_same_account_percent_and_required_intensity() {
     assert!(e.read_lock().unwrap().local_records().unwrap().is_empty());
     assert!(e.read_lock().unwrap().pending().unwrap().is_empty());
 }
+
+#[test]
+fn replenishment_restarts_raw_history_and_fallback_calibration_at_the_new_remaining_quota() {
+    for raw in [false, true] {
+        let (_d, e, _) = fixture();
+        clear(&e.lock().unwrap(), "fixture").unwrap();
+        let id = if raw {
+            let view = e
+                .execute(
+                    "provider_account_save",
+                    json!({"provider":"openai-codex","name":"Adjustment","codex":{"plan":"plus"}}),
+                )
+                .unwrap();
+            view["account"]["id"].as_str().unwrap().to_owned()
+        } else {
+            "fixture".into()
+        };
+        let mut last = Value::Null;
+        for (i, (offset, used)) in [
+            (-3600, 95),
+            (-3000, 99),
+            (-1800, 49),
+            (-600, 50),
+            (-300, 48),
+            (0, 50),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            last = snapshot(NOW + offset, used);
+            last["data"]["buckets"][0]["windows"][0]["resetsAt"] =
+                json!(NOW + 7200 + (i % 2) as i64);
+            let store = e.lock().unwrap();
+            if raw {
+                let mut item = crate::accounts::load(&store).unwrap().remove(0);
+                item.request_id = Some(uuid::Uuid::new_v4().to_string());
+                item.snapshot = Some(last.clone());
+                crate::accounts::history::record(
+                    &store,
+                    &item,
+                    chrono::DateTime::from_timestamp(NOW + offset, 0).unwrap(),
+                    "UTC",
+                )
+                .unwrap();
+            } else {
+                record(&store, &id, None, &last).unwrap();
+            }
+        }
+        let sol = row("gpt-6.1-sol");
+        let mut old_unpriced = row("unpriced-old-interval");
+        old_unpriced.occurred_at = NOW - 2500;
+        // The earlier unpriced usage must not block or inflate the new fit.
+        let value = compute_for(&e, &id, &last, &[&old_unpriced, &sol], 1);
+        let w = &value["windows"][0];
+        assert_eq!(w["status"], "ready", "raw={raw}: {value}");
+        assert_eq!(w["sampleStart"], NOW - 1800);
+        assert_eq!(w["sampleEnd"], NOW);
+        assert_eq!(w["observations"], 3);
+        assert_eq!(w["ignoredObservations"], if raw { 1 } else { 0 });
+        assert_eq!(w["deltaPercent"], "1");
+        assert_eq!(w["linkedRequests"], 1);
+        close(&w["linkedUsd"], "4.7");
+        close(&w["modelPercentPerHour"], "1");
+        let required = Decimal::from_str(w["requiredPercentPerHour"].as_str().unwrap()).unwrap();
+        let until = Decimal::from(
+            last["data"]["buckets"][0]["windows"][0]["resetsAt"]
+                .as_i64()
+                .unwrap()
+                - NOW,
+        );
+        // The budget uses 50% remaining, never the old interval's 1% floor.
+        assert!(
+            (required * until / Decimal::from(3600) - Decimal::from(50)).abs()
+                < Decimal::new(1, 10)
+        );
+        if raw {
+            let history = e
+                .execute("provider_account_history", json!({"id":id}))
+                .unwrap();
+            assert_eq!(history["observations"].as_array().unwrap().len(), 6);
+        }
+    }
+}
+
+#[test]
+fn a_new_adjustment_needs_its_own_samples_before_calibration_can_resume() {
+    let (_d, e, _) = fixture();
+    clear(&e.lock().unwrap(), "fixture").unwrap();
+    for (offset, used) in [(-3600, 95), (-1800, 99), (0, 49)] {
+        record(
+            &e.lock().unwrap(),
+            "fixture",
+            None,
+            &snapshot(NOW + offset, used),
+        )
+        .unwrap();
+    }
+    let result = compute(&e, &snapshot(NOW, 49), &[&row("gpt-6.1-sol")], 1);
+    assert_eq!(result["windows"][0]["observations"], 1);
+    assert_eq!(result["windows"][0]["reason"], "insufficient_quota_history");
+    assert!(result["windows"][0]["requiredIntensity"].is_null());
+}
 #[test]
 fn mixed_fast_and_standard_calibration_normalizes_tiers_once_and_unknown_tiers_block_fitting() {
     let (_d, e, s) = fixture();

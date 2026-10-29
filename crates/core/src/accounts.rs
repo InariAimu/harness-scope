@@ -19,6 +19,7 @@ mod custom;
 mod go_usage;
 mod history;
 mod polling;
+mod quota_history;
 pub mod sharing;
 mod sidebar_order;
 pub(crate) use polling::Polling;

@@ -4,6 +4,7 @@ import {
   historyMetrics,
   historyPoints,
   historyPlotPoints,
+  historyEstimateReason,
 } from "./providerHistory";
 import type {
   ProviderAccountObservation,
@@ -103,6 +104,65 @@ it("merges interleaved device readings without changing raw samples or dropping 
   expect(defaultHistoryPair(points)).toEqual([14, 13]);
   expect(JSON.stringify(readings)).toBe(before);
   expect(historyPoints(readings, metric, 300000)).toEqual(points);
+});
+
+it("retains large replenishments as separate measurement intervals without inventing resets", () => {
+  const metric = historyMetrics(custom("20"))[1];
+  const readings = [5, 1, 51, 50, 50, 53, 49].map((value, i) => ({
+    ...sample(20 - i, 1000 + i * 60000, String(value), i % 2 ? "b" : "a"),
+    subscriptionId: "shared", deviceId: i % 2 ? "b" : "a",
+  }));
+  const before = JSON.stringify(readings);
+  const points = historyPoints([...readings].reverse(), metric, 300000);
+  const valid = points.filter((p) => p.sample);
+  expect(valid.map((p) => p.value)).toEqual([5, 1, 51, 50, 50, 49]);
+  expect(valid.filter((p) => p.quotaAdjustment).map((p) => p.value)).toEqual([51]);
+  expect(defaultHistoryPair(points)).toEqual([18, 14]);
+  expect(valid[1].segment).not.toBe(valid[2].segment);
+  expect(valid[2].segment).toBe(valid.at(-1)!.segment);
+  const chart = historyPlotPoints(points, metric, 0);
+  expect(chart.map((p) => p.value)).toEqual([5, 1, null, 51, 50, 50, 49]);
+  expect(chart.some((p) => p.resetAnchor)).toBe(false);
+  expect(JSON.stringify(readings)).toBe(before);
+  expect(historyEstimateReason("quota_adjusted", true)).toContain("同一测量区间");
+  expect(historyEstimateReason("quota_adjusted", false)).toContain("measurement interval");
+});
+
+it("uses an inclusive 20 percentage-point threshold and the latest interval's floor", () => {
+  const metric = historyMetrics(custom("20"))[1];
+  const readings = [1, 20.99, 21, 20, 39.99, 40, 39].map((value, i) =>
+    sample(i + 1, 1000 + i * 60000, String(value)));
+  const points = historyPoints(readings, metric, 300000);
+  expect(points.filter((p) => p.sample).map((p) => p.value)).toEqual([1, 21, 20, 40, 39]);
+  expect(points.filter((p) => p.quotaAdjustment).map((p) => p.value)).toEqual([21, 40]);
+  expect(defaultHistoryPair(points)).toEqual([6, 7]);
+  expect(defaultHistoryPair(historyPoints(readings.slice(0, 3), metric, 300000))).toEqual([]);
+});
+
+it("keeps Codex adjustment boundaries across one-second deadline jitter and device handoffs", () => {
+  const metric = { ...historyMetrics(custom("20"))[1], bucketId: "codex", id: "primary" };
+  const readings = [4, 3, 51, 50, 49].map((value, i) => {
+    const s = cycleSample(i + 1, 3660000 + i * 60000, String(value), 3600 + i % 2);
+    s.provider = "openai-codex";
+    s.subscriptionId = "shared"; s.deviceId = i % 2 ? "b" : "a";
+    s.accountRevision = s.deviceId;
+    s.windows[0].bucketId = "codex"; s.windows[0].windowId = "primary";
+    s.data = { kind: "codexQuota", identity: "a".repeat(64), identitySource: "accountId", planType: "prolite", buckets: [{ id: "codex", name: null, planType: null, credits: null, windows: [] }] };
+    return s;
+  });
+  const before = JSON.stringify(readings);
+  const points = historyPoints(readings, metric, 300000);
+  expect(points.filter((p) => p.quotaAdjustment).map((p) => p.sequence)).toEqual([3]);
+  expect(defaultHistoryPair(points)).toEqual([3, 5]);
+  const chart = historyPlotPoints(points, metric, 3600000);
+  expect(chart.map((p) => p.value)).toEqual([100, 4, 3, null, 51, 50, 49]);
+  expect(chart.filter((p) => p.resetAnchor)).toHaveLength(1);
+  expect(JSON.stringify(readings)).toBe(before);
+  const reset = structuredClone(readings.at(-1)!);
+  reset.sequence = 6; reset.refreshId = "6"; reset.observedAtMs += 60000;
+  reset.windows[0].resetsAt! += 3600;
+  reset.windows[0].remainingPercent = "98";
+  expect(historyPoints([...readings, reset], metric, 300000).at(-1)?.quotaAdjustment).toBeUndefined();
 });
 
 it("does not filter replenishment without a fixed reset window or fabricate out-of-range points", () => {

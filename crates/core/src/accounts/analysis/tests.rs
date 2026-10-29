@@ -188,6 +188,44 @@ fn skips_regressing_counters_but_still_rejects_account_boundaries() {
 }
 
 #[test]
+fn replenishment_blocks_cross_interval_estimates_but_keeps_both_intervals_usable() {
+    let f = Fixture::new();
+    let old_start = f.append(0, 95);
+    let old_end = f.append(300, 99);
+    let new_start = f.append(600, 49);
+    let new_end = f.append(900, 50);
+    f.append(1200, 47); // Small delayed-device regression is still ignored.
+    let latest = f.append(1800, 51);
+    f.usage("old", 150, 4_000_000, 0);
+    f.usage("new", 750, 1_000_000, 0);
+    assert_eq!(f.estimate(old_start, old_end)["status"], "ready");
+    for end in [new_start, new_end, latest] {
+        let rejected = f.estimate(old_end, end);
+        assert_eq!(rejected["reason"], "quota_adjusted");
+        assert!(rejected["totalEquivalentUsd"].is_null());
+    }
+    let result = f.estimate(new_start, new_end);
+    assert_eq!(result["status"], "ready", "{result}");
+    assert_eq!(result["linkedUsd"], "1");
+    assert_eq!(result["totalEquivalentUsd"], "100");
+    assert_eq!(result["remainingEquivalentUsd"], "50");
+    assert_eq!(f.estimate(new_start, latest)["ignoredObservations"], 1);
+    // Even after consumption exceeds the old high-water mark, this is a boundary.
+    let caught_up = f.append(2400, 100);
+    assert_eq!(f.estimate(old_end, caught_up)["reason"], "quota_adjusted");
+}
+
+#[test]
+fn adjustment_threshold_is_inclusive_and_does_not_turn_small_regressions_into_boundaries() {
+    let f = Fixture::new();
+    let a = f.append(0, 99);
+    let small = f.append(300, 80);
+    let boundary = f.append(600, 79);
+    assert_eq!(f.estimate(a, small)["reason"], "quota_decreased");
+    assert_eq!(f.estimate(a, boundary)["reason"], "quota_adjusted");
+}
+
+#[test]
 fn short_flat_rolling_unknown_and_expired_samples_do_not_produce_capacity() {
     let f = Fixture::new();
     let a = f.append(0, 20);
@@ -262,6 +300,20 @@ fn codex_requires_verified_identity_and_a_mapped_bucket_before_pricing() {
         f.patch_observation(seq, |v| v["data"]["identitySource"] = json!("accountId"));
     }
     assert_eq!(query("codex")["totalEquivalentUsd"], "50");
+    f.patch_observation(b, |v| {
+        let reset = v["windows"][0]["resetsAt"].as_i64().unwrap();
+        v["windows"][0]["resetsAt"] = json!(reset + 1);
+    });
+    assert_eq!(query("codex")["totalEquivalentUsd"], "50");
+    f.patch_observation(b, |v| {
+        let reset = v["windows"][0]["resetsAt"].as_i64().unwrap();
+        v["windows"][0]["resetsAt"] = json!(reset + 1);
+    });
+    assert_eq!(query("codex")["reason"], "different_window");
+    f.patch_observation(b, |v| {
+        let reset = v["windows"][0]["resetsAt"].as_i64().unwrap();
+        v["windows"][0]["resetsAt"] = json!(reset - 2);
+    });
     for seq in [a, b] {
         f.patch_observation(seq, |v| {
             v["windows"][0]["bucketId"] = json!("extra");

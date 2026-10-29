@@ -210,6 +210,50 @@ fn interleaved_devices_keep_usage_exact_and_filter_delayed_quota_counters() {
 }
 
 #[test]
+fn synchronized_replenishment_starts_a_new_interval_on_both_devices() {
+    let (_da, a) = engine();
+    let (_db, b) = engine();
+    let (_ds, server) = engine();
+    let start = Utc::now().timestamp() - 3600;
+    let reset = start + 86400;
+    let av = account(&a, Some("new"));
+    let aid = av["account"]["id"].as_str().unwrap();
+    exchange(&a, &server.lock().unwrap());
+    exchange(&b, &server.lock().unwrap());
+    let bv = account(&b, av["account"]["sharedSubscriptionId"].as_str());
+    let bid = bv["account"]["id"].as_str().unwrap();
+    append(&a, aid, start, 99, reset);
+    append(&b, bid, start + 600, 49, reset);
+    append(&a, aid, start + 1200, 50, reset);
+    append(&b, bid, start + 1500, 48, reset); // Still a delayed counter, not an adjustment.
+    append(&b, bid, start + 1800, 51, reset);
+    usage(&a, "new-interval-request", start + 900);
+    // Price configuration stays local, so install the same fixture rates on B.
+    let prices = a.lock().unwrap().prices().unwrap();
+    b.lock().unwrap().set_meta("prices", &prices).unwrap();
+    for e in [&b, &a, &b, &a, &b] {
+        exchange(e, &server.lock().unwrap());
+    }
+    for (e, id) in [(&a, aid), (&b, bid)] {
+        let rows = history_rows(e, id);
+        let rows = rows.as_array().unwrap();
+        assert_eq!(rows.len(), 5);
+        let estimate = |first: usize| {
+            e.execute("provider_account_estimate", json!({
+            "id":id,"firstSequence":rows[first]["sequence"],"lastSequence":rows[0]["sequence"],"windowId":"weekly"
+        })).unwrap()
+        };
+        assert_eq!(estimate(4)["reason"], "quota_adjusted");
+        let current = estimate(3);
+        assert_eq!(current["status"], "ready", "{current}");
+        assert_eq!(current["ignoredObservations"], 1);
+        assert_eq!(current["deltaPercent"], "2");
+        assert_eq!(current["requests"], 1);
+        assert_eq!(current["totalEquivalentUsd"], "250");
+    }
+}
+
+#[test]
 fn identity_conflicts_forgery_and_nonallowlisted_data_roll_back_atomically() {
     let (_da, a) = engine();
     let (_ds, server) = engine();
