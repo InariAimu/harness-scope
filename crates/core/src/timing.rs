@@ -25,9 +25,17 @@ pub(crate) struct SpeedEstimate {
 }
 
 pub(crate) fn speed_estimate(_harness: &str, timing: &UsageTiming, output: u64) -> SpeedEstimate {
-    // First-token timestamps vary by source and remain estimates. Use E2E
-    // only when no first-token time was recorded.
-    let (basis, duration_ms) = match timing.first_token_ms {
+    speed_estimate_for_display(timing, output, false)
+}
+
+pub(crate) fn speed_estimate_for_display(
+    timing: &UsageTiming,
+    output: u64,
+    end_to_end: bool,
+) -> SpeedEstimate {
+    // First-token timestamps remain estimates. The default only falls back to
+    // E2E when TTFT is missing; an explicit E2E choice always uses total time.
+    let (basis, duration_ms) = match timing.first_token_ms.filter(|_| !end_to_end) {
         Some(first) => (
             SpeedBasis::Decode,
             (first >= 0)

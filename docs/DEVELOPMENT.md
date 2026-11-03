@@ -47,6 +47,8 @@ npm run tauri -- build --debug --no-bundle -- --locked
 
 两个命令都会执行前端版本检查、TypeScript 检查和 Vite 构建。当前 `bundle.active=false`，不生成安装器；签名和自动更新未配置。其他平台需要在对应系统安装依赖并验证构建。
 
+本机最新已验证产物集中在 [releases/](../releases/README.md)，按 `windows-x86_64/`（桌面版）和 `linux-x86_64/`（同步服务端）区分，并附构建清单与 SHA-256。可执行文件和生成清单不进入 Git；该目录不是独立便携数据目录，也不会自动发布到 GitHub。
+
 ## 浏览器开发与合成演示
 
 浏览器通过 Vite 的 `/api` 代理访问本机 Rust 服务。`--local` 服务具有本机文件访问能力，强制限制在 loopback；生产同步服务不提供该命令 API。

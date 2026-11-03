@@ -15,6 +15,12 @@ const stat = (date: string, requests = 0) => ({
 });
 const ts = (s: string) => Date.parse(s) / 1000;
 describe("continuous trend chart categories", () => {
+  it("keeps unpriced coverage separate from zero and partial known costs", () => {
+    const rows=[{...stat("2026-10-19T00:00:00Z",1),unpricedCount:1},{...stat("2026-10-19T01:00:00Z",2),unpricedCount:1,totalCost:"2"},stat("2026-10-19T02:00:00Z",1)];
+    const points=buildUsageTrendChartData(rows,{isHourly:true,dateLocale:"en-US",timeZone:"UTC",startDate:ts(rows[0].date),endDate:ts(rows[2].date)});
+    expect(points.map(p=>p.cost)).toEqual([null,2,0]);
+    expect(points.map(p=>p.unpricedCount)).toEqual([1,1,undefined]);
+  });
   it("keeps empty hours and formats midnight in the configured timezone", () => {
     const points = buildUsageTrendChartData(
       [

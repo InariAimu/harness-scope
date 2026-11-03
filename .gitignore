@@ -15,3 +15,9 @@ output/
 .playwright-cli/
 __pycache__/
 *.py[cod]
+
+# Latest verified executable snapshots (documentation remains tracked).
+/releases/windows-x86_64/harness-scope-desktop.exe
+/releases/linux-x86_64/harness-scope-service
+/releases/manifest.json
+/releases/SHA256SUMS.txt

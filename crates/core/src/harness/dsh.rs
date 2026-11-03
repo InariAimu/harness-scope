@@ -1,10 +1,10 @@
-//! DeepSeek Harness session logs: disjoint per-call usage, never stream totals.
+//! DeepSeek Harness session logs: disjoint usage, one settlement per model attempt.
 use super::{files, transcript, Descriptor, HarnessAdapter, ParseResult, TimelineIndex};
 use crate::model::{ParsedUsage, Session, Tokens, UsageTiming};
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
 };
 
@@ -190,18 +190,56 @@ fn seed_boundary(h: &Value, events: &[Value]) -> Result<u64> {
     Ok(0)
 }
 
+/// A message's explicit accounting wins; otherwise use the last embedded sample.
+/// Attempts have no top-level usage. Missing accounting is valid, unlike null or
+/// malformed counters, and does not establish a zero-token request.
+fn reported_usage(event: &Value) -> Option<&Value> {
+    let d = &event["data"];
+    if event["type"] == "assistant/message" {
+        if let Some(usage) = d.get("usage") {
+            return Some(usage);
+        }
+    }
+    d["stream"]
+        .as_array()?
+        .iter()
+        .rev()
+        .find(|row| row["type"] == "chunk" && row["chunk"]["type"] == "usage")
+        .map(|row| &row["chunk"]["usage"])
+}
+
+fn usage_id(event: &Value, session: &str) -> Result<(String, String)> {
+    if event["type"] == "assistant/attempt" {
+        let seq = event["seq"]
+            .as_u64()
+            .context("Missing DSH attempt sequence")?;
+        // A separate namespace cannot collide with any native message ID.
+        return Ok((
+            format!("dsh-attempt:{session}:{seq}"),
+            format!("attempt:{seq}"),
+        ));
+    }
+    let id = event["data"]["message"]["id"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .context("Missing DSH message ID")?;
+    Ok((format!("dsh:{session}:{id}"), id.into()))
+}
+
+struct Settlement {
+    key: (u64, u64),
+    id: Option<String>,
+}
+
 fn parse_call(
     event: &Value,
     session: &str,
+    usage: &Value,
+    request_route: Option<&Value>,
     timing: Option<UsageTiming>,
 ) -> Result<Option<ParsedUsage>> {
     let d = &event["data"];
-    let usage = &d["usage"];
-    // Replacement nodes replay history; an empty usage-host message is still billable.
-    if event["surfaceOp"].is_object() {
-        return Ok(None);
-    }
-    anyhow::ensure!(usage.is_object(), "Missing or invalid DSH usage");
+    anyhow::ensure!(usage.is_object(), "Invalid DSH usage");
     let tokens = Tokens {
         input: counter(usage, "inputTokens", true)?,
         output: counter(usage, "outputTokens", true)?,
@@ -217,12 +255,14 @@ fn parse_call(
     if tokens.total() == 0 {
         return Ok(None);
     }
-    let message = &d["message"];
-    let id = message["id"]
-        .as_str()
-        .filter(|s| !s.is_empty())
-        .context("Missing DSH message ID")?;
-    let model = message["source"]["model"]
+    let (id, native_event_id) = usage_id(event, session)?;
+    let source = if event["type"] == "assistant/attempt" {
+        // Use the header that preceded this attempt, never a later retry's model.
+        request_route.context("Missing DSH attempt request route")?
+    } else {
+        &d["message"]["source"]
+    };
+    let model = source["model"]
         .as_str()
         .filter(|s| !s.is_empty())
         .context("Missing DSH model")?;
@@ -232,10 +272,10 @@ fn parse_call(
         .context("Missing DSH request timestamp")?;
     Ok(Some(ParsedUsage {
         request_metadata: None,
-        provider: crate::providers::parse(message["source"]["provider"].as_str()),
-        id: format!("dsh:{session}:{id}"),
+        provider: crate::providers::parse(source["provider"].as_str()),
+        id,
         session_id: session.into(),
-        native_event_id: id.into(),
+        native_event_id,
         occurred_at: at / 1000,
         model: model.into(),
         tokens,
@@ -249,7 +289,7 @@ impl HarnessAdapter for Dsh {
         Descriptor {
             id: "dsh",
             name: "DeepSeek Harness",
-            parser_version: "dsh-jsonl-v2-provider",
+            parser_version: "dsh-jsonl-v3-attempts",
             default_roots: vec![home().join("sessions").to_string_lossy().into()],
             usage: true,
             transcript: true,
@@ -314,6 +354,10 @@ impl HarnessAdapter for Dsh {
         };
         let mut expected = 0;
         let mut calls = BTreeMap::new();
+        let mut retained = BTreeSet::new();
+        let mut missing: BTreeMap<_, Vec<String>> = BTreeMap::new();
+        let mut last: Option<Settlement> = None;
+        let mut request_route = None;
         let mut steps: BTreeMap<(u64, u64), (i64, Option<i64>)> = BTreeMap::new();
         for event in events.iter().skip(1) {
             let span = sequence_span(event).and_then(|(seq, len)| {
@@ -332,15 +376,30 @@ impl HarnessAdapter for Dsh {
                 }
             };
             expected = next;
+            let d = &event["data"];
+            if event["type"] == "request/header" {
+                // Headers in an inherited prefix can still describe the next call.
+                request_route = Some(&d["header"]["config"]);
+            }
             if seq < boundary {
                 continue;
             }
-            let d = &event["data"];
             let key = (
                 d["turn"].as_u64().unwrap_or(0),
                 d["step"].as_u64().unwrap_or(0),
             );
-            if event["type"] == "step/start" {
+            if event["type"] == "llm/retry-started" {
+                if last.as_ref().is_some_and(|last| last.key == key) {
+                    last = None;
+                }
+                // Unknown usage from the preceding attempt remains unknown.
+                missing.remove(&key);
+                steps.remove(&key);
+            }
+            if matches!(
+                event["type"].as_str(),
+                Some("step/start" | "llm/retry-started")
+            ) {
                 if let Some(time) = event["time"].as_i64() {
                     steps.insert(key, (time, None));
                 }
@@ -361,28 +420,71 @@ impl HarnessAdapter for Dsh {
                     }
                 }
             }
-            if event["type"] != "assistant/message" {
+            if !matches!(
+                event["type"].as_str(),
+                Some("assistant/message" | "assistant/attempt")
+            ) || event["surfaceOp"].is_object()
+            {
                 continue;
             }
-            let timing = steps.get(&key).and_then(|(start, first)| {
-                let nested = d["stream"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .find_map(delta_time);
-                UsageTiming::estimate(
-                    *start,
-                    event["time"].as_i64()?,
-                    first.or(nested),
-                    "dsh_step_message",
-                    "dsh_stream_delta",
-                )
-            });
-            match parse_call(event, session, timing) {
-                Ok(Some(call)) => {
-                    calls.insert(call.id.clone(), call);
+            if d["turn"].as_u64().is_none() || d["step"].as_u64().is_none() {
+                out.complete = false;
+                out.diagnostics.push(format!(
+                    "DSH seq {seq}: Missing or invalid DSH attempt boundary"
+                ));
+                continue;
+            }
+            let Some(usage) = reported_usage(event) else {
+                match usage_id(event, session) {
+                    Ok((id, _)) => {
+                        retained.insert(id.clone());
+                        missing.entry(key).or_default().push(id);
+                    }
+                    Err(e) => {
+                        out.complete = false;
+                        out.diagnostics.push(format!("DSH seq {seq}: {e}"));
+                    }
                 }
-                Ok(None) => {}
+                continue;
+            };
+            // Failed attempts count usage, but are not successful-output speed samples.
+            let timing = steps
+                .get(&key)
+                .filter(|_| event["type"] == "assistant/message")
+                .and_then(|(start, first)| {
+                    let nested = d["stream"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .find_map(delta_time);
+                    UsageTiming::estimate(
+                        *start,
+                        event["time"].as_i64()?,
+                        first.or(nested),
+                        "dsh_step_message",
+                        "dsh_stream_delta",
+                    )
+                });
+            match parse_call(event, session, usage, request_route, timing) {
+                Ok(call) => {
+                    if let Some(previous) = last.as_ref().filter(|last| last.key == key) {
+                        if let Some(id) = &previous.id {
+                            calls.remove(id);
+                        }
+                    }
+                    if let Some(ids) = missing.remove(&key) {
+                        for id in ids {
+                            retained.remove(&id);
+                        }
+                    }
+                    last = Some(Settlement {
+                        key,
+                        id: call.as_ref().map(|call| call.id.clone()),
+                    });
+                    if let Some(call) = call {
+                        calls.insert(call.id.clone(), call);
+                    }
+                }
                 Err(e) => {
                     out.complete = false;
                     out.diagnostics.push(format!("DSH seq {seq}: {e}"));
@@ -395,6 +497,7 @@ impl HarnessAdapter for Dsh {
                 .push("DSH inherited prefix is incomplete".into());
         }
         out.usage = calls.into_values().collect();
+        out.retained_ids = retained.into_iter().collect();
         Ok(out)
     }
 

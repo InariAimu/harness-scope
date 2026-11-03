@@ -32,6 +32,9 @@ import {
   resolveMoneyDisplay,
   resolveSidebarToday,
   resolveTrendChartType,
+  resolveSpeedCalculation,
+  SPEED_CALCULATIONS,
+  type SpeedCalculation,
   type DisplayCurrency,
   SIDEBAR_TODAY_ITEMS,
   SIDEBAR_TODAY_MAX_ITEMS,
@@ -241,6 +244,24 @@ export function UsageDisplaySection({
   };
 
   const savedChartType = resolveTrendChartType(value);
+  const savedSpeedCalculation = resolveSpeedCalculation(value);
+  const [speedCalculation, setSpeedCalculation] = useState(savedSpeedCalculation);
+  const [savingSpeedCalculation, setSavingSpeedCalculation] = useState(false);
+  useEffect(() => {
+    if (!pendingSaves.current) setSpeedCalculation(savedSpeedCalculation);
+  }, [savedSpeedCalculation]);
+  const changeSpeedCalculation = async (next: SpeedCalculation) => {
+    setSpeedCalculation(next);
+    setSavingSpeedCalculation(true);
+    try {
+      if ((await save({ speedCalculation: next })) === false) {
+        setSpeedCalculation(savedSpeedCalculation);
+      }
+    } finally {
+      setSavingSpeedCalculation(false);
+    }
+  };
+
   const [chartType, setChartType] = useState<TrendChartType>(savedChartType);
   useEffect(() => {
     if (!pendingSaves.current) setChartType(savedChartType);
@@ -509,6 +530,28 @@ export function UsageDisplaySection({
               ))}
             </SelectContent>
           </Select>
+          <span className="text-body text-fg-2">
+            {t("usage.display.speedCalculation")}
+          </span>
+          <Select
+            value={speedCalculation}
+            disabled={savingSpeedCalculation}
+            onValueChange={(next) => {
+              const picked = SPEED_CALCULATIONS.find(mode => mode === next);
+              if (picked && picked !== speedCalculation) void changeSpeedCalculation(picked);
+            }}
+          >
+            <SelectTrigger className="h-7 w-full text-body" aria-label={t("usage.display.speedCalculation")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SPEED_CALCULATIONS.map(mode => (
+                <SelectItem key={mode} value={mode}>
+                  {t(`usage.display.speedCalculations.${mode}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <p className="col-span-2 m-0 text-caption tabular-nums text-fg-3 md:col-span-4">
             {t("usage.display.numberPreview", {
               small: previewNumber(12345),
@@ -520,6 +563,9 @@ export function UsageDisplaySection({
             {t("usage.display.numberFormatHint")}
           </p>
         </div>
+        <p className="m-0 mt-1.5 text-caption text-fg-3">
+          {t(`usage.display.speedCalculationHints.${speedCalculation}`)}
+        </p>
         {currency !== "USD" && (
           <p
             className={

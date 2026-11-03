@@ -26,7 +26,8 @@ fn request_blocks_exclude_tool_time_keep_reasoning_as_subset_and_ignore_cost_sta
     assert!(rows.complete && rows.diagnostics.is_empty());
     assert_eq!(rows.usage.len(), 2);
     let first = &rows.usage[0];
-    assert_eq!(first.id, "claude:claude-modern:message-one");
+    assert!(first.id.starts_with("claude:request:"));
+    assert_eq!(first.native_event_id, "message-one");
     assert_eq!(
         (
             first.tokens.output,

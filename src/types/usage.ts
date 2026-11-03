@@ -88,7 +88,12 @@ export interface SessionSpeedEstimate {
   minDurationMs: number;
 }
 
-export interface DataSourceSummary {
+export interface CostCoverage {
+  unpricedCount?: number;
+  unpricedTokens?: number;
+  pricedCount?: number;
+}
+export interface DataSourceSummary extends CostCoverage {
   dataSource: string;
   requestCount: number;
   totalCostUsd: string;
@@ -102,6 +107,7 @@ export interface PaginatedLogs {
 }
 
 export interface ModelPricing {
+  requestTariff?: RequestTariff | null;
   goTariff?: GoTariff;
   provider?: string | null;
   billingBasis?: "subscription_usage" | null;
@@ -116,6 +122,22 @@ export interface ModelPricing {
   outputCostPerMillion: string;
   cacheReadCostPerMillion: string;
   cacheCreationCostPerMillion: string;
+}
+export interface RequestPriceTier {
+  id: string;
+  speed: "fast" | "standard" | null;
+  abovePromptTokens: number;
+  effectiveFrom?: number | null;
+  effectiveUntil?: number | null;
+  inputCostPerMillion: string;
+  outputCostPerMillion: string;
+  cacheReadCostPerMillion: string;
+  cacheCreationCostPerMillion: string;
+}
+export interface RequestTariff {
+  version: string;
+  tiers: RequestPriceTier[];
+  selectedTier?: string;
 }
 
 export interface PricingSettings {
@@ -138,7 +160,7 @@ export interface ModelsDevSyncState {
   configPath: string;
 }
 
-export interface UsageSummary {
+export interface UsageSummary extends CostCoverage {
   /** False when the scope includes a source with unsplit prompt totals. */
   cacheBreakdownKnown?: boolean;
   subscriptionUsageCount?: number;
@@ -163,7 +185,7 @@ export interface UsageSummaryByApp {
   summary: UsageSummary;
 }
 
-export interface TrendModelStats {
+export interface TrendModelStats extends CostCoverage {
   model: string;
   requestCount: number;
   totalTokens: number;
@@ -171,7 +193,7 @@ export interface TrendModelStats {
   costConverted?: boolean;
 }
 
-export interface DailyStats {
+export interface DailyStats extends CostCoverage {
   costConverted?: boolean;
   date: string;
   requestCount: number;
@@ -185,7 +207,7 @@ export interface DailyStats {
   modelBreakdown?: TrendModelStats[];
 }
 
-export interface ProviderStats {
+export interface ProviderStats extends CostCoverage {
   costConverted?: boolean;
   providerId: string;
   appType: string;
@@ -215,7 +237,7 @@ export interface ProviderStats {
   estFirstTokenMedianMs?: number | null;
 }
 
-export interface ModelStats {
+export interface ModelStats extends CostCoverage {
   appType?: string;
   rowKey?: string;
   /** Codex-only grouping; model keeps its original name for pricing and filtering. */
@@ -226,7 +248,7 @@ export interface ModelStats {
   /** 真实消耗 Tokens（新增输入 + 输出 + 缓存写入 + 缓存命中），与指标卡同口径 */
   totalTokens: number;
   totalCost: string;
-  avgCostPerRequest: string;
+  avgCostPerRequest: string | null;
   successRate: number | null;
   /** 速度分子分母与样本数，口径同 ProviderStats */
   speedOutputTokens?: number;

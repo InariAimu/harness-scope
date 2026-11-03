@@ -49,6 +49,9 @@ export function UsageCompositionChart({
     return getUsageProviderLabel(key, t).label;
   };
   const metricLabel = t(`usage.trend.${metric}`);
+  const unpriced = dimension === "harnesses"
+    ? (harnesses.data ?? []).filter(row => !appType || row.appType === appType).reduce((n,row) => n+(row.summary.unpricedCount ?? 0),0)
+    : (dimension === "models" ? models.data ?? [] : providers.data ?? []).reduce((n,row) => n+(row.unpricedCount ?? 0),0);
   const shareLabel = (share: number) => share < 0.001
     ? `<${percent.format(0.001)}` : percent.format(share);
   const valueLabel = (value: number, converted: boolean, full = false) => metric === "cost"
@@ -70,7 +73,7 @@ export function UsageCompositionChart({
   );
   if (data.total <= 0) return (
     <div className="flex h-full items-center justify-center text-caption text-fg-3">
-      {t(metric === "cost" ? "usage.chart.noCost" : "usage.noData")}
+      {metric === "cost" && unpriced ? t("usage.unpricedRequests",{count:unpriced}) : t(metric === "cost" ? "usage.chart.noCost" : "usage.noData")}
     </div>
   );
 
@@ -110,6 +113,7 @@ export function UsageCompositionChart({
         </div>
       </div>
       <ul aria-label={t(`usage.chart.${dimension}`)} className="m-0 min-w-0 flex-1 list-none p-0 text-caption">
+        {metric === "cost" && unpriced > 0 && <li className="mb-2 border-b border-border pb-2 text-fg-2">{t("usage.unpricedRequests",{count:unpriced})}</li>}
         {slices.map(slice => (
           <li key={slice.key} title={slice.tooltip} className="flex h-[22px] min-w-0 items-center gap-2">
             <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-[2px]" style={{ backgroundColor: slice.color }} />

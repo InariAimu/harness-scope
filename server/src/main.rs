@@ -20,7 +20,11 @@ struct Args {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let engine = Arc::new(Engine::open(&args.db)?);
+    let engine = Arc::new(if args.local {
+        Engine::open(&args.db)?
+    } else {
+        Engine::open_sync_server(&args.db)?
+    });
     if args.compact {
         engine
             .lock()?

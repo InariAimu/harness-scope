@@ -11,6 +11,12 @@ const models: TrendModelStats[] = [
 ];
 
 describe("trend model breakdown", () => {
+  it("does not label unpriced models as a free zero-cost slice", () => {
+    const unknown = {...models[0],totalCost:"0",unpricedCount:1};
+    expect(buildTrendModelBreakdown([unknown],"cost").slices).toEqual([]);
+    expect(buildTrendModelBreakdown([unknown],"tokens").total).toBe(40);
+    expect(buildTrendModelBreakdown([unknown,models[1]],"cost").total).toBe(0.02);
+  });
   it("keeps the complete denominator when showing Top 3 plus Other", () => {
     const result = buildTrendModelBreakdown(models, "tokens");
     expect(result.total).toBe(100);

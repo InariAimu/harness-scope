@@ -52,6 +52,7 @@ pub fn prices() -> Vec<Price> {
     ]
     .into_iter()
     .map(|(id, name, input, output, hit)| Price {
+        request_tariff: None,
         go_tariff: None,
         provider: Some("deepseek-official".into()),
         billing_basis: None,

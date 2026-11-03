@@ -53,7 +53,10 @@ pub(crate) fn is_compressed(path: &Path) -> bool {
 // filename formats must still be read and checked against their metadata.
 fn may_match_dependencies(path: &Path, needed: &HashSet<String>) -> bool {
     let name = codex::logical_name(path);
-    let stem = name.strip_suffix(".jsonl").unwrap_or(&name);
+    let stem = name
+        .strip_suffix(".jsonl")
+        .or_else(|| name.strip_suffix(".json"))
+        .unwrap_or(&name);
     let Some(last) = stem
         .len()
         .checked_sub(36)
@@ -75,7 +78,12 @@ fn may_match_dependencies(path: &Path, needed: &HashSet<String>) -> bool {
     leading.is_some_and(|id| needed.contains(&id.to_string()))
 }
 
-pub(crate) fn scan(engine: &Engine, force: bool, report: &mut ScanReport) -> Result<()> {
+pub(crate) fn scan(
+    engine: &Engine,
+    force: bool,
+    archives: bool,
+    report: &mut ScanReport,
+) -> Result<()> {
     let config = engine.lock()?.config()?;
     let mut paths = BTreeSet::new();
     for source in config
@@ -88,9 +96,31 @@ pub(crate) fn scan(engine: &Engine, force: bool, report: &mut ScanReport) -> Res
             Err(e) => report.errors.push(e.to_string()),
         }
     }
-    // Compressed rollouts are archived history. Keep already imported facts and
-    // cached parent contexts, but do not decompress them during collection.
-    paths.retain(|p| !is_compressed(p));
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let initial = {
+        let s = engine.lock()?;
+        let empty: bool =
+            s.conn
+                .query_row("SELECT NOT EXISTS(SELECT 1 FROM records)", [], |r| r.get(0))?;
+        let initial = s
+            .meta::<bool>("codex_archive_initial_pending")?
+            .unwrap_or(false)
+            || (empty
+                && !s
+                    .meta::<bool>("codex_archive_initialized")?
+                    .unwrap_or(false));
+        if initial {
+            s.set_meta("codex_archive_initial_pending", &true)?;
+        }
+        initial
+    };
+    // Ordinary force refreshes also skip archives. Only an empty first import or
+    // the separately confirmed per-harness action opts into decompression.
+    if !archives && !initial {
+        paths.retain(|p| !is_compressed(p));
+    }
     if paths.is_empty() {
         return Ok(());
     }
@@ -205,6 +235,9 @@ pub(crate) fn scan(engine: &Engine, force: bool, report: &mut ScanReport) -> Res
         let mut rows = stmt.query([])?;
         while let Some(row) = rows.next()? {
             let path: String = row.get(0)?;
+            if !archives && !initial && is_compressed(Path::new(&path)) {
+                continue;
+            }
             if !may_match_dependencies(Path::new(&path), &needed) {
                 continue;
             }
@@ -390,6 +423,13 @@ pub(crate) fn scan(engine: &Engine, force: bool, report: &mut ScanReport) -> Res
                     .push(format!("Codex session {session}: {e:#}"));
             }
         }
+    }
+    if initial && report.errors.is_empty() && report.deferred_files == 0 {
+        let s = engine.lock()?;
+        s.transaction(|| {
+            s.set_meta("codex_archive_initialized", &true)?;
+            s.set_meta("codex_archive_initial_pending", &false)
+        })?;
     }
     Ok(())
 }

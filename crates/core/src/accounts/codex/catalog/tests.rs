@@ -1,4 +1,72 @@
 use super::*;
+
+#[test]
+fn unchanged_previous_defaults_follow_the_new_bundle_but_edits_stay_local() {
+    let old: Catalog = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/codex/allowances-2026-10-20.json"
+    )))
+    .unwrap();
+    assert_eq!(revision(&old), PREVIOUS_DEFAULT_REVISION);
+    let tmp = tempfile::tempdir().unwrap();
+    let s = Store::open(&tmp.path().join("scope.db")).unwrap();
+    s.set_meta(META, &old).unwrap();
+    let loaded = load(&s).unwrap();
+    assert_eq!(loaded.version, "modeldial-2026-11-02");
+    assert!(find(&loaded, "gpt-6.1-terra").is_some());
+    assert_eq!(
+        revision(&s.meta::<Catalog>(META).unwrap().unwrap()),
+        PREVIOUS_DEFAULT_REVISION
+    );
+    let mut edited = old;
+    edited.models[0]
+        .estimates
+        .get_mut("plus")
+        .unwrap()
+        .weekly
+        .as_mut()
+        .unwrap()
+        .api_equivalent_usd = "77".into();
+    s.set_meta(META, &edited).unwrap();
+    assert_eq!(revision(&load(&s).unwrap()), revision(&edited));
+    assert!(s.pending().unwrap().is_empty());
+}
+
+#[test]
+fn every_current_model_has_four_weekly_samples_and_terra_keeps_its_source_basis() {
+    let c = defaults();
+    assert_eq!(c.models.len(), 5);
+    for model in &c.models {
+        for plan in ["plus", "pro100", "pro200", "pro500"] {
+            assert_eq!(
+                resolve(&c, model, plan, "weekly", "modeldial")
+                    .unwrap()
+                    .unwrap()
+                    .basis,
+                "modeldial"
+            );
+        }
+    }
+    let terra = find(&c, "openai/gpt-6.1-terra").unwrap();
+    for (plan, dollars, tokens) in [
+        ("plus", "46.8", "475126904"),
+        ("pro100", "690.0733258795349", "7005820567"),
+        ("pro200", "961.8461538461538", "9415384615"),
+        ("pro500", "2485.846153846154", "24276923077"),
+    ] {
+        let capacity = resolve(&c, terra, plan, "weekly", "modeldial")
+            .unwrap()
+            .unwrap();
+        assert_eq!(capacity.api_equivalent_usd, dollars);
+        assert_eq!(capacity.tokens.as_deref(), Some(tokens));
+    }
+    assert!(!c
+        .subscription_speed
+        .fast_model_ids
+        .iter()
+        .any(|id| id == "gpt-6.1-terra"));
+}
+
 #[test]
 fn speed_rules_keep_subscription_and_credit_multipliers_separate_and_load_old_catalogs() {
     let mut raw = serde_json::to_value(defaults()).unwrap();
@@ -30,22 +98,22 @@ fn speed_rules_keep_subscription_and_credit_multipliers_separate_and_load_old_ca
     assert!(validate(&c).is_err());
 }
 #[test]
-fn screenshot_values_preserve_per_model_api_equivalents_and_100_million_token_units() {
+fn current_source_values_preserve_per_model_api_equivalents_and_tokens() {
     let c = defaults();
     validate(&c).unwrap();
     let model = find(&c, "openai/gpt-6.1-sol").unwrap();
     let actual = resolve(&c, model, "pro100", "weekly", "modeldial")
         .unwrap()
         .unwrap();
-    assert_eq!(actual.api_equivalent_usd, "345");
-    assert_eq!(actual.tokens.as_deref(), Some("1751000000"));
+    assert_eq!(actual.api_equivalent_usd, "690.0733258795349");
+    assert_eq!(actual.tokens.as_deref(), Some("3502910284"));
     assert_eq!(actual.basis, "modeldial");
     assert_eq!(
         resolve(&c, model, "plus", "weekly", "modeldial")
             .unwrap()
             .unwrap()
             .api_equivalent_usd,
-        "47"
+        "46.8"
     );
     assert_eq!(
         resolve(&c, model, "plus", "rolling", "modeldial")
@@ -55,10 +123,10 @@ fn screenshot_values_preserve_per_model_api_equivalents_and_100_million_token_un
         "7.8"
     );
     for (plan, usd, tokens) in [
-        ("plus", "66", "43000000"),
-        ("pro100", "481", "227000000"),
-        ("pro200", "669", "438000000"),
-        ("pro500", "1605", "1062000000"),
+        ("plus", "66", "42690815"),
+        ("pro100", "962", "453375300"),
+        ("pro200", "1337.076923076923", "876923077"),
+        ("pro500", "3210", "2123076923"),
     ] {
         let value = resolve(
             &c,
@@ -81,11 +149,20 @@ fn theoretical_mode_and_missing_sample_fallback_are_explicit_and_never_use_month
     let theory = resolve(&c, model, "pro100", "weekly", "theoretical")
         .unwrap()
         .unwrap();
-    assert_eq!(theory.api_equivalent_usd, "235");
+    assert_eq!(theory.api_equivalent_usd, "234");
     assert_eq!(theory.basis, "theoretical");
     assert!(resolve(&c, model, "pro100", "rolling", "modeldial")
         .unwrap()
         .is_none());
+    // Explicitly remove a now-available sample to exercise optional fallback.
+    c.models
+        .iter_mut()
+        .find(|m| m.id == "gpt-6-sol")
+        .unwrap()
+        .estimates
+        .get_mut("pro200")
+        .unwrap()
+        .weekly = None;
     let missing = resolve(
         &c,
         find(&c, "gpt-6-sol").unwrap(),
@@ -97,7 +174,7 @@ fn theoretical_mode_and_missing_sample_fallback_are_explicit_and_never_use_month
     .unwrap();
     assert_eq!(missing.api_equivalent_usd, "660");
     assert_eq!(missing.basis, "theoretical");
-    assert_eq!(missing.tokens.as_deref(), Some("2590000000"));
+    assert_eq!(missing.tokens.as_deref(), Some("2592301650"));
     let divided = resolve(
         &c,
         find(&c, "gpt-6-astra").unwrap(),

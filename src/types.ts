@@ -238,4 +238,5 @@ export interface UsageDisplaySettings {
   trendChartType?: string;
   numberUnitStyle?: string;
   numberDecimals?: number;
+  speedCalculation?: string;
 }

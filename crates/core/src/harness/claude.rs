@@ -4,7 +4,49 @@ use anyhow::Result;
 use serde_json::Value;
 use std::{collections::BTreeMap, path::Path};
 pub struct Claude;
-pub const PARSER_VERSION: &str = "claude-v2-request-timing";
+pub const PARSER_VERSION: &str = "claude-v3-request-identity-advisor";
+
+fn event_id(session: &str, id: &str, v: &Value) -> String {
+    let request = v["requestId"]
+        .as_str()
+        .or_else(|| v["requestRef"].as_str())
+        .filter(|s| !s.is_empty());
+    let identity = if let Some(request) = request {
+        serde_json::json!([id, request])
+    } else if id.starts_with("msg_") || id.starts_with("msg-") {
+        serde_json::json!([id])
+    } else {
+        // Gateway IDs may be constants. Without a request identifier only the
+        // original session + timestamp is reliable; never merge on tokens alone.
+        serde_json::json!([session, id, v["timestamp"]])
+    };
+    format!(
+        "claude:request:{}",
+        files::hash(identity.to_string().as_bytes())
+    )
+}
+
+fn tokens(u: &Value) -> Result<Tokens> {
+    files::validate_usage(u)?;
+    let reasoning = &u["output_tokens_details"]["thinking_tokens"];
+    anyhow::ensure!(
+        reasoning.is_null() || reasoning.as_u64().is_some(),
+        "Invalid thinking_tokens"
+    );
+    let t = Tokens {
+        input: files::number(u, "input_tokens"),
+        output: files::number(u, "output_tokens"),
+        cache_read: files::number(u, "cache_read_input_tokens"),
+        cache_write: files::number(u, "cache_creation_input_tokens"),
+        cache_write1h: files::number(&u["cache_creation"], "ephemeral_1h_input_tokens"),
+        reasoning: reasoning.as_u64().unwrap_or(0),
+    };
+    anyhow::ensure!(
+        t.cache_write1h <= t.cache_write && t.reasoning <= t.output,
+        "Invalid cache write or reasoning subset"
+    );
+    Ok(t)
+}
 
 fn session_id(path: &Path, v: &Value) -> String {
     v["sessionId"]
@@ -74,34 +116,18 @@ impl HarnessAdapter for Claude {
                 continue;
             };
             let session = session_id(path, v);
-            let reasoning = &u["output_tokens_details"]["thinking_tokens"];
-            if !reasoning.is_null() && reasoning.as_u64().is_none() {
-                out.diagnostics
-                    .push(format!("{id}: invalid thinking_tokens"));
-                out.complete = false;
-                continue;
-            }
-            let tokens = Tokens {
-                input: files::number(u, "input_tokens"),
-                output: files::number(u, "output_tokens"),
-                cache_read: files::number(u, "cache_read_input_tokens"),
-                cache_write: files::number(u, "cache_creation_input_tokens"),
-                cache_write1h: files::number(&u["cache_creation"], "ephemeral_1h_input_tokens"),
-                reasoning: reasoning.as_u64().unwrap_or(0),
+            let tokens = match tokens(u) {
+                Ok(t) => t,
+                Err(e) => {
+                    out.complete = false;
+                    out.diagnostics.push(format!("{id}: {e}"));
+                    continue;
+                }
             };
-            if tokens.total() == 0 {
-                continue;
-            }
-            if tokens.cache_write1h > tokens.cache_write || tokens.reasoning > tokens.output {
-                out.diagnostics
-                    .push(format!("{id}: invalid cache write or reasoning subset"));
-                out.complete = false;
-                continue;
-            }
             let entry = ParsedUsage {
                 request_metadata: requests.metadata(&session, id, v),
                 provider: None,
-                id: format!("claude:{session}:{id}"),
+                id: event_id(&session, id, v),
                 session_id: session.clone(),
                 native_event_id: id.into(),
                 occurred_at: at,
@@ -110,14 +136,66 @@ impl HarnessAdapter for Claude {
                 reported_cost: None,
                 timing: requests.timing(&session, id),
             };
+            // Advisor iterations are additional model calls; executor iterations
+            // are already included in the top-level usage and must not be summed.
+            if let Some(iterations) = u.get("iterations").filter(|v| !v.is_null()) {
+                if let Some(iterations) = iterations.as_array() {
+                    for (i, iteration) in iterations
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, v)| v["type"] == "advisor_message")
+                    {
+                        let parsed = (|| -> Result<ParsedUsage> {
+                            let model = iteration["model"]
+                                .as_str()
+                                .filter(|s| !s.is_empty())
+                                .ok_or_else(|| anyhow::anyhow!("Advisor model missing"))?;
+                            let t = self::tokens(iteration)?;
+                            Ok(ParsedUsage {
+                                id: format!("{}:advisor:{i}", entry.id),
+                                native_event_id: format!("{id}:advisor:{i}"),
+                                model: model.into(),
+                                tokens: t,
+                                timing: None,
+                                request_metadata: None,
+                                ..entry.clone()
+                            })
+                        })();
+                        match parsed {
+                            Ok(p) if p.tokens.total() > 0 => {
+                                if messages
+                                    .get(&p.id)
+                                    .is_none_or(|old| old.tokens.total() <= p.tokens.total())
+                                {
+                                    messages.insert(p.id.clone(), p);
+                                }
+                            }
+                            Ok(_) => {}
+                            Err(e) => {
+                                out.complete = false;
+                                out.diagnostics.push(format!("{id} advisor {i}: {e}"));
+                            }
+                        }
+                    }
+                } else {
+                    out.complete = false;
+                    out.diagnostics.push(format!("{id}: invalid iterations"));
+                }
+            }
+            if entry.tokens.total() == 0 {
+                continue;
+            }
             match messages.get(&entry.id) {
-                Some(previous) if previous.tokens.output > entry.tokens.output => {}
+                Some(previous) if previous.tokens.total() > entry.tokens.total() => {}
                 _ => {
                     messages.insert(entry.id.clone(), entry);
                 }
             }
         }
         out.usage = messages.into_values().collect();
+        out.usage.sort_by(|a, b| {
+            (a.occurred_at, &a.native_event_id).cmp(&(b.occurred_at, &b.native_event_id))
+        });
         Ok(out)
     }
     fn read_metadata(&self, path: &Path) -> Result<Vec<Session>> {

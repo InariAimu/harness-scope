@@ -6,12 +6,21 @@ import {
   resolveMoneyDisplay,
   resolveSidebarToday,
   resolveTrendChartType,
+  resolveSpeedCalculation,
   USD_DISPLAY,
 } from "./format";
 import {
   resolveRequestLogColumns,
   setRequestLogColumn,
 } from "./requestLogColumns";
+
+it("preserves the existing speed policy and recognizes the E2E preference", () => {
+  expect(resolveSpeedCalculation(undefined)).toBe("decode");
+  expect(resolveSpeedCalculation({})).toBe("decode");
+  expect(resolveSpeedCalculation({ speedCalculation: "decode" })).toBe("decode");
+  expect(resolveSpeedCalculation({ speedCalculation: "end_to_end" })).toBe("end_to_end");
+  expect(resolveSpeedCalculation({ speedCalculation: "invalid" })).toBe("decode");
+});
 
 it("uses bars for existing settings and unrecognized chart styles", () => {
   expect(resolveTrendChartType(undefined)).toBe("bar");

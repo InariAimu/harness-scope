@@ -63,6 +63,7 @@ struct SummaryAccumulator {
     known: u64,
     success: u64,
     unpriced: u64,
+    unpriced_tokens: u64,
     converted: bool,
     subscription: u64,
 }
@@ -100,7 +101,8 @@ impl SummaryAccumulator {
             }
         }
         if r.amount.is_none() {
-            self.unpriced += r.count
+            self.unpriced += r.count;
+            self.unpriced_tokens += r.tokens.total();
         }
     }
     fn finish(&self) -> Value {
@@ -111,12 +113,13 @@ impl SummaryAccumulator {
             known,
             success,
             unpriced,
+            unpriced_tokens,
             converted,
             subscription,
             cache_breakdown_unknown,
         } = self;
         let cacheable = t.input + t.cache_read + t.cache_write;
-        json!({"totalRequests":count,"totalCost":cost.normalize().to_string(),"totalInputTokens":t.input,"totalOutputTokens":t.output,"totalCacheReadTokens":t.cache_read,"totalCacheCreationTokens":t.cache_write,"successRate":if *known>0{Some(*success as f64 / *known as f64*100.)}else{None},"realTotalTokens":t.total(),"cacheHitRate":if cacheable>0{t.cache_read as f64/cacheable as f64}else{0.},"cacheBreakdownKnown":!cache_breakdown_unknown,"unpricedCount":unpriced,"knownStatusCount":known,"subscriptionUsageCount":subscription,"costConverted":converted})
+        json!({"totalRequests":count,"totalCost":cost.normalize().to_string(),"totalInputTokens":t.input,"totalOutputTokens":t.output,"totalCacheReadTokens":t.cache_read,"totalCacheCreationTokens":t.cache_write,"successRate":if *known>0{Some(*success as f64 / *known as f64*100.)}else{None},"realTotalTokens":t.total(),"cacheHitRate":if cacheable>0{t.cache_read as f64/cacheable as f64}else{0.},"cacheBreakdownKnown":!cache_breakdown_unknown,"unpricedCount":unpriced,"unpricedTokens":unpriced_tokens,"pricedCount":count-unpriced,"knownStatusCount":known,"subscriptionUsageCount":subscription,"costConverted":converted})
     }
 }
 fn provider(record: &UsageRecord) -> String {
@@ -135,7 +138,7 @@ struct TimingAccumulator {
     firsts: Vec<i64>,
 }
 impl TimingAccumulator {
-    fn add(&mut self, r: &Row) {
+    fn add(&mut self, r: &Row, end_to_end: bool) {
         if let Some(t) = r
             .timing
             .as_ref()
@@ -143,7 +146,7 @@ impl TimingAccumulator {
         {
             self.durations += 1;
             self.duration_sum += t.duration_ms as f64;
-            let speed = crate::timing::speed_estimate(&r.harness, t, r.tokens.output);
+            let speed = display_speed(&r.harness, t, r.tokens.output, end_to_end);
             if speed.eligible {
                 let ms = speed.duration_ms.expect("eligible speed duration");
                 if speed.basis == crate::timing::SpeedBasis::Decode {
@@ -172,7 +175,20 @@ impl TimingAccumulator {
         json!({"speedOutputTokens":0,"speedGenerationMs":0,"estDecodeSpeedOutputTokens":self.decode_output,"estDecodeSpeedGenerationMs":self.decode_duration,"estDecodeSpeedSampleCount":self.decode_samples,"estSpeedOutputTokens":self.output,"estSpeedDurationMs":self.duration,"estSpeedSampleCount":self.speed_samples,"firstTokenMedianMs":null,"estFirstTokenMedianMs":median,"estFirstTokenSampleCount":n,"timingSampleCount":self.durations,"avgLatencyMs":if self.durations == 0 {None}else{Some(self.duration_sum/self.durations as f64)}})
     }
 }
-fn log(r: &UsageRecord, timing: Option<&UsageTiming>) -> Value {
+fn display_speed(
+    harness: &str,
+    timing: &UsageTiming,
+    output: u64,
+    end_to_end: bool,
+) -> crate::timing::SpeedEstimate {
+    if end_to_end {
+        crate::timing::speed_estimate_for_display(timing, output, true)
+    } else {
+        crate::timing::speed_estimate(harness, timing, output)
+    }
+}
+
+fn log(r: &UsageRecord, timing: Option<&UsageTiming>, end_to_end: bool) -> Value {
     let mut v = json!({"requestId":format!("{}|{}",r.device_id,r.id),"providerId":provider(r),"providerName":provider(r),"appType":r.harness,"model":r.model,"requestModel":r.model,"pricingModel":r.cost.pricing_model,"costMultiplier":"1","inputTokens":r.tokens.input,"outputTokens":r.tokens.output,"cacheReadTokens":r.tokens.cache_read,"cacheCreationTokens":r.tokens.cache_write,"inputCostUsd":"0","outputCostUsd":"0","cacheReadCostUsd":"0","cacheCreationCostUsd":"0","totalCostUsd":r.cost.amount_usd,"isStreaming":false,"latencyMs":null,"firstTokenMs":null,"durationMs":null,"statusCode":r.status_code,"createdAt":r.occurred_at,"dataSource":"harness_scope","deviceId":r.device_id,"costSource":r.cost.method,"priceSource":r.cost.price_source,"pricingSnapshot":r.cost.snapshot,"recordSource":r.record_source});
     v["reasoningTokens"] = json!(r.tokens.reasoning);
     if let Some(t) = timing.filter(|_| r.grain == "event" && r.record_source == "session") {
@@ -188,10 +204,11 @@ fn log(r: &UsageRecord, timing: Option<&UsageTiming>) -> Value {
         });
         v["timingSource"] = json!(t.duration_source);
         v["firstTokenSource"] = json!(t.first_token_source);
-        v["estimatedSpeed"] = json!(crate::timing::speed_estimate(
+        v["estimatedSpeed"] = json!(display_speed(
             &r.harness,
             t,
-            r.tokens.output
+            r.tokens.output,
+            end_to_end
         ));
     }
     v["nativeProvider"] = json!(r.provider);
@@ -315,16 +332,20 @@ fn trends(
             .into_iter()
             .map(|(model, summary)| {
                 let s = summary.finish();
-                json!({"model":model,"requestCount":s["totalRequests"],"totalTokens":s["realTotalTokens"],"totalCost":s["totalCost"],"costConverted":s["costConverted"]})
+                json!({"model":model,"requestCount":s["totalRequests"],"totalTokens":s["realTotalTokens"],"totalCost":s["totalCost"],"costConverted":s["costConverted"],"unpricedCount":s["unpricedCount"],"pricedCount":s["pricedCount"],"unpricedTokens":s["unpricedTokens"]})
             })
             .collect();
-        rows.push(json!({"date":date,"requestCount":s["totalRequests"],"totalCost":s["totalCost"],"costConverted":s["costConverted"],"totalTokens":s["realTotalTokens"],"totalInputTokens":s["totalInputTokens"],"totalOutputTokens":s["totalOutputTokens"],"totalCacheCreationTokens":s["totalCacheCreationTokens"],"totalCacheReadTokens":s["totalCacheReadTokens"],"modelBreakdown":model_breakdown}));
+        rows.push(json!({"date":date,"requestCount":s["totalRequests"],"totalCost":s["totalCost"],"costConverted":s["costConverted"],"totalTokens":s["realTotalTokens"],"totalInputTokens":s["totalInputTokens"],"totalOutputTokens":s["totalOutputTokens"],"totalCacheCreationTokens":s["totalCacheCreationTokens"],"totalCacheReadTokens":s["totalCacheReadTokens"],"modelBreakdown":model_breakdown,"unpricedCount":s["unpricedCount"],"pricedCount":s["pricedCount"],"unpricedTokens":s["unpricedTokens"],"cacheBreakdownKnown":s["cacheBreakdownKnown"]}));
     }
     Ok(json!(rows))
 }
 
 pub fn query(store: &Store, kind: &str, args: &Value) -> Result<Value> {
     let timezone: chrono_tz::Tz = store.config()?.timezone.parse()?;
+    let end_to_end = matches!(kind, "logs" | "detail" | "models" | "providers")
+        && store.meta::<UsageDisplaySettings>("usage_display")?
+            .and_then(|settings| settings.speed_calculation)
+            .as_deref() == Some("end_to_end");
     let (start, end) = if kind == "todaySummary" {
         let day = chrono::Utc::now().with_timezone(&timezone).date_naive();
         let midnight = |day: chrono::NaiveDate| {
@@ -376,7 +397,7 @@ pub fn query(store: &Store, kind: &str, args: &Value) -> Result<Value> {
         return Ok(json!(false));
     }
     if kind == "logs" {
-        return logs(store, &selection, args);
+        return logs(store, &selection, args, end_to_end);
     }
     if kind == "detail" {
         selection.equal(
@@ -386,14 +407,14 @@ pub fn query(store: &Store, kind: &str, args: &Value) -> Result<Value> {
         if let Some(device) = args["deviceId"].as_str() {
             selection.equal("u.device_id", device);
         }
-        return detail(store, &selection);
+        return detail(store, &selection, end_to_end);
     }
     if kind == "firstDate" {
         return first_date(store, &selection, start, end, timezone);
     }
     match kind {
         "models" | "providers" => {
-            grouped_stats(store, &selection, kind == "models", start, end, timezone)
+            grouped_stats(store, &selection, kind == "models", start, end, timezone, end_to_end)
         }
         "trends" => trends(store, &selection, start, end, timezone),
         "summary" | "todaySummary" | "summaryByApp" | "sources" => {
@@ -422,7 +443,7 @@ pub fn query(store: &Store, kind: &str, args: &Value) -> Result<Value> {
             match kind {
                 "summary" | "todaySummary" => Ok(groups.remove("").unwrap().finish()),
                 "summaryByApp" => Ok(json!(groups.into_iter().map(|(app, summary)| json!({"appType":app,"summary":summary.finish()})).collect::<Vec<_>>())),
-                "sources" => Ok(json!(groups.into_iter().map(|(source, summary)| { let s=summary.finish(); json!({"dataSource":source,"requestCount":s["totalRequests"],"totalCostUsd":s["totalCost"],"costConverted":s["costConverted"]}) }).collect::<Vec<_>>())),
+                "sources" => Ok(json!(groups.into_iter().map(|(source, summary)| { let s=summary.finish(); json!({"dataSource":source,"requestCount":s["totalRequests"],"totalCostUsd":s["totalCost"],"costConverted":s["costConverted"],"unpricedCount":s["unpricedCount"],"pricedCount":s["pricedCount"],"unpricedTokens":s["unpricedTokens"]}) }).collect::<Vec<_>>())),
                 _ => unreachable!(),
             }
         }
@@ -470,14 +491,14 @@ struct GroupAccumulator {
     mixed: bool,
 }
 impl GroupAccumulator {
-    fn add(&mut self, row: &Row) {
+    fn add(&mut self, row: &Row, end_to_end: bool) {
         if let Some(first) = &self.harness {
             self.mixed |= first != &row.harness;
         } else {
             self.harness = Some(row.harness.clone());
         }
         self.summary.add_row(row);
-        self.timing.add(row);
+        self.timing.add(row, end_to_end);
     }
 }
 
@@ -488,6 +509,7 @@ fn grouped_stats(
     start: i64,
     end: i64,
     timezone: chrono_tz::Tz,
+    end_to_end: bool,
 ) -> Result<Value> {
     let mut groups: BTreeMap<(String, Option<String>), GroupAccumulator> = BTreeMap::new();
     selection.visit_rows(store, true, models, |row| {
@@ -507,17 +529,19 @@ fn grouped_stats(
         } else {
             row.provider_name()
         };
-        groups.entry((key, mode)).or_default().add(&row);
+        groups.entry((key, mode)).or_default().add(&row, end_to_end);
         Ok(())
     })?;
     Ok(json!(groups.into_iter().map(|((key, mode), group)| {
         let s = group.summary.finish();
         let requests = s["totalRequests"].as_u64().unwrap_or(0);
+        let priced = s["pricedCount"].as_u64().unwrap_or(0);
         let mut row = json!({"model":key,"providerId":key,"providerName":key,
             "appType":if !group.mixed { group.harness.as_deref().unwrap_or("all") } else {"all"},
             "requestCount":requests,"totalTokens":s["realTotalTokens"],"totalCost":s["totalCost"],
             "costConverted":s["costConverted"],"successRate":s["successRate"],
-            "avgCostPerRequest":if requests>0{(group.summary.cost/Decimal::from(requests)).normalize().to_string()}else{"0".into()}});
+            "avgCostPerRequest":if priced>0{Some((group.summary.cost/Decimal::from(priced)).normalize().to_string())}else{None}});
+        for field in ["unpricedCount","unpricedTokens","pricedCount","cacheBreakdownKnown"] {row[field]=s[field].clone();}
         if models {
             row["rowKey"] = json!(json!([key, mode]).to_string());
             row["requestMode"] = json!(mode);
@@ -558,7 +582,7 @@ fn legacy_allowed(
         .map(|d| d.timestamp());
     matches!((begin,next),(Some(b),Some(n)) if start<=b&&end>=n-1)
 }
-fn read_log(store: &Store, origin: &str, device: &str, id: &str) -> Result<Value> {
+fn read_log(store: &Store, origin: &str, device: &str, id: &str, end_to_end: bool) -> Result<Value> {
     use rusqlite::OptionalExtension;
     let table = if origin == "local" {
         "records"
@@ -578,9 +602,9 @@ fn read_log(store: &Store, origin: &str, device: &str, id: &str) -> Result<Value
         .query_row([device, id], |r| r.get(0))
         .optional()?;
     let timing: Option<UsageTiming> = timing.map(|s| serde_json::from_str(&s)).transpose()?;
-    Ok(log(&record, timing.as_ref()))
+    Ok(log(&record, timing.as_ref(), end_to_end))
 }
-fn logs(store: &Store, selection: &Selection, args: &Value) -> Result<Value> {
+fn logs(store: &Store, selection: &Selection, args: &Value, end_to_end: bool) -> Result<Value> {
     use rusqlite::{params_from_iter, types::Value as SqlValue};
     let condition = format!("{} AND u.grain='event'", selection.sql);
     let total: u64 = store
@@ -608,11 +632,11 @@ fn logs(store: &Store, selection: &Selection, args: &Value) -> Result<Value> {
         .collect::<Result<Vec<_>, _>>()?;
     let rows = keys
         .iter()
-        .map(|(origin, device, id)| read_log(store, origin, device, id))
+        .map(|(origin, device, id)| read_log(store, origin, device, id, end_to_end))
         .collect::<Result<Vec<_>>>()?;
     Ok(json!({"data":rows,"total":total,"page":page,"pageSize":size}))
 }
-fn detail(store: &Store, selection: &Selection) -> Result<Value> {
+fn detail(store: &Store, selection: &Selection, end_to_end: bool) -> Result<Value> {
     use rusqlite::{params_from_iter, OptionalExtension};
     let key = store
         .conn
@@ -628,7 +652,7 @@ fn detail(store: &Store, selection: &Selection) -> Result<Value> {
             ))
         })
         .optional()?;
-    key.map(|(origin, device, id)| read_log(store, &origin, &device, &id))
+    key.map(|(origin, device, id)| read_log(store, &origin, &device, &id, end_to_end))
         .transpose()
         .map(|v| v.unwrap_or(Value::Null))
 }

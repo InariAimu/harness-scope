@@ -423,6 +423,7 @@ pub fn install(prices: &mut Vec<Price>, catalog: &Catalog) {
     for model in &catalog.models {
         let rates = &model.tiers[0].prices;
         prices.push(Price {
+            request_tariff: None,
             provider: Some("opencode-go".into()),
             model_id: model.id.clone(),
             display_name: model.name.clone(),

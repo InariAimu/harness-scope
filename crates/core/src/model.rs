@@ -25,6 +25,8 @@ impl Tokens {
 #[serde(rename_all = "camelCase")]
 pub struct Price {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_tariff: Option<RequestTariff>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub go_tariff: Option<crate::pricing::go_catalog::Tariff>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
@@ -43,6 +45,33 @@ pub struct Price {
     pub pricing_rule: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub billing_basis: Option<String>,
+}
+/// Explicit rules owned by one provider/model. Rates are absolute, never a
+/// global Fast multiplier. The applied tier and rates are frozen in the quote.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RequestTariff {
+    pub version: String,
+    pub tiers: Vec<RequestPriceTier>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_tier: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RequestPriceTier {
+    pub id: String,
+    #[serde(default)]
+    pub speed: Option<String>,
+    #[serde(default)]
+    pub above_prompt_tokens: u64,
+    #[serde(default)]
+    pub effective_from: Option<i64>,
+    #[serde(default)]
+    pub effective_until: Option<i64>,
+    pub input_cost_per_million: String,
+    pub output_cost_per_million: String,
+    pub cache_read_cost_per_million: String,
+    pub cache_creation_cost_per_million: String,
 }
 fn usd_currency() -> String {
     "USD".into()
@@ -258,6 +287,8 @@ pub struct UsageDisplaySettings {
     pub number_unit_style: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub number_decimals: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speed_calculation: Option<String>,
 }
 impl UsageDisplaySettings {
     pub fn apply(&mut self, patch: Self) -> anyhow::Result<()> {
@@ -322,6 +353,13 @@ impl UsageDisplaySettings {
                 "Number decimal places must be between 0 and 3"
             );
             self.number_decimals = Some(decimals);
+        }
+        if let Some(calculation) = patch.speed_calculation {
+            anyhow::ensure!(
+                ["decode", "end_to_end"].contains(&calculation.as_str()),
+                "Unsupported token speed calculation"
+            );
+            self.speed_calculation = Some(calculation);
         }
         Ok(())
     }

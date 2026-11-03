@@ -4,6 +4,8 @@ use rusqlite::{params, OptionalExtension};
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
+pub const REQUEST_TARIFF_CAPABILITY: &str = "request_tariff_v1";
+
 pub(crate) fn gzip_json(value: &impl serde::Serialize) -> Result<Vec<u8>> {
     let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     serde_json::to_writer(&mut encoder, value)?;

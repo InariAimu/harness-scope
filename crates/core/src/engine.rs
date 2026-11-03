@@ -42,65 +42,74 @@ pub struct Engine {
 }
 impl Engine {
     pub fn open(path: &Path) -> Result<Self> {
+        Self::open_with_sources(path, true)
+    }
+    /// Sync servers preserve configuration and never initialize desktop sources.
+    pub fn open_sync_server(path: &Path) -> Result<Self> {
+        Self::open_with_sources(path, false)
+    }
+    fn open_with_sources(path: &Path, initialize_sources: bool) -> Result<Self> {
         let store = Store::open(path)?;
         let registry = Registry::default();
-        let mut config = store.config()?;
-        if config.sources.is_empty() {
-            for descriptor in registry.descriptors() {
-                for (i, root) in descriptor.default_roots.iter().enumerate() {
-                    config.sources.push(Source {
-                        id: format!("{}-{i}", descriptor.id),
-                        harness: descriptor.id.into(),
-                        root: root.clone(),
-                        enabled: Path::new(root).exists(),
-                    })
+        if initialize_sources {
+            let mut config = store.config()?;
+            if config.sources.is_empty() {
+                for descriptor in registry.descriptors() {
+                    for (i, root) in descriptor.default_roots.iter().enumerate() {
+                        config.sources.push(Source {
+                            id: format!("{}-{i}", descriptor.id),
+                            harness: descriptor.id.into(),
+                            root: root.clone(),
+                            enabled: Path::new(root).exists(),
+                        })
+                    }
                 }
+                store.set_meta("config", &config)?
             }
-            store.set_meta("config", &config)?
-        }
-        // Add newly supported Cherry sources once on existing installations. Respect
-        // later removal or disabling by never recreating the source after migration.
-        if !store
-            .meta::<bool>("cherry_source_initialized")?
-            .unwrap_or(false)
-        {
-            if !config.sources.iter().any(|s| s.harness == "cherry") {
-                let descriptor = registry.get("cherry")?.descriptor();
-                for (i, root) in descriptor.default_roots.iter().enumerate() {
-                    config.sources.push(Source {
-                        id: format!("cherry-{i}"),
-                        harness: "cherry".into(),
-                        root: root.clone(),
-                        enabled: Path::new(root).is_file(),
-                    });
+            // Add newly supported Cherry sources once on existing installations. Respect
+            // later removal or disabling by never recreating the source after migration.
+            if !store
+                .meta::<bool>("cherry_source_initialized")?
+                .unwrap_or(false)
+            {
+                if !config.sources.iter().any(|s| s.harness == "cherry") {
+                    let descriptor = registry.get("cherry")?.descriptor();
+                    for (i, root) in descriptor.default_roots.iter().enumerate() {
+                        config.sources.push(Source {
+                            id: format!("cherry-{i}"),
+                            harness: "cherry".into(),
+                            root: root.clone(),
+                            enabled: Path::new(root).is_file(),
+                        });
+                    }
+                    store.set_meta("config", &config)?;
                 }
-                store.set_meta("config", &config)?;
+                store.set_meta("cherry_source_initialized", &true)?;
             }
-            store.set_meta("cherry_source_initialized", &true)?;
-        }
-        // Desktop conversations only; a removed/disabled source stays that way.
-        if !store
-            .meta::<bool>("lmstudio_source_initialized")?
-            .unwrap_or(false)
-        {
-            if !config.sources.iter().any(|s| s.harness == "lmstudio") {
-                for (i, root) in registry
-                    .get("lmstudio")?
-                    .descriptor()
-                    .default_roots
-                    .iter()
-                    .enumerate()
-                {
-                    config.sources.push(Source {
-                        id: format!("lmstudio-{i}"),
-                        harness: "lmstudio".into(),
-                        root: root.clone(),
-                        enabled: Path::new(root).is_dir(),
-                    });
+            // Desktop conversations only; a removed/disabled source stays that way.
+            if !store
+                .meta::<bool>("lmstudio_source_initialized")?
+                .unwrap_or(false)
+            {
+                if !config.sources.iter().any(|s| s.harness == "lmstudio") {
+                    for (i, root) in registry
+                        .get("lmstudio")?
+                        .descriptor()
+                        .default_roots
+                        .iter()
+                        .enumerate()
+                    {
+                        config.sources.push(Source {
+                            id: format!("lmstudio-{i}"),
+                            harness: "lmstudio".into(),
+                            root: root.clone(),
+                            enabled: Path::new(root).is_dir(),
+                        });
+                    }
+                    store.set_meta("config", &config)?;
                 }
-                store.set_meta("config", &config)?;
+                store.set_meta("lmstudio_source_initialized", &true)?;
             }
-            store.set_meta("lmstudio_source_initialized", &true)?;
         }
         Ok(Self {
             account_vault: crate::account_credentials::Vault::new(path),
@@ -333,6 +342,37 @@ impl Engine {
             }
             "scan" => Ok(serde_json::to_value(self.scan(false)?)?),
             "rescan" => Ok(serde_json::to_value(self.scan(true)?)?),
+            "reimport_harness" => {
+                anyhow::ensure!(args["confirmed"] == true, "Reimport requires confirmation");
+                let harness = args["harness"].as_str().context("Missing harness")?;
+                anyhow::ensure!(
+                    self.registry.get(harness)?.descriptor().usage,
+                    "Harness does not support usage collection"
+                );
+                let _guard = self
+                    .scan_lock
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("Scan lock poisoned"))?;
+                let s = self.lock()?;
+                anyhow::ensure!(
+                    crate::applications::get(&crate::applications::load(&s)?, harness)
+                        .collection_enabled,
+                    "Enable collection before reimporting"
+                );
+                anyhow::ensure!(
+                    s.config()?
+                        .sources
+                        .iter()
+                        .any(|v| v.enabled && v.harness == harness),
+                    "No enabled source for this harness"
+                );
+                drop(s);
+                Ok(serde_json::to_value(self.scan_selected(
+                    true,
+                    Some(harness),
+                    true,
+                )?)?)
+            }
             "usage_query" => {
                 let s = self.read_lock()?;
                 s.transaction(|| {
@@ -652,7 +692,7 @@ impl Engine {
         self.scan_unlocked(force)
     }
     fn scan_unlocked(&self, force: bool) -> Result<ScanReport> {
-        self.scan_selected(force, None)
+        self.scan_selected(force, None, false)
     }
     /// Import one configured harness without scanning unrelated logs.
     pub fn scan_harness(&self, harness: &str, force: bool) -> Result<ScanReport> {
@@ -661,19 +701,25 @@ impl Engine {
             .scan_lock
             .lock()
             .map_err(|_| anyhow::anyhow!("Scan lock poisoned"))?;
-        self.scan_selected(force, Some(harness))
+        self.scan_selected(force, Some(harness), false)
     }
-    fn scan_selected(&self, force: bool, selected: Option<&str>) -> Result<ScanReport> {
+    fn scan_selected(
+        &self,
+        force: bool,
+        selected: Option<&str>,
+        archives: bool,
+    ) -> Result<ScanReport> {
         let config = self.lock()?.config()?;
         let settings = crate::applications::load(&*self.lock()?)?;
         let mut report = ScanReport::default();
         let mut inputs = Vec::new();
+        let mut blocked_harnesses = HashSet::new();
         let mut paths = HashSet::new();
         crate::scan_cache::migrate_contexts(&*self.lock()?)?;
         if selected.is_none_or(|h| h == "codex")
             && crate::applications::get(&settings, "codex").collection_enabled
         {
-            crate::codex_scan::scan(self, force, &mut report)?;
+            crate::codex_scan::scan(self, force, archives, &mut report)?;
         }
         let mut index = TimelineIndex::new();
         let mut unavailable = HashSet::new();
@@ -708,6 +754,7 @@ impl Engine {
             let found = match found {
                 Ok(xs) => xs,
                 Err(e) => {
+                    blocked_harnesses.insert(source.harness.clone());
                     report.errors.push(e);
                     continue;
                 }
@@ -789,6 +836,7 @@ impl Engine {
                         ));
                     }
                     Err(e) => {
+                        blocked_harnesses.insert(source.harness.clone());
                         report.files_scanned += 1;
                         report.deferred_files += 1;
                         report.errors.push(format!("{}: {e}", path.display()));
@@ -843,6 +891,7 @@ impl Engine {
             }
             if !force && read_complete {
                 if let Some(deferred) = deferred.filter(|d| d.fingerprint == fingerprint) {
+                    blocked_harnesses.insert(harness.clone());
                     report.errors.extend(deferred.diagnostics);
                     report.deferred_files += 1;
                     report.skipped += 1;
@@ -871,11 +920,13 @@ impl Engine {
                         lines
                     }
                     Ok((_, _, errors, _)) => {
+                        blocked_harnesses.insert(harness.clone());
                         report.errors.extend(errors);
                         report.deferred_files += 1;
                         continue;
                     }
                     Err(e) => {
+                        blocked_harnesses.insert(harness.clone());
                         report.errors.push(format!("{key}: {e}"));
                         report.deferred_files += 1;
                         continue;
@@ -885,6 +936,7 @@ impl Engine {
             let result = match adapter.parse(&path, &lines, &index) {
                 Ok(r) => r,
                 Err(e) => {
+                    blocked_harnesses.insert(harness.clone());
                     report.errors.push(format!("{key}: {e}"));
                     report.deferred_files += 1;
                     continue;
@@ -894,6 +946,7 @@ impl Engine {
             report.errors.extend(diagnostics.iter().cloned());
             let complete = read_complete && result.complete;
             if !complete {
+                blocked_harnesses.insert(harness.clone());
                 report.deferred_files += 1
             }
             let s = self.lock()?;
@@ -912,9 +965,10 @@ impl Engine {
                 .max()
                 .unwrap_or(0);
             s.transaction(||{
-                let mut active=HashSet::new();
+                let mut active: HashSet<_> = result.retained_ids.into_iter().collect();
                 for mut parsed in result.usage{
                     if parsed.occurred_at<cutoff{continue}
+                    if harness=="claude" { crate::claude_identity::bind(&s,&mut parsed,&key)?; }
                     active.insert(parsed.id.clone());let old=s.record(&parsed.id)?;
                     // Duplicated LM Studio conversations retain inherited generation
                     // IDs. Attribute shared generations to the earliest conversation
@@ -932,7 +986,8 @@ impl Engine {
                             || (harness=="claude" && r.parser_version!=descriptor.parser_version);
                         upgrading && r.model==parsed.model && r.tokens==billing_tokens && r.provider==parsed.provider
                     });
-                    let mut cost=if !adapter.allows_price_estimates(parsed.tokens.total()>0) { Cost { rule_version:"unknown".into(), ..Default::default() } } else if let Some(old)=metadata_upgrade { old.cost.clone() } else { pricing::resolve_with_settings(&parsed,old.as_ref(),&prices,&pricing_settings)? };
+                    let unchanged=old.as_ref().filter(|r|r.model==parsed.model && r.tokens==parsed.tokens && r.provider==parsed.provider && r.cost.amount_usd.is_some() && parsed.reported_cost.as_ref().is_none_or(|amount|r.cost.amount_usd.as_ref()==Some(amount)));
+                    let mut cost=if !adapter.allows_price_estimates(parsed.tokens.total()>0) { Cost { rule_version:"unknown".into(), ..Default::default() } } else if let Some(old)=unchanged.or(metadata_upgrade) { old.cost.clone() } else { pricing::resolve_with_settings(&parsed,old.as_ref(),&prices,&pricing_settings)? };
                     if matches!(harness.as_str(), "copliot-deprecated" | "copliot") && cost.method=="estimated" { cost.billing_basis=Some("model_reference".into()); }
                     if let Some(old)=old.as_ref().filter(|r|harness=="codex" && r.model==parsed.model && r.tokens==parsed.tokens && r.provider==parsed.provider) {
                         // Overlapping log copies may visit the upgraded record again.
@@ -951,9 +1006,7 @@ impl Engine {
                     s.save_timing(&timing_id, timing.as_ref())?;
                 }
                 if complete{
-                    let mut stmt=s.conn.prepare("SELECT payload FROM records WHERE source_path=?1")?;
-                    let stored=stmt.query_map([&key],|r|r.get::<_,String>(0))?.collect::<Result<Vec<_>,_>>()?;
-                    for payload in stored{let mut old:UsageRecord=serde_json::from_str(&payload)?;if !old.deleted&&old.record_source=="session"&&!active.contains(&old.id){old.deleted=true;s.upsert(old,&key)?;report.updated+=1}}
+                    s.reconcile_source(&key,&active)?;
                     s.conn.execute("INSERT INTO file_state(path,fingerprint,parser_version) VALUES(?1,?2,?3) ON CONFLICT(path) DO UPDATE SET fingerprint=excluded.fingerprint,parser_version=excluded.parser_version",params![key,fingerprint,descriptor.parser_version])?;
                 }Ok(())
             })?;
@@ -989,6 +1042,15 @@ impl Engine {
             }
         }
         let s = self.lock()?;
+        // Missing/damaged sources cannot establish absence. Persist candidates
+        // until a complete scan, including across an interrupted v7 backfill.
+        for h in self.registry.descriptors().into_iter().filter(|h| {
+            h.id != "codex"
+                && selected.is_none_or(|selected| selected == h.id)
+                && !blocked_harnesses.contains(h.id)
+        }) {
+            report.updated += s.transaction(|| s.retire_unobserved(Some(h.id)))?;
+        }
         s.set_meta("last_scan_at", &chrono::Utc::now().timestamp_millis())?;
         s.set_meta("last_scan", &report)?;
         Ok(report)
@@ -1014,6 +1076,12 @@ impl Engine {
                 anyhow::ensure!(
                     p.go_tariff.is_none(),
                     "Go catalog snapshots cannot be imported as flat prices"
+                );
+                anyhow::ensure!(
+                    p.request_tariff
+                        .as_ref()
+                        .is_none_or(|t| t.selected_tier.is_none()),
+                    "Applied request snapshots cannot be imported as pricing rules"
                 );
                 p.provider = p
                     .provider
@@ -1107,7 +1175,19 @@ impl Engine {
             if let Some(price) =
                 pricing::find_for_provider(&prices, &r.model, r.provider.as_deref())
             {
-                let mut cost = pricing::estimate_at(&r.tokens, price, r.occurred_at, &settings)?;
+                let parsed = ParsedUsage {
+                    id: r.id.clone(),
+                    session_id: r.session_id.clone().unwrap_or_default(),
+                    native_event_id: r.native_event_id.clone().unwrap_or_default(),
+                    occurred_at: r.occurred_at,
+                    model: r.model.clone(),
+                    tokens: r.tokens.clone(),
+                    provider: r.provider.clone(),
+                    request_metadata: r.request_metadata.clone(),
+                    reported_cost: None,
+                    timing: r.timing.clone(),
+                };
+                let mut cost = pricing::estimate_request(&parsed, price, &settings)?;
                 if matches!(r.harness.as_str(), "copliot-deprecated" | "copliot")
                     && cost.method == "estimated"
                 {
@@ -1313,10 +1393,14 @@ impl Engine {
         let claude_metadata = health["recordCapabilities"]
             .as_array()
             .is_some_and(|caps| caps.iter().any(|v| v == "claude_request_timing_v2"));
+        let request_tariff = health["recordCapabilities"]
+            .as_array()
+            .is_some_and(|caps| caps.iter().any(|v| v == sync::REQUEST_TARIFF_CAPABILITY));
         let mut cursor = self.lock()?.meta::<i64>("download_cursor")?.unwrap_or(0);
         let mut first: ChangesResponse = client
             .get(format!("{base}/v1/changes"))
             .query(&[("after", cursor), ("limit", 500), ("protocolVersion", 4)])
+            .query(&[("recordCapabilities", sync::REQUEST_TARIFF_CAPABILITY)])
             .bearer_auth(&config.server_token)
             .send()?
             .error_for_status()?
@@ -1342,6 +1426,7 @@ impl Engine {
             first = client
                 .get(format!("{base}/v1/changes"))
                 .query(&[("after", cursor), ("limit", 500), ("protocolVersion", 4)])
+                .query(&[("recordCapabilities", sync::REQUEST_TARIFF_CAPABILITY)])
                 .bearer_auth(&config.server_token)
                 .send()?
                 .error_for_status()?
@@ -1355,7 +1440,9 @@ impl Engine {
                 && d["name"].as_str() == Some(config.device_name.as_str())
         });
         loop {
-            let records = self.lock()?.pending_compatible(claude_metadata)?;
+            let records = self
+                .lock()?
+                .pending_compatible(claude_metadata, request_tariff)?;
             if records.is_empty() && !publish_name {
                 break;
             }
@@ -1398,6 +1485,7 @@ impl Engine {
             let response: ChangesResponse = client
                 .get(format!("{base}/v1/changes"))
                 .query(&[("after", cursor), ("limit", 500), ("protocolVersion", 4)])
+                .query(&[("recordCapabilities", sync::REQUEST_TARIFF_CAPABILITY)])
                 .bearer_auth(&config.server_token)
                 .send()?
                 .error_for_status()?
@@ -1438,6 +1526,14 @@ impl Engine {
         };
         let subscription_pending = crate::accounts::sharing::pending_count(&*self.lock()?)?;
         let mut warnings = Vec::new();
+        let deferred_tariffs = if request_tariff {
+            0
+        } else {
+            self.lock()?.pending_request_tariff_count()?
+        };
+        if deferred_tariffs > 0 {
+            warnings.push(format!("Sync server needs request_tariff_v1 support; {deferred_tariffs} conditional price revisions retained locally. Other records continue syncing."));
+        }
         if deferred > 0 {
             warnings.push(format!("Sync server needs Claude request metadata support; {deferred} Claude revisions retained locally. Other records continue syncing."));
         }
@@ -1446,7 +1542,7 @@ impl Engine {
         }
         let warning = (!warnings.is_empty()).then(|| warnings.join(" "));
         Ok(
-            json!({"uploaded":uploaded,"downloaded":downloaded,"deferredClaude":deferred,"warning":warning,"subscriptionSync":subscription_sync,"subscriptionPending":subscription_pending}),
+            json!({"uploaded":uploaded,"downloaded":downloaded,"deferredClaude":deferred,"deferredTariffs":deferred_tariffs,"warning":warning,"subscriptionSync":subscription_sync,"subscriptionPending":subscription_pending}),
         )
     }
     pub fn start_background(self: &Arc<Self>) {

@@ -53,7 +53,9 @@ pub fn discover(root: &Path) -> Result<Vec<PathBuf>> {
         let entry = entry?;
         if entry.file_type().is_file()
             && (entry.path().extension().is_some_and(|e| e == "jsonl")
-                || entry.path().to_string_lossy().ends_with(".jsonl.zst"))
+                || [".jsonl.zst", ".json.zst", ".jsonl.zstd", ".json.zstd"]
+                    .iter()
+                    .any(|suffix| entry.path().to_string_lossy().ends_with(suffix)))
         {
             paths.push(entry.into_path());
         }

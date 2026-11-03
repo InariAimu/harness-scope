@@ -2,7 +2,7 @@
 use super::{files, transcript, Descriptor, HarnessAdapter, ParseResult, TimelineIndex};
 use crate::model::{ParsedUsage, Session, Tokens, UsageTiming};
 use anyhow::{Context, Result};
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use std::{
@@ -27,6 +27,49 @@ fn table_exists(conn: &Connection, name: &str) -> Result<bool> {
         [name],
         |r| r.get(0),
     )?)
+}
+
+/// Copied v2 messages receive new IDs but retain their parent's sequence.
+/// Resolve the actual last included sequence (not boundary - 1: seq is sparse).
+fn fork_cutoffs(conn: &Connection) -> Result<HashMap<String, Result<i64, String>>> {
+    let mut result = HashMap::new();
+    let has_columns: bool=conn.query_row("SELECT COUNT(*)=2 FROM pragma_table_info('session_v2') WHERE name IN ('fork_session_id','fork_boundary')",[],|r|r.get(0))?;
+    if !has_columns {
+        return Ok(result);
+    }
+    let rows=conn.prepare("SELECT id,fork_session_id,fork_boundary FROM session_v2 WHERE fork_session_id IS NOT NULL")?
+        .query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,Option<String>>(2)?)))?.collect::<Result<Vec<_>,_>>()?;
+    for (id, parent, boundary) in rows {
+        let cutoff = (|| -> Result<i64> {
+            let boundary: Value =
+                serde_json::from_str(boundary.as_deref().context("Missing fork boundary")?)?;
+            let message = boundary["messageID"]
+                .as_str()
+                .context("Missing fork message ID")?;
+            let seq: i64 = conn
+                .query_row(
+                    "SELECT seq FROM session_message WHERE session_id=?1 AND id=?2",
+                    [&parent, message],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .context("Fork parent boundary unavailable")?;
+            match boundary["type"].as_str() {
+                Some("through") => Ok(seq),
+                Some("before") => Ok(conn
+                    .query_row(
+                        "SELECT MAX(seq) FROM session_message WHERE session_id=?1 AND seq<?2",
+                        rusqlite::params![parent, seq],
+                        |r| r.get::<_, Option<i64>>(0),
+                    )?
+                    .unwrap_or(-1)),
+                _ => anyhow::bail!("Unsupported fork boundary"),
+            }
+        })()
+        .map_err(|e| format!("OpenCode fork {id}: {e}"));
+        result.insert(id, cutoff);
+    }
+    Ok(result)
 }
 
 fn counter(value: &Value, label: &str, required: bool) -> Result<u64> {
@@ -156,7 +199,7 @@ impl HarnessAdapter for OpenCode {
         Descriptor {
             id: "opencode",
             name: "OpenCode",
-            parser_version: "opencode-sqlite-v3-provider",
+            parser_version: "opencode-sqlite-v4-fork",
             default_roots: vec![root.to_string_lossy().into()],
             usage: true,
             transcript: true,
@@ -190,7 +233,7 @@ impl HarnessAdapter for OpenCode {
         read_events(path, None, false, true)
     }
     fn usage_reader_version(&self) -> &'static str {
-        "usage-read-v3-opencode-projection"
+        "usage-read-v4-opencode-fork"
     }
     fn read_metadata(&self, path: &Path) -> Result<Vec<Session>> {
         Ok(self.sessions(path, &read_events(path, None, true, false)?.0))
@@ -406,8 +449,16 @@ fn read_events(
         }
     }
     if v2 && !metadata_only {
+        let cutoffs = if usage_only {
+            fork_cutoffs(&tx)?
+        } else {
+            HashMap::new()
+        };
+        for error in cutoffs.values().filter_map(|v| v.as_ref().err()) {
+            diagnostics.push(error.clone());
+        }
         let mut stmt = tx.prepare(&format!(
-                "SELECT id,session_id,type,data FROM session_message {message_filter} ORDER BY session_id,seq,id"
+                "SELECT id,session_id,type,data,seq FROM session_message {message_filter} ORDER BY session_id,seq,id"
             ))?;
         let rows = stmt.query_map(rusqlite::params_from_iter(session), |r| {
             let role: String = r.get(2)?;
@@ -420,11 +471,18 @@ fn read_events(
                     Some(r.get::<_, String>(3)?)
                 },
                 role,
+                r.get::<_, i64>(4)?,
             ))
         })?;
         for row in rows {
-            let (id, session, data, role) = row?;
+            let (id, session, data, role, seq) = row?;
             migrated.insert(session.clone());
+            if cutoffs.get(&session).is_some_and(|cutoff| match cutoff {
+                Ok(bound) => seq <= *bound,
+                Err(_) => true,
+            }) {
+                continue;
+            }
             let Some(data) = data else { continue };
             let parsed = if usage_only {
                 super::usage_read::opencode(&data, false)

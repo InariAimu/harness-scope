@@ -22,6 +22,9 @@ export function useUsageDisplay() {
     try {
       const display = await request;
       client.setQueryData(key, display);
+      if (patch.speedCalculation !== undefined) {
+        await client.invalidateQueries({ queryKey: ["usage"] });
+      }
       return true;
     } catch (error) {
       toast.error(String(error));

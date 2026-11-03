@@ -47,7 +47,7 @@ pub fn server_router(engine: Arc<Engine>, token: String) -> anyhow::Result<Route
         .route(
             "/health",
             get(move || async move {
-                Json(json!({"status":"ok","appBuild":harness_scope_core::build_info::current(),"schemaVersion":schema_version,"protocolVersion":4,"supportedProtocolVersions":[1,2,3,4],"requestEncodings":["identity","gzip"],"recordCapabilities":["claude_request_timing_v2",sharing::CAPABILITY]}))
+                Json(json!({"status":"ok","appBuild":harness_scope_core::build_info::current(),"schemaVersion":schema_version,"protocolVersion":4,"supportedProtocolVersions":[1,2,3,4],"requestEncodings":["identity","gzip"],"recordCapabilities":["claude_request_timing_v2",sharing::CAPABILITY,sync::REQUEST_TARIFF_CAPABILITY]}))
             }),
         )
         .route("/v1/push", post(push))
@@ -109,6 +109,8 @@ async fn push(
 }
 #[derive(Deserialize)]
 struct ChangeQuery {
+    #[serde(default, rename = "recordCapabilities")]
+    record_capabilities: String,
     #[serde(default = "default_protocol", rename = "protocolVersion")]
     protocol_version: u32,
     #[serde(default)]
@@ -131,6 +133,19 @@ async fn changes(
     tokio::task::spawn_blocking(move || {
         let store = state.engine.lock()?;
         let response = sync::changes(&store, query.after, query.limit)?;
+        anyhow::ensure!(
+            query
+                .record_capabilities
+                .split(',')
+                .any(|c| c == sync::REQUEST_TARIFF_CAPABILITY)
+                || response.changes.iter().all(|c| c
+                    .record
+                    .cost
+                    .snapshot
+                    .as_ref()
+                    .is_none_or(|p| p.request_tariff.is_none())),
+            "Upgrade client with request_tariff_v1 support to preserve conditional price snapshots"
+        );
         anyhow::ensure!(
             [1, 2, 3, 4].contains(&query.protocol_version),
             "Unsupported protocolVersion"

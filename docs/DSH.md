@@ -2,7 +2,7 @@
 
 [文档索引](README.md) · [速度与首字](TIMING.md)
 
-应用 ID 为 `dsh`，读取 DeepSeek Harness 的原生日志。当前适配 v0 和 v4；支持范围由 [Rust 适配器](../crates/core/src/harness/dsh.rs) 和[回归样本](../crates/core/tests/dsh.rs)定义。
+应用 ID 为 `dsh`，读取 DeepSeek Harness 的原生日志。当前适配 v0 和 v4，已核对 Desktop CLI `0.2.1-rc.5` 的 v4 格式；支持范围由 [Rust 适配器](../crates/core/src/harness/dsh.rs) 和[回归样本](../crates/core/tests/dsh.rs)定义。
 
 ## 日志位置与版本
 
@@ -17,17 +17,20 @@
 
 ## 用量与会话
 
-- 以 `assistant/message.data.usage` 计量模型调用，原生 `message.id` 提供稳定身份；流片段、重放替换和迁移副本不增加请求。
+- `assistant/message.data.usage` 优先；缺少该字段时，取内嵌 stream 的最后一条 usage。失败或取消的 `assistant/attempt` 同样读取最后一条流用量，非零用量计入统计。
+- 同一 `(turn, step)` 的后续结算替换前次采样；`llm/retry-started` 明确开始新 attempt 后才累加。流中重复采样、重放替换和迁移副本不增加请求。
+- 消息继续使用原生 `message.id`；失败 attempt 使用独立命名空间中的 session ID 与事件序号，重扫不会重复导入。
+- 没有任何 usage 的中断事件属于用量未知，不生成零用量记录，也不再单独触发解析暂缓；已导入的对应事实会保留。显式但无效的 usage（如 null、负数）仍会诊断并暂缓。
 - `inputTokens` 已是新增输入，不再减缓存；缓存读写单列，`reasoningTokens` 是输出子集。
 - v0 按 `seedLength` 排除继承历史；v4 使用 `isSeeded` 和最后一个 `session/end-seed.data.inherited=true` 边界，普通恢复的空标记不排除历史。没有继承历史的子代理保留自身用量。
 - 多帧压缩均读取；截断帧、半行、序号缺口或损坏片段会暂缓完整性确认，保留既有事实等待重试。
 - 会话阅读包含用户正文、思考、最终回复与工具步骤，注入上下文默认隐藏，不计为用户提问。
 
-有流式首字时估算输出阶段速度，缺少首字时回退明确标注的 E2E 口径。缺少计时不影响 Token 采集，门槛和汇总规则见[计时说明](TIMING.md)。本应用尚未启用 DSH 会话删除、恢复命令和外部附件读取。
+有流式首字时估算输出阶段速度，缺少首字时回退明确标注的 E2E 口径。重试成功的计时从 `llm/retry-started` 开始；失败 attempt 不参与输出速度采样。缺少计时不影响 Token 采集，门槛和汇总规则见[计时说明](TIMING.md)。本应用尚未启用 DSH 会话删除、恢复命令和外部附件读取。
 
 ## 原生供应商与价格
 
-供应商取 `assistant/message.data.message.source.provider`，模型保留日志原文。路由字段表明客户端选择，不以当前配置或模型厂商反推历史上游。
+消息供应商取 `assistant/message.data.message.source.provider`，模型保留日志原文；失败 attempt 使用其之前最近的 `request/header.data.header.config` 中的供应商与模型，缺少模型时诊断而不猜测。路由字段表明客户端选择，不以当前配置或模型厂商反推历史上游。
 
 价格按供应商和模型匹配：原生报告费用优先，已配置供应商使用专属价表；通用 models.dev 价格作为 `model_reference` 参考。DeepSeek 官方与 OpenCode Go 的分时规则各自独立，不能因模型相同而混用。
 
@@ -49,4 +52,4 @@
 
 Go 的 `subscription_usage` 表示套餐额度折算，不是分摊月费或现金扣款。Search／Fetch 独立工具费尚未采集，不能根据工具名称或 Token 数补算。
 
-供应商与价格快照通过当前请求协议 v4 传输，读写这些字段的设备需有相应版本支持；版本与兼容统一见[架构说明](ARCHITECTURE.md#版本与兼容)。上游格式参考 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)，仓库只保留合成日志样本。
+供应商与价格快照通过当前请求协议 v4 传输，读写这些字段的设备需有相应版本支持；版本与兼容统一见[架构说明](ARCHITECTURE.md#版本与兼容)。上游核对依据为 [rc.5 的 token-meter 结算实现](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/llm/token-meter/src/usage-projection.ts)及[会话类型](https://github.com/deepseek-ai/deepseek-harness/blob/b830ec950faba0a46dda564be3e2d854afed94f1/packages/core/session/src/types.ts)，仓库只保留合成日志样本。

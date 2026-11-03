@@ -9,6 +9,7 @@ use std::str::FromStr;
 pub mod deepseek;
 pub mod go_catalog;
 pub mod opencode_go;
+mod request_tariff;
 pub const CURRENCIES: &[&str] = &["USD", "CNY", "EUR", "JPY", "TWD", "TRY"];
 
 pub fn validate_settings(settings: &PricingSettings) -> Result<()> {
@@ -104,7 +105,7 @@ pub fn resolve_with_settings(
                     settings,
                 );
             }
-            return estimate_converted(
+            let mut updated = estimate_converted(
                 &parsed.tokens,
                 price,
                 cost.conversion
@@ -112,14 +113,19 @@ pub fn resolve_with_settings(
                     .and_then(|c| c.units_per_usd.as_deref()),
                 cost.conversion.as_ref().map_or(0, |c| c.configured_at),
                 cost.context.clone(),
-            );
+            )?;
+            if cost.billing_basis.as_deref() == Some("model_reference") {
+                updated.billing_basis = cost.billing_basis.clone();
+            }
+            return Ok(updated);
         }
     }
     find_for_provider(prices, &parsed.model, parsed.provider.as_deref())
-        .map(|price| estimate_at(&parsed.tokens, price, parsed.occurred_at, settings))
+        .map(|price| estimate_request(parsed, price, settings))
         .unwrap_or_else(|| Ok(Cost::default()))
 }
 pub fn validate(price: &Price) -> Result<()> {
+    request_tariff::validate(price)?;
     if let Some(tariff) = &price.go_tariff {
         anyhow::ensure!(
             price.provider.as_deref() == Some("opencode-go")
@@ -246,6 +252,16 @@ pub fn find_for_provider<'a>(
     model: &str,
     provider: Option<&str>,
 ) -> Option<&'a Price> {
+    let official_reference = || {
+        deepseek::canonical(model)?;
+        find_in(
+            prices.iter().filter(|p| {
+                p.provider.as_deref() == Some("deepseek-official")
+                    && p.source == "deepseek_official"
+            }),
+            model,
+        )
+    };
     let id = provider.map(crate::providers::pricing_id);
     if let Some(id) = id {
         if let Some(price) = find_in(
@@ -260,10 +276,12 @@ pub fn find_for_provider<'a>(
             .iter()
             .any(|p| p.provider.as_deref().map(crate::providers::pricing_id) == Some(id))
         {
-            return None;
+            // A price for another model on this route must not block the
+            // recognized DeepSeek model's official reference fallback.
+            return official_reference();
         }
     }
-    // Unconfigured routes use models.dev model references, never an unrelated provider tariff.
+    // Prefer an explicitly imported model reference on unconfigured routes.
     if let Some(price) = find_in(
         prices
             .iter()
@@ -273,7 +291,7 @@ pub fn find_for_provider<'a>(
         return Some(price);
     }
     if deepseek::canonical(model).is_some() {
-        return None;
+        return official_reference();
     }
     if id.is_none() {
         return find_in(prices.iter().filter(|p| p.provider.is_none()), model);
@@ -312,6 +330,23 @@ fn snapshot_applies(cost: &Cost, model: &str, provider: Option<&str>, prices: &[
 }
 pub fn estimate(tokens: &Tokens, price: &Price) -> Result<Cost> {
     estimate_converted(tokens, price, None, 0, None)
+}
+pub fn estimate_request(
+    parsed: &ParsedUsage,
+    price: &Price,
+    settings: &PricingSettings,
+) -> Result<Cost> {
+    let selected = request_tariff::select(price, parsed)?;
+    let mut cost = estimate_at(&parsed.tokens, &selected, parsed.occurred_at, settings)?;
+    if price.provider.as_deref() == Some("deepseek-official")
+        && price.source == "deepseek_official"
+        && parsed.provider.as_deref().map(crate::providers::pricing_id) != Some("deepseek-official")
+    {
+        // This estimates the model's API equivalent, not the custom route's
+        // actual bill. Keep both the native route and price provenance intact.
+        cost.billing_basis = Some("model_reference".into());
+    }
+    Ok(cost)
 }
 
 pub fn estimate_at(
@@ -432,6 +467,15 @@ fn estimate_converted(
             .go_tariff
             .as_ref()
             .map(|t| format!("{}:{}", go_catalog::RULE, t.catalog_version))
+            .or_else(|| {
+                price.request_tariff.as_ref().map(|t| {
+                    format!(
+                        "request-tariff-v1:{}:{}",
+                        t.version,
+                        t.selected_tier.as_deref().unwrap_or("base")
+                    )
+                })
+            })
             .or_else(|| price.pricing_rule.clone())
             .unwrap_or_else(|| "flat-price-v2".into()),
     })

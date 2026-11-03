@@ -34,7 +34,7 @@ impl Store {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         anyhow::ensure!(
-            version <= 6,
+            version <= 7,
             "Database schema is newer than this application"
         );
         conn.execute_batch("BEGIN IMMEDIATE")?;
@@ -42,7 +42,8 @@ impl Store {
             conn.execute_batch(include_str!("schema.sql"))?;
             crate::query_store::install(&conn, version)?;
             crate::upgrade::install(&conn, version)?;
-            conn.execute_batch("PRAGMA user_version=6;")?;
+            crate::schema_v7::migrate(&conn, version)?;
+            conn.execute_batch("PRAGMA user_version=7;")?;
             Ok(())
         })();
         if let Err(error) = migration {
@@ -106,6 +107,14 @@ impl Store {
     }
     /// Call under a transaction when coordinating multiple facts and scan state.
     pub fn upsert(&self, mut record: UsageRecord, source_path: &str) -> Result<bool> {
+        if record.deleted {
+            self.conn.execute(
+                "DELETE FROM record_sources WHERE device_id=?1 AND record_id=?2",
+                params![record.device_id, record.id],
+            )?;
+        } else if record.record_source == "session" {
+            self.conn.execute("INSERT OR IGNORE INTO record_sources(device_id,record_id,source_path) VALUES(?1,?2,?3)", params![record.device_id,record.id,source_path])?;
+        }
         if let Some(old) = self.record(&record.id)? {
             record.revision = old.revision;
             if record == old {
@@ -120,6 +129,53 @@ impl Store {
         self.conn.execute("INSERT INTO outbox(id,revision,payload) VALUES(?1,?2,?3) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,payload=excluded.payload",params![record.id,record.revision,payload])?;
         self.save_record_timing(&record.device_id, &record.id, record.timing.as_ref())?;
         Ok(true)
+    }
+    /// Reconcile only a completely read and parsed source. Defer tombstones until
+    /// all sources have had a chance to attach their observations (including v6).
+    pub(crate) fn reconcile_source(
+        &self,
+        path: &str,
+        active: &std::collections::HashSet<String>,
+    ) -> Result<()> {
+        let device = self.device_id()?;
+        let ids = self
+            .conn
+            .prepare("SELECT record_id FROM record_sources WHERE device_id=?1 AND source_path=?2")?
+            .query_map(params![device, path], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        for id in ids.into_iter().filter(|id| !active.contains(id)) {
+            self.conn.execute(
+                "DELETE FROM record_sources WHERE device_id=?1 AND record_id=?2 AND source_path=?3",
+                params![device, id, path],
+            )?;
+            self.conn.execute(
+                "INSERT OR IGNORE INTO record_retire_candidates VALUES(?1,?2)",
+                params![device, id],
+            )?;
+        }
+        Ok(())
+    }
+    pub(crate) fn retire_unobserved(&self, harness: Option<&str>) -> Result<u64> {
+        let rows = self.conn.prepare("SELECT r.payload,r.source_path FROM record_retire_candidates c JOIN records r ON r.device_id=c.device_id AND r.id=c.record_id WHERE (?1 IS NULL OR json_extract(r.payload,'$.harness')=?1)")?
+            .query_map([harness], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<Result<Vec<_>,_>>()?;
+        let mut updated = 0;
+        for (payload, path) in rows {
+            let mut record: UsageRecord = serde_json::from_str(&payload)?;
+            let observed: bool = self.conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM record_sources WHERE device_id=?1 AND record_id=?2)",
+                params![record.device_id, record.id],
+                |r| r.get(0),
+            )?;
+            if !observed && !record.deleted {
+                record.deleted = true;
+                updated += u64::from(self.upsert(record.clone(), &path)?);
+            }
+            self.conn.execute(
+                "DELETE FROM record_retire_candidates WHERE device_id=?1 AND record_id=?2",
+                params![record.device_id, record.id],
+            )?;
+        }
+        Ok(updated)
     }
     pub fn local_records(&self) -> Result<Vec<UsageRecord>> {
         self.read_records("SELECT payload FROM records")
@@ -188,12 +244,16 @@ impl Store {
     pub fn pending(&self) -> Result<Vec<UsageRecord>> {
         self.read_records("SELECT payload FROM outbox ORDER BY id LIMIT 200")
     }
-    /// Keep unsupported Claude revisions queued without starving other harnesses.
-    pub fn pending_compatible(&self, claude_metadata: bool) -> Result<Vec<UsageRecord>> {
-        if claude_metadata {
-            return self.pending();
-        }
-        self.read_records("SELECT payload FROM outbox WHERE NOT (json_extract(payload,'$.harness')='claude' AND (json_extract(payload,'$.timing') IS NOT NULL OR json_extract(payload,'$.requestMetadata') IS NOT NULL)) ORDER BY id LIMIT 200")
+    /// Keep unsupported metadata/price revisions queued without starving compatible records.
+    pub fn pending_compatible(
+        &self,
+        claude_metadata: bool,
+        request_tariff: bool,
+    ) -> Result<Vec<UsageRecord>> {
+        self.read_records(&format!("SELECT payload FROM outbox WHERE ({} OR NOT (json_extract(payload,'$.harness')='claude' AND (json_extract(payload,'$.timing') IS NOT NULL OR json_extract(payload,'$.requestMetadata') IS NOT NULL))) AND ({} OR json_extract(payload,'$.cost.snapshot.requestTariff') IS NULL) ORDER BY id LIMIT 200", u8::from(claude_metadata), u8::from(request_tariff)))
+    }
+    pub fn pending_request_tariff_count(&self) -> Result<u64> {
+        Ok(self.conn.query_row("SELECT COUNT(*) FROM outbox WHERE json_extract(payload,'$.cost.snapshot.requestTariff') IS NOT NULL", [], |r| r.get(0))?)
     }
     pub fn pending_claude_metadata_count(&self) -> Result<u64> {
         Ok(self.conn.query_row("SELECT COUNT(*) FROM outbox WHERE json_extract(payload,'$.harness')='claude' AND (json_extract(payload,'$.timing') IS NOT NULL OR json_extract(payload,'$.requestMetadata') IS NOT NULL)", [], |r| r.get(0))?)

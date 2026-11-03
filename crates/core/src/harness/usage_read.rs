@@ -66,6 +66,8 @@ const CLAUDE: Projection = Fields(&[
     ("sessionId", All),
     ("id", All),
     ("requestRef", All),
+    ("requestId", All),
+    ("isSidechain", All),
     ("effort", All),
     ("perTurnEffort", All),
     (
@@ -123,20 +125,17 @@ pub(super) fn opencode(data: &str, part: bool) -> Result<Value> {
     Ok(value)
 }
 
-/// Validate a plain Codex parent's exact physical prefix without retaining
+/// Validate a Codex parent's exact decoded prefix without retaining
 /// transcript bodies. Both byte and line boundaries must agree.
 pub(super) fn codex_prefix(path: &Path, bytes: u64, ordinal: u64) -> Result<(Vec<Value>, String)> {
-    anyhow::ensure!(
-        !path.to_string_lossy().ends_with(".zst") && !path.to_string_lossy().ends_with(".zstd"),
-        "Compressed Codex parent boundary is unavailable"
-    );
     let before = crate::scan_cache::Stamp::read(path)?;
     let file = File::open(path)?;
-    anyhow::ensure!(
-        file.metadata()?.len() >= bytes,
-        "Codex parent is shorter than its history boundary"
-    );
-    let mut reader = BufReader::new(file);
+    let input: Box<dyn Read> = if crate::codex_scan::is_compressed(path) {
+        Box::new(zstd::stream::read::Decoder::new(file)?)
+    } else {
+        Box::new(file)
+    };
+    let mut reader = BufReader::new(input);
     let mut line = String::new();
     let mut hash = Sha256::new();
     let mut events = Vec::new();

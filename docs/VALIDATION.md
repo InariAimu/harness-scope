@@ -78,6 +78,14 @@ python scripts/compare_usage.py --scope-db <SCOPE_DB> --harness claude --claude-
 
 删除正文、修改正式账号、重新计价和向真实服务器写入合成数据都不是只读对账的一部分，应在相应操作的明确范围内执行。
 
+v6 → v7 可在仓库 `output/` 下的一致性副本运行以下离线验收（拒绝直接操作正式库）：
+
+```powershell
+cargo run --release --locked -p harness-scope-core --example verify_schema_v7 -- output/<任务>/v6-copy.db output/<任务>/migration-report.json
+```
+
+该检查先验证迁移未改写原始载荷和已有设置，再读取副本所配置的本机来源并重复扫描，核对历史 ID、冻结费用、幂等性和数据库完整性；不启动账号查询或网络同步。来源中的损坏记录和写入中记录单独报告为延后处理。副本验证结束后按清理规则移入回收站，正式升级前另保留最新回滚组。
+
 ## 验证产物
 
 日志、截图、报告、数据库副本和旧程序放入被忽略的 `output/`。报告记录提交／构建标识、命令、结果、数据来源和验证限制，不依赖个人机器上的永久路径。真实日志、凭据和包含个人会话的数据库不提交到仓库。

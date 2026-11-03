@@ -40,7 +40,22 @@ fn compute(e: &Engine, snapshot: &Value, rows: &[&Row], pace: i64) -> Value {
     compute_for(e, "fixture", snapshot, rows, pace)
 }
 fn compute_for(e: &Engine, id: &str, snapshot: &Value, rows: &[&Row], pace: i64) -> Value {
-    let c = catalog::defaults();
+    let mut c = catalog::defaults();
+    // These synthetic requests represent 10% of fixed capacities. Keep the
+    // calibration assertions independent from external reference-table updates.
+    for (model, dollars) in [("gpt-6.1-sol", "47"), ("gpt-6-astra", "66")] {
+        c.models
+            .iter_mut()
+            .find(|m| m.id == model)
+            .unwrap()
+            .estimates
+            .get_mut("plus")
+            .unwrap()
+            .weekly
+            .as_mut()
+            .unwrap()
+            .api_equivalent_usd = dollars.into();
+    }
     let input = Input {
         id,
         snapshot: Some(snapshot),

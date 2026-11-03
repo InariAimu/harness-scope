@@ -22,6 +22,7 @@ fn old_database_defaults_and_display_preferences_survive_restart() {
     assert_eq!(upgraded["currency"], "CNY");
     let upgraded = save(&e, json!({"numberUnitStyle":"chinese","numberDecimals":2}));
     assert_eq!(upgraded["trendChartType"], "area");
+    save(&e, json!({"speedCalculation":"end_to_end"}));
     drop(e);
     let e = Engine::open(&path).unwrap();
     let value = e.execute("usage_display", json!({})).unwrap();
@@ -32,6 +33,11 @@ fn old_database_defaults_and_display_preferences_survive_restart() {
     assert_eq!(value["trendChartType"], "area");
     assert_eq!(value["numberUnitStyle"], "chinese");
     assert_eq!(value["numberDecimals"], 2);
+    assert_eq!(value["speedCalculation"], "end_to_end");
+    assert_eq!(
+        save(&e, json!({"speedCalculation":"decode"}))["speedCalculation"],
+        "decode"
+    );
     assert_eq!(
         save(&e, json!({"trendChartType":"bar"}))["trendChartType"],
         "bar"
@@ -87,6 +93,9 @@ fn invalid_patches_are_rejected_atomically() {
         json!({"trendChartType":42}),
         json!({"numberUnitStyle":"auto"}),
         json!({"numberUnitStyle":42}),
+        json!({"currency":"CNY","speedCalculation":"fast"}),
+        json!({"speedCalculation":""}),
+        json!({"speedCalculation":42}),
         json!({"numberDecimals":-1}),
         json!({"numberDecimals":1.5}),
         json!({"numberDecimals":"2"}),

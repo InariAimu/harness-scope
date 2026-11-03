@@ -122,8 +122,10 @@ impl Requests {
     }
 
     pub fn metadata(&self, session: &str, id: &str, v: &Value) -> Option<RequestMetadata> {
-        let service_tier = v["message"]["usage"]["service_tier"]
+        let service_tier = v["message"]["usage"]["speed"]
             .as_str()
+            .filter(|s| ["fast", "standard"].contains(s))
+            .or_else(|| v["message"]["usage"]["service_tier"].as_str())
             .filter(|s| RequestMetadata::valid_tier(s))
             .map(str::to_owned);
         let reasoning_effort = self

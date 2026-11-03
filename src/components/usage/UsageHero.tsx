@@ -72,6 +72,8 @@ export function aggregateSummaries(items: UsageSummary[]): UsageSummary {
     ),
     totalRequests,
     unpricedCount: items.reduce((sum, s) => sum + (s.unpricedCount ?? 0), 0),
+    unpricedTokens: items.reduce((sum, s) => sum + (s.unpricedTokens ?? 0), 0),
+    pricedCount: items.reduce((sum,s) => sum + (s.pricedCount ?? s.totalRequests - (s.unpricedCount ?? 0)),0),
     totalCost: totalCostNum.toFixed(6),
     totalInputTokens: input,
     totalOutputTokens: output,

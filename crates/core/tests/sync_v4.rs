@@ -36,11 +36,11 @@ fn deferred_claude_revisions_cannot_starve_compatible_uploads() {
         .unwrap();
     assert_eq!(s.pending().unwrap().len(), 200);
     assert_eq!(s.pending_claude_metadata_count().unwrap(), 201);
-    let compatible = s.pending_compatible(false).unwrap();
+    let compatible = s.pending_compatible(false, true).unwrap();
     assert_eq!(compatible.len(), 1);
     assert_eq!(compatible[0].id, "codex:compatible");
     assert_eq!(s.pending_count().unwrap(), 202);
-    assert_eq!(s.pending_compatible(true).unwrap().len(), 200);
+    assert_eq!(s.pending_compatible(true, true).unwrap().len(), 200);
 }
 fn push(server: &Store, records: Vec<UsageRecord>, version: u32) -> anyhow::Result<PushResponse> {
     sync::push(

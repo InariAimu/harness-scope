@@ -37,6 +37,7 @@ pub(crate) fn logical_name(path: &Path) -> String {
     path.file_name()
         .unwrap_or_default()
         .to_string_lossy()
+        .trim_end_matches(".zstd")
         .trim_end_matches(".zst")
         .to_owned()
 }
@@ -51,7 +52,10 @@ pub(crate) fn identity(path: &Path, events: &[Value]) -> Result<Identity> {
         .or_else(|| string(&p["threadId"]))
         .context("Missing Codex thread ID")?;
     let name = logical_name(path);
-    let stem = name.strip_suffix(".jsonl").unwrap_or(&name);
+    let stem = name
+        .strip_suffix(".jsonl")
+        .or_else(|| name.strip_suffix(".json"))
+        .unwrap_or(&name);
     let uuid_at = |offset: usize| {
         stem.get(offset..)
             .and_then(|s| uuid::Uuid::parse_str(s).ok())

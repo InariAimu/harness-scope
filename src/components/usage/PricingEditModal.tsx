@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { useUpdateModelPricing } from "@/lib/query/usage";
 import { isNonNegativeDecimalString, type ModelPricing } from "@/types/usage";
 import { ModelsDevPickerDialog } from "./ModelsDevPickerDialog";
+import { RequestTariffEditor } from "./RequestTariffEditor";
 
 interface PricingEditModalProps {
   open: boolean;
@@ -29,6 +30,7 @@ export function PricingEditModal({
   const { t } = useTranslation();
   const updatePricing = useUpdateModelPricing();
   const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [tiers,setTiers]=useState(model.requestTariff?.tiers ?? []);
 
   const [formData, setFormData] = useState({
     provider: model.provider ?? "",
@@ -75,6 +77,7 @@ export function PricingEditModal({
         cacheCreationCost: formData.cacheCreationCost,
         currency: formData.currency,
         provider: formData.provider.trim() || null,
+        requestTariff: tiers.length ? {version:JSON.stringify(tiers)===JSON.stringify(model.requestTariff?.tiers) ? model.requestTariff!.version : new Date().toISOString(),tiers} : null,
       });
 
       toast.success(
@@ -139,6 +142,7 @@ export function PricingEditModal({
       )}
 
       <form id="pricing-form" onSubmit={handleSubmit} className="space-y-6">
+        <RequestTariffEditor tiers={tiers} onChange={setTiers} enabled={!!formData.provider.trim()} />
         <div className="space-y-2">
           <Label htmlFor="priceProvider">
             {t("scope.pricing.provider", "供应商 ID（留空为通用价表）")}

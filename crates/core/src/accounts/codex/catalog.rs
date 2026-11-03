@@ -5,6 +5,10 @@ use std::{
     fs,
 };
 const META: &str = "codex_allowance_catalog_v1";
+// Canonical revision of the 2026-10-20 bundled catalog. Only an unchanged saved
+// default follows the new bundle; edited catalogs and draft files stay local.
+const PREVIOUS_DEFAULT_REVISION: &str =
+    "c8a44082e2dc2e5e1b3ce40599dd9e06222bdd6195ebd20dc26bbb8f24e1129b";
 const MAX_BYTES: usize = 262144;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -201,6 +205,11 @@ pub fn validate(c: &Catalog) -> Result<()> {
 }
 pub fn load(s: &Store) -> Result<Catalog> {
     let c = s.meta(META)?.unwrap_or_else(defaults);
+    let c = if revision(&c) == PREVIOUS_DEFAULT_REVISION {
+        defaults()
+    } else {
+        c
+    };
     validate(&c)?;
     Ok(c)
 }

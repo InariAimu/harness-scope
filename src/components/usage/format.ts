@@ -1,5 +1,14 @@
 import type { UsageDisplaySettings } from "@/types";
 import type { SessionSpeedEstimate } from "@/types/usage";
+
+export const SPEED_CALCULATIONS = ["decode", "end_to_end"] as const;
+export type SpeedCalculation = (typeof SPEED_CALCULATIONS)[number];
+export function resolveSpeedCalculation(
+  settings: Pick<UsageDisplaySettings, "speedCalculation"> | undefined,
+): SpeedCalculation {
+  return settings?.speedCalculation === "end_to_end" ? "end_to_end" : "decode";
+}
+
 export function parseFiniteNumber(value: unknown): number | null {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : null;

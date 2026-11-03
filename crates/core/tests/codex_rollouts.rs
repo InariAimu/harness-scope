@@ -125,7 +125,7 @@ fn separate_rollouts_union_and_compressed_moves_survive_restart_and_truncation()
     assert_eq!(e.lock().unwrap().pending_count().unwrap(), 0);
 }
 #[test]
-fn compressed_only_sources_are_not_scanned_even_when_forced() {
+fn compressed_only_sources_bootstrap_once_then_skip_routine_force_refresh() {
     let (_dir, e, root) = setup();
     let path = root.join(first_name());
     write(&path, &[meta(THREAD), usage(1, Some(10), Some(10))]);
@@ -148,11 +148,15 @@ fn compressed_only_sources_are_not_scanned_even_when_forced() {
         )
         .is_err());
     assert!(compressed.exists());
+    let initial = scan(&e, false);
+    assert_eq!(initial.files_scanned, 1);
+    assert!(initial.imported > 0);
+    let before = e.lock().unwrap().records("local").unwrap();
     for force in [false, true] {
         let report = scan(&e, force);
         assert_eq!(report.files_scanned, 0);
         assert_eq!(report.imported, 0);
-        assert!(e.lock().unwrap().records("local").unwrap().is_empty());
+        assert_eq!(e.lock().unwrap().records("local").unwrap(), before);
     }
 }
 
@@ -528,7 +532,7 @@ fn conflicting_parent_copies_defer_boundary_without_guessing() {
 }
 
 #[test]
-fn compressed_only_parent_cannot_validate_a_new_fork_boundary() {
+fn compressed_parent_is_deferred_during_refresh_and_verified_during_confirmed_reimport() {
     let (_dir, e, root) = setup();
     let parent = root.join(first_name());
     write(&parent, &[meta(THREAD), usage(1, Some(100), Some(100))]);
@@ -551,6 +555,30 @@ fn compressed_only_parent_cannot_validate_a_new_fork_boundary() {
     let report = e.scan_harness("codex", false).unwrap();
     assert!(report.deferred_files > 0 && !report.errors.is_empty());
     assert_eq!(e.lock().unwrap().records("local").unwrap(), before);
+    let reimport = e
+        .execute(
+            "reimport_harness",
+            json!({"harness":"codex","confirmed":true}),
+        )
+        .unwrap();
+    assert!(
+        reimport["errors"].as_array().unwrap().is_empty(),
+        "{reimport}"
+    );
+    let after = e.lock().unwrap().records("local").unwrap();
+    assert_eq!(after.len(), before.len() + 1);
+    assert_eq!(
+        after.iter().find(|r| r.id == before[0].id).unwrap().cost,
+        before[0].cost
+    );
+    let repeated = e
+        .execute(
+            "reimport_harness",
+            json!({"harness":"codex","confirmed":true}),
+        )
+        .unwrap();
+    assert_eq!(repeated["updated"], 0);
+    assert_eq!(e.lock().unwrap().records("local").unwrap(), after);
 }
 
 #[test]
@@ -758,7 +786,7 @@ fn historical_collision_repair_preserves_ids_costs_and_syncs_revisions_without_d
         .unwrap();
     drop(e);
     let e = Engine::open(&dir.path().join("scope.db")).unwrap();
-    assert_eq!(e.lock().unwrap().schema_version().unwrap(), 6);
+    assert_eq!(e.lock().unwrap().schema_version().unwrap(), 7);
     let r = scan(&e, false);
     assert_eq!(r.imported, 1);
     assert_eq!(r.updated, 3);

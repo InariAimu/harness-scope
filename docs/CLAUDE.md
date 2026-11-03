@@ -6,7 +6,9 @@ Claude Code 适配器读取 `~/.claude/projects` 的 JSONL；新配置会优先�
 
 ## 请求与 Tokens
 
-只将 `type=assistant` 且含有效 `message.usage` 的记录作为用量观察。同一 `(sessionId, message.id)` 的多个内容块保持同一个事件 ID，选择输出最多的快照，相同输出时选择后出现的记录；重扫与追加修订不会产生新的请求身份。
+只将 `type=assistant` 且含有效 `message.usage` 的记录作为用量观察。优先按 `message.id + requestId`（或 `requestRef`）标识请求，跨会话副本共用一个事件；没有请求标识时，原生 `msg_` / `msg-` 身份可全局匹配，其他网关 ID 使用原会话、消息和时间，避免常量消息 ID 合并独立请求。内容块选择总 Token 最大的快照；来源副本不能让已完成快照回退。
+
+`usage.iterations` 中的 `advisor_message` 按明确的模型和独立用量形成稳定子事件，执行模型迭代已经包含在顶层，不再次累加。统计的请求数是有用量的模型调用数，因此一次外层 API 请求可包含执行模型与 Advisor 多个事件。Advisor 不继承执行模型的速度或耗时。缺少模型、非法计数或无效迭代结构会报告不完整并保留旧事实。
 
 输入、输出、缓存读取和缓存写入分别使用原生字段。`output_tokens_details.thinking_tokens` 为输出子集，单独保存在 `tokens.reasoning`，不会再次加入总 Tokens 或费用。非法计数、推理大于输出、1h 缓存写入大于全部缓存写入均报告未完成，保留原有记录等待重试。
 
@@ -14,11 +16,11 @@ Claude Code 适配器读取 `~/.claude/projects` 的 JSONL；新配置会优先�
 
 ## 请求耗时与元数据
 
-`claude-v2-request-timing` 使用同一会话的 `api-request.id` 与助手块的 `requestRef` 关联。只有请求引用唯一、一个请求仅归属一个原生消息、起止时间有效且存在完成标记时，才用请求时间到该消息最后助手内容块时间生成 `claude_api_request_blocks` 估算。范围沿用 100 ms–1 小时；后续工具结果、用户等待、其他请求和整轮耗时不参与计算。
+`claude-v3-request-identity-advisor` 使用同一会话的 `api-request.id` 与助手块的 `requestRef` 关联。只有请求引用唯一、一个请求仅归属一个原生消息、起止时间有效且存在完成标记时，才用请求时间到该消息最后助手内容块时间生成 `claude_api_request_blocks` 估算。范围沿用 100 ms–1 小时；后续工具结果、用户等待、其他请求和整轮耗时不参与计算。
 
 这表示客户端日志 E2E 窗口，包含客户端处理开销，不是精确网络耗时或纯模型生成耗时。由于缺少首字时间，速度回退到 E2E 口径，采用至少 200 输出 Tokens／1 秒门槛并显示 `≈`。助手块时间和 `thinkingDurationMs` 不能证明首 Token 到达时刻，首字保持未知。缺少请求关联的旧日志仍可统计 Tokens，耗时保持未知。
 
-推理强度优先取关联请求的 `params.output_config.effort`，再使用该助手记录的 `perTurnEffort`／`effort`，不向其他请求继承。服务档位取同一条助手用量中的 `service_tier`，来源为 `claude_usage`，不代表供应商、账号或套餐；`usage.speed` 也不作为 tok/s。
+推理强度优先取关联请求的 `params.output_config.effort`，再使用该助手记录的 `perTurnEffort`／`effort`，不向其他请求继承。请求速度优先取同一条助手用量中的 `speed=fast/standard`，缺失时使用 `service_tier`，来源为 `claude_usage`；该字段不代表供应商、账号或套餐，也不作为 tok/s。计价规则必须匹配已知供应商，不因 Fast 自动套用 Anthropic 或其他供应商倍率。
 
 升级解析器会重读已有来源，沿原 ID 回填计时、推理细分及请求元数据。计费 Token 分类不变时，已有费用及完整单价快照保持原样，修订和 outbox 按现有机制更新。同步仍使用协议 v4，但服务器及读取这些记录的客户端需要更新 Claude 来源白名单。
 

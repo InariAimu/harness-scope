@@ -77,12 +77,12 @@ fn provider_tariffs_and_unconfigured_model_references_are_separate() {
             assert_eq!(cost.amount_usd.as_deref(), Some("1.01"));
         }
     }
-    assert!(pricing::find_for_provider(
-        &pricing::builtin(),
-        "deepseek-flash",
-        Some("custom-route")
-    )
-    .is_none());
+    assert_eq!(
+        pricing::find_for_provider(&pricing::builtin(), "deepseek-flash", Some("custom-route"))
+            .unwrap()
+            .source,
+        "deepseek_official"
+    );
     assert!(
         pricing::find_for_provider(&pricing::builtin(), "gpt-5.4", Some("custom-route")).is_none()
     );
@@ -122,6 +122,169 @@ fn provider_tariffs_and_unconfigured_model_references_are_separate() {
             period
         );
     }
+}
+
+#[test]
+fn custom_deepseek_uses_official_reference_without_claiming_route_ownership() {
+    let mut prices = pricing::builtin();
+    let mut settings = deepseek::default_settings();
+    settings
+        .exchange_rates
+        .insert("CNY".into(), "6.68249010".into());
+    let mut parsed = usage(Some("custom"));
+    parsed.model = "custom/deepseek-flash".into();
+    let cost = pricing::resolve_with_settings(&parsed, None, &prices, &settings).unwrap();
+    let official = pricing::estimate_at(
+        &parsed.tokens,
+        pricing::find_for_provider(&prices, "deepseek-flash", Some("deepseek-official")).unwrap(),
+        parsed.occurred_at,
+        &settings,
+    )
+    .unwrap();
+    assert_eq!(cost.amount_usd, official.amount_usd);
+    assert_eq!(cost.price_source, "deepseek_official");
+    assert_eq!(cost.pricing_model.as_deref(), Some("deepseek-flash"));
+    assert_eq!(cost.billing_basis.as_deref(), Some("model_reference"));
+    assert_eq!(
+        cost.snapshot.as_ref().unwrap().provider.as_deref(),
+        Some("deepseek-official")
+    );
+    assert_eq!(parsed.provider.as_deref(), Some("custom"));
+    assert_eq!(parsed.model, "custom/deepseek-flash");
+
+    // An unrelated price on the custom route cannot suppress this model's fallback.
+    let mut unrelated = reference();
+    unrelated.model_id = "other-model".into();
+    unrelated.provider = Some("custom".into());
+    unrelated.source = "manual".into();
+    prices.push(unrelated);
+    assert_eq!(
+        pricing::resolve_with_settings(&parsed, None, &prices, &settings)
+            .unwrap()
+            .price_source,
+        "deepseek_official"
+    );
+
+    // Existing frozen estimates and native reported costs retain their authority.
+    let tmp = tempfile::tempdir().unwrap();
+    let e = Engine::open(&tmp.path().join("scope.db")).unwrap();
+    let mut previous = record(&e, &parsed);
+    previous.cost = cost.clone();
+    sync::validate_record(&previous).unwrap();
+    let mut changed_prices = prices.clone();
+    for price in &mut changed_prices {
+        if price.source == "deepseek_official" {
+            price.output_cost_per_million = "99".into();
+        }
+    }
+    assert_eq!(
+        pricing::resolve_with_settings(&parsed, Some(&previous), &changed_prices, &settings)
+            .unwrap(),
+        cost
+    );
+    let mut more_tokens = parsed.clone();
+    more_tokens.tokens.output *= 2;
+    let updated =
+        pricing::resolve_with_settings(&more_tokens, Some(&previous), &changed_prices, &settings)
+            .unwrap();
+    assert_eq!(updated.billing_basis.as_deref(), Some("model_reference"));
+    assert_eq!(updated.snapshot, cost.snapshot);
+    parsed.reported_cost = Some("0.123".into());
+    assert_eq!(
+        pricing::resolve_with_settings(&parsed, None, &prices, &settings)
+            .unwrap()
+            .amount_usd
+            .as_deref(),
+        Some("0.123")
+    );
+    parsed.reported_cost = None;
+
+    let mut custom = reference();
+    custom.provider = Some("custom".into());
+    custom.source = "manual".into();
+    prices.push(custom);
+    let matched = pricing::resolve_with_settings(&parsed, None, &prices, &settings).unwrap();
+    assert_eq!(matched.price_source, "manual");
+    assert_eq!(
+        matched.snapshot.unwrap().provider.as_deref(),
+        Some("custom")
+    );
+}
+
+#[test]
+fn official_fallback_keeps_missing_exchange_rates_and_unknown_models_unknown() {
+    let prices = pricing::builtin();
+    let mut p = usage(Some("custom"));
+    p.model = "custom/deepseek-flash".into();
+    let missing_rate =
+        pricing::resolve_with_settings(&p, None, &prices, &deepseek::default_settings()).unwrap();
+    assert!(missing_rate.amount_usd.is_none());
+    assert_eq!(missing_rate.price_source, "deepseek_official");
+    assert_eq!(
+        missing_rate.billing_basis.as_deref(),
+        Some("model_reference")
+    );
+    for model in [
+        "custom/deepseek-v4-flash-custom",
+        "custom/private-model",
+        "gpt-5.4",
+    ] {
+        assert!(
+            pricing::find_for_provider(&prices, model, Some("custom")).is_none(),
+            "{model}"
+        );
+    }
+}
+
+#[test]
+fn repricing_repairs_unknown_custom_deepseek_costs_once_and_preserves_reported_usage() {
+    let tmp = tempfile::tempdir().unwrap();
+    let e = Engine::open(&tmp.path().join("scope.db")).unwrap();
+    let mut p = usage(Some("custom"));
+    p.model = "custom/deepseek-flash".into();
+    let original = record(&e, &p);
+    let mut reported = original.clone();
+    reported.id = "reported".into();
+    reported.cost.method = "reported".into();
+    reported.cost.amount_usd = Some("0.123".into());
+    {
+        let s = e.lock().unwrap();
+        let mut settings = deepseek::default_settings();
+        settings
+            .exchange_rates
+            .insert("CNY".into(), "6.68249010".into());
+        s.set_meta("pricing_settings", &settings).unwrap();
+        s.upsert(original.clone(), "fixture").unwrap();
+        s.upsert(reported.clone(), "fixture").unwrap();
+    }
+    assert_eq!(
+        e.execute("reprice_usage", json!({"model":"deepseek-flash"}))
+            .unwrap(),
+        1
+    );
+    let updated = e.lock().unwrap().record(&p.id).unwrap().unwrap();
+    assert_eq!(updated.id, original.id);
+    assert_eq!(updated.model, original.model);
+    assert_eq!(updated.provider, original.provider);
+    assert_eq!(updated.tokens, original.tokens);
+    assert_eq!(updated.occurred_at, original.occurred_at);
+    assert_eq!(updated.revision, original.revision + 1);
+    assert!(updated.cost.amount_usd.is_some());
+    assert_eq!(updated.cost.price_source, "deepseek_official");
+    assert_eq!(
+        updated.cost.billing_basis.as_deref(),
+        Some("model_reference")
+    );
+    sync::validate_record(&updated).unwrap();
+    assert_eq!(
+        e.lock().unwrap().record("reported").unwrap().unwrap(),
+        reported
+    );
+    assert_eq!(
+        e.execute("reprice_usage", json!({"model":"deepseek-flash"}))
+            .unwrap(),
+        0
+    );
 }
 
 #[test]

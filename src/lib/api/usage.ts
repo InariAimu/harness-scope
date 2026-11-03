@@ -80,6 +80,7 @@ export const usageApi = {
     sourceKey?: string,
     currency = "USD",
     provider?: string | null,
+    requestTariff?: ModelPricing["requestTariff"],
   ) =>
     command<number>("save_prices", {
       entries: [
@@ -94,6 +95,7 @@ export const usageApi = {
           sourceKey,
           currency,
           provider: provider?.trim() || null,
+          requestTariff,
         },
       ],
     }),

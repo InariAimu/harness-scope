@@ -274,6 +274,7 @@ fn inherited_prefix_replacement_nodes_and_stream_usage_are_not_new_calls() {
     rows.push(replay);
     rows.push(first.clone()); // same native message ID stays one fact.
     let mut host = first;
+    host["data"]["step"] = json!(3); // A distinct call, not another settlement of step 1.
     host["data"]["message"]["id"] = json!("usage-host");
     host["data"]["message"]["content"] = json!([]);
     host.as_object_mut().unwrap().remove("surfaceOp");
@@ -345,7 +346,7 @@ fn canonical_generations_and_header_versions_are_checked_without_fallback() {
 }
 
 #[test]
-fn invalid_or_missing_usage_gaps_and_unknown_formats_are_not_zero() {
+fn invalid_usage_gaps_and_unknown_formats_are_not_zero() {
     for (field, value) in [
         ("inputTokens", json!(-1)),
         ("outputTokens", Value::Null),
@@ -367,7 +368,13 @@ fn invalid_or_missing_usage_gaps_and_unknown_formats_are_not_zero() {
         .as_object_mut()
         .unwrap()
         .remove("usage");
-    assert!(!parse(&rows).complete);
+    let missing = parse(&rows);
+    assert!(missing.complete && missing.diagnostics.is_empty());
+    assert_eq!(missing.usage.len(), 1);
+    assert_eq!(
+        missing.retained_ids,
+        vec!["dsh:session-dsh-fixture:message-one"]
+    );
     let mut rows = events();
     rows[2]["seq"] = json!(999);
     assert!(!parse(&rows).complete);
@@ -408,4 +415,243 @@ fn incomplete_zstd_is_retried_without_revoking_completed_usage() {
     std::fs::write(&path, &torn).unwrap();
     assert!(e.scan(false).unwrap().errors.is_empty());
     assert_eq!(e.lock().unwrap().local_records().unwrap(), before);
+}
+
+fn rc5_retry() -> Vec<Value> {
+    include_str!("../../../tests/fixtures/dsh/rc5-retry/session.v4.jsonl")
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+fn message_mut(rows: &mut [Value]) -> &mut Value {
+    rows.iter_mut()
+        .find(|row| row["type"] == "assistant/message")
+        .unwrap()
+}
+
+#[test]
+fn rc5_nonzero_attempts_count_once_with_stable_ids_and_retry_timing() {
+    let rows = rc5_retry();
+    let result = parse(&rows);
+    assert!(result.complete && result.diagnostics.is_empty());
+    assert_eq!(result.usage.len(), 2);
+    assert_eq!(
+        result.usage.iter().map(|r| r.tokens.total()).sum::<u64>(),
+        180
+    );
+    let attempt = result
+        .usage
+        .iter()
+        .find(|r| r.native_event_id == "attempt:3")
+        .unwrap();
+    assert_eq!(attempt.id, "dsh-attempt:session-rc5-retry:3");
+    assert_eq!(attempt.tokens.total(), 50); // Last stream sample, not 12 + 50.
+    assert!(attempt.timing.is_none());
+    let message = result
+        .usage
+        .iter()
+        .find(|r| r.native_event_id == "retry-answer")
+        .unwrap();
+    assert_eq!(message.id, "dsh:session-rc5-retry:retry-answer");
+    assert_eq!(message.timing.as_ref().unwrap().duration_ms, 1000);
+    assert_eq!(message.timing.as_ref().unwrap().first_token_ms, Some(100));
+    assert_eq!(
+        parse(&rows)
+            .usage
+            .iter()
+            .map(|r| (&r.id, &r.tokens))
+            .collect::<Vec<_>>(),
+        result
+            .usage
+            .iter()
+            .map(|r| (&r.id, &r.tokens))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn rc5_settlement_replacement_requires_an_explicit_retry_to_add_usage() {
+    let mut rows = rc5_retry();
+    rows.retain(|r| !matches!(r["type"].as_str(), Some("llm/retry" | "llm/retry-started")));
+    renumber(&mut rows);
+    let result = parse(&rows);
+    assert!(result.complete);
+    assert_eq!(result.usage.len(), 1);
+    assert_eq!(result.usage[0].tokens.total(), 130);
+    assert_eq!(result.usage[0].native_event_id, "retry-answer");
+    message_mut(&mut rows)["data"]["usage"] = json!({"inputTokens":0,"outputTokens":0});
+    assert!(parse(&rows).usage.is_empty()); // Explicit zero supersedes this slot's sample.
+}
+
+#[test]
+fn rc5_attempt_routes_use_prior_headers_and_inherited_usage_stays_excluded() {
+    let mut rows = rc5_retry();
+    let message = rows
+        .iter()
+        .position(|r| r["type"] == "assistant/message")
+        .unwrap();
+    rows.insert(message, json!({"type":"request/header","time":1792112400801_i64,"data":{"reason":"change","header":{"config":{"provider":"synthetic-b","model":"deepseek-v4-pro"}}}}));
+    message_mut(&mut rows)["data"]["message"]["source"] =
+        json!({"provider":"synthetic-b","model":"deepseek-v4-pro"});
+    renumber(&mut rows);
+    let result = parse(&rows);
+    let attempt = result
+        .usage
+        .iter()
+        .find(|r| r.native_event_id == "attempt:3")
+        .unwrap();
+    assert_eq!(attempt.provider.as_deref(), Some("synthetic-a"));
+    assert_eq!(attempt.model, "deepseek-v4-flash");
+    let message = result
+        .usage
+        .iter()
+        .find(|r| r.native_event_id == "retry-answer")
+        .unwrap();
+    assert_eq!(message.provider.as_deref(), Some("synthetic-b"));
+    assert_eq!(message.model, "deepseek-v4-pro");
+    rows[0]["isSeeded"] = json!(true);
+    rows.insert(
+        5,
+        json!({"type":"session/end-seed","time":1792112400400_i64,"data":{"inherited":true}}),
+    );
+    renumber(&mut rows);
+    let seeded = parse(&rows);
+    assert!(seeded.complete && seeded.retained_ids.is_empty());
+    assert_eq!(seeded.usage.len(), 1);
+    assert_eq!(seeded.usage[0].tokens.total(), 130);
+}
+
+#[test]
+fn rc5_optional_usage_falls_back_to_stream_and_missing_is_not_zero() {
+    let mut rows = rc5_retry();
+    message_mut(&mut rows)["data"]
+        .as_object_mut()
+        .unwrap()
+        .remove("usage");
+    let fallback = parse(&rows);
+    assert!(fallback.complete && fallback.retained_ids.is_empty());
+    assert_eq!(
+        fallback.usage.iter().map(|r| r.tokens.total()).sum::<u64>(),
+        180
+    );
+    message_mut(&mut rows)["data"]["stream"] = json!([]);
+    message_mut(&mut rows)["data"]["interrupted"] = json!(true);
+    let missing = parse(&rows);
+    assert!(missing.complete && missing.diagnostics.is_empty());
+    assert_eq!(missing.usage.len(), 1);
+    assert_eq!(missing.usage[0].tokens.total(), 50);
+    assert_eq!(
+        missing.retained_ids,
+        vec!["dsh:session-rc5-retry:retry-answer"]
+    );
+    message_mut(&mut rows)["data"]["usage"] = Value::Null;
+    assert!(!parse(&rows).complete); // Present-but-invalid is not optional absence.
+}
+
+#[test]
+fn rc5_missing_attempt_usage_is_preserved_until_explicit_settlement_or_retry() {
+    let mut rows = rc5_retry();
+    rows[4]["data"]["stream"] = json!([]);
+    let result = parse(&rows);
+    assert!(result.complete);
+    assert_eq!(result.retained_ids, vec!["dsh-attempt:session-rc5-retry:3"]);
+    rows.retain(|r| !matches!(r["type"].as_str(), Some("llm/retry" | "llm/retry-started")));
+    renumber(&mut rows);
+    assert!(parse(&rows).retained_ids.is_empty());
+}
+
+#[test]
+fn rc5_missing_routes_and_malformed_stream_samples_defer_without_fabricating_usage() {
+    let mut rows = rc5_retry();
+    rows.retain(|r| r["type"] != "request/header");
+    renumber(&mut rows);
+    let missing_route = parse(&rows);
+    assert!(!missing_route.complete && !missing_route.diagnostics.is_empty());
+    assert_eq!(missing_route.usage.len(), 1);
+    assert_eq!(missing_route.usage[0].tokens.total(), 130);
+    let mut rows = rc5_retry();
+    rows[4]["data"]["stream"][2]["chunk"]["usage"]["outputTokens"] = json!(-1);
+    let malformed = parse(&rows);
+    assert!(!malformed.complete);
+    assert_eq!(malformed.usage.len(), 1);
+    let mut rows = rc5_retry();
+    rows[4]["data"]["turn"] = Value::Null;
+    assert!(!parse(&rows).complete);
+}
+
+#[test]
+fn rc5_parser_upgrade_reimport_is_idempotent_and_keeps_frozen_and_unknown_facts() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("session.v4.jsonl");
+    let mut rows = rc5_retry();
+    std::fs::write(&path, text(&rows)).unwrap();
+    let e = engine(tmp.path(), &path);
+    assert_eq!(e.scan_harness("dsh", false).unwrap().imported, 2);
+    {
+        let s = e.lock().unwrap();
+        for mut record in s.local_records().unwrap() {
+            record.parser_version = "dsh-jsonl-v2-provider".into();
+            record.cost = harness_scope_core::model::Cost {
+                amount_usd: Some("1.25".into()),
+                method: "reported".into(),
+                ..Default::default()
+            };
+            s.upsert(record, path.to_str().unwrap()).unwrap();
+        }
+        s.conn
+            .execute(
+                "UPDATE file_state SET parser_version='dsh-jsonl-v2-provider'",
+                [],
+            )
+            .unwrap();
+        let payload: String = s
+            .conn
+            .query_row("SELECT payload FROM usage_read_cache", [], |r| r.get(0))
+            .unwrap();
+        let mut checkpoint: Value = serde_json::from_str(&payload).unwrap();
+        checkpoint["version"] = json!("usage-read-v2:dsh-jsonl-v2-provider");
+        checkpoint["deferred"] = json!({"fingerprint":checkpoint["fingerprint"],"diagnostics":["old missing usage diagnostic"]});
+        s.conn
+            .execute(
+                "UPDATE usage_read_cache SET payload=?",
+                [checkpoint.to_string()],
+            )
+            .unwrap();
+    }
+    let upgraded = e.scan_harness("dsh", false).unwrap();
+    assert_eq!(upgraded.updated, 2);
+    assert_eq!(upgraded.deferred_files, 0);
+    let before = e.lock().unwrap().local_records().unwrap();
+    assert!(before
+        .iter()
+        .all(|r| r.parser_version == Dsh.descriptor().parser_version
+            && r.cost.amount_usd.as_deref() == Some("1.25")));
+    let result = e
+        .execute(
+            "reimport_harness",
+            json!({"harness":"dsh","confirmed":true}),
+        )
+        .unwrap();
+    assert_eq!(result["updated"], 0);
+    assert_eq!(result["imported"], 0);
+    assert_eq!(e.lock().unwrap().local_records().unwrap(), before);
+    message_mut(&mut rows)["data"]
+        .as_object_mut()
+        .unwrap()
+        .remove("usage");
+    message_mut(&mut rows)["data"]["stream"] = json!([]);
+    message_mut(&mut rows)["data"]["interrupted"] = json!(true);
+    std::fs::write(&path, text(&rows)).unwrap();
+    let missing = e.scan_harness("dsh", true).unwrap();
+    assert_eq!(missing.deferred_files, 0);
+    assert_eq!(missing.updated, 0);
+    assert_eq!(e.lock().unwrap().local_records().unwrap(), before);
+    assert!(e
+        .lock()
+        .unwrap()
+        .local_records()
+        .unwrap()
+        .iter()
+        .all(|r| !r.deleted));
 }

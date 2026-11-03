@@ -554,6 +554,7 @@ export function useUpdateModelPricing() {
       sourceKey?: string;
       currency?: string;
       provider?: string | null;
+      requestTariff?: import("@/types/usage").RequestTariff | null;
     }) =>
       usageApi.updateModelPricing(
         params.modelId,
@@ -566,6 +567,7 @@ export function useUpdateModelPricing() {
         params.sourceKey,
         params.currency,
         params.provider,
+        params.requestTariff,
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: usageKeys.all });

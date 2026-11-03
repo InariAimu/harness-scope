@@ -39,6 +39,9 @@ pub struct Descriptor {
 #[derive(Default)]
 pub struct ParseResult {
     pub usage: Vec<ParsedUsage>,
+    /// Observed identities with unavailable usage. Keep existing facts without
+    /// inventing zero-token records or making an otherwise valid source incomplete.
+    pub retained_ids: Vec<String>,
     pub diagnostics: Vec<String>,
     pub complete: bool,
 }

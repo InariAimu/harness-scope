@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import type { SessionSyncResult } from "@/types/usage";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Plus, Folder, Save, Trash2, LoaderCircle } from "lucide-react";
@@ -39,8 +41,26 @@ export function ApplicationsPage({
   );
   const [config, setConfig] = useState<Config>(snapshot.config);
   const [busy, setBusy] = useState(false);
+  const [reimporting, setReimporting] = useState<string | null>(null);
+  const [reimportBusy, setReimportBusy] = useState(false);
   const client = useQueryClient();
   const [savingApp, setSavingApp] = useState<string | null>(null);
+  const reimport = async () => {
+    if (!reimporting || reimportBusy) return;
+    setReimportBusy(true);
+    try {
+      const result = await command<SessionSyncResult>("reimport_harness", { harness: reimporting, confirmed: true });
+      await client.invalidateQueries();
+      await onChanged();
+      if (result.errors.length || result.deferredFiles) {
+        toast.error(l("部分来源未完成，原有历史已保留。请查看采集诊断后重试。", "Some sources could not be completed. Existing history was retained. Check collection diagnostics and retry."));
+      } else {
+        toast.success(l("历史重新导入完成，原有冻结价格已保留", "History reimported; existing frozen prices preserved"));
+      }
+      setReimporting(null);
+    } catch (e) { toast.error(String(e)); }
+    finally { setReimportBusy(false); }
+  };
   const saveApp = async (harness: string, patch: Partial<ApplicationSettings>) => {
     setSavingApp(harness);
     try {
@@ -122,6 +142,11 @@ export function ApplicationsPage({
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-4 pt-1">
+                {h.usage && <Button variant="neutral" size="compact"
+                  disabled={busy || reimportBusy || !applicationSettings(snapshot.applicationSettings, h.id).collectionEnabled || !snapshot.config.sources.some(s => s.harness === h.id && s.enabled)}
+                  onClick={() => setReimporting(h.id)}>
+                  {l("重新导入", "Reimport")}
+                </Button>}
                 {/* Tooltip state belongs to the label, not the switch's data-state. */}
                 <HoverTip content={collectionDescription} disableHoverableContent>
                   <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap text-caption text-fg-2">
@@ -212,6 +237,10 @@ export function ApplicationsPage({
                 )}
               </p>
             )}
+            {h.id === "codex" && <p className="mt-3 text-caption text-fg-2">{l(
+              "日常刷新跳过压缩归档；本机首次无数据采集或确认重新导入时，读取包括 .jsonl.zst / .json.zst 在内的历史。",
+              "Routine refreshes skip compressed archives. The first import on an empty local database, or a confirmed reimport, reads historical archives including .jsonl.zst / .json.zst.",
+            )}</p>}
             <div className="mt-5 space-y-3">
               {config.sources
                 .filter((s) => s.harness === h.id)
@@ -286,6 +315,14 @@ export function ApplicationsPage({
           ))}
         </section>
       </div>
+      <ConfirmDialog isOpen={reimporting !== null} pending={reimportBusy}
+        title={l("重新导入历史用量", "Reimport historical usage")}
+        message={l(
+          "将重新读取此应用已保存且启用目录中的全部历史；Codex 会包含压缩归档，可能需要较长时间。\n原有历史和冻结价格会保留；完整来源中确认的重复或失效记录会修正，统计总数可能变化。缺失或损坏的来源不会清除历史。此操作不会修改原始日志。",
+          "Reread all history in this application's saved, enabled sources. Codex includes compressed archives and may take some time.\nExisting history and frozen prices are preserved. Duplicates or invalidated records confirmed by complete sources are corrected, so totals may change. Missing or damaged sources do not erase history. Original logs remain unchanged.",
+        )}
+        confirmText={reimportBusy ? l("导入中…", "Importing…") : l("确认重新导入", "Confirm reimport")}
+        onCancel={() => setReimporting(null)} onConfirm={() => void reimport()} />
     </>
   );
 }

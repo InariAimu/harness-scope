@@ -527,6 +527,7 @@ fn a_new_sqlite_harness_needs_no_storage_or_protocol_changes() {
         ) -> anyhow::Result<ParseResult> {
             Ok(ParseResult {
                 complete: true,
+                retained_ids: vec![],
                 diagnostics: vec![],
                 usage: events
                     .iter()

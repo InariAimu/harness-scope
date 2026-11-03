@@ -42,6 +42,7 @@ interface UsageTrendChartProps {
 }
 
 export interface UsageTrendStatLike {
+  unpricedCount?: number;
   modelBreakdown?: TrendModelStats[];
   costConverted?: boolean;
   date: string;
@@ -54,6 +55,7 @@ export interface UsageTrendStatLike {
 }
 
 export interface UsageTrendChartPoint {
+  unpricedCount?: number;
   modelBreakdown?: TrendModelStats[];
   costConverted?: boolean;
   /** Unique category key for Recharts — must not collide across years. */
@@ -155,7 +157,8 @@ export function buildUsageTrendChartData(
           stat.totalOutputTokens +
           stat.totalCacheCreationTokens +
           stat.totalCacheReadTokens,
-        cost: cost ?? null,
+        cost: stat.unpricedCount && stat.unpricedCount === stat.requestCount ? null : cost ?? null,
+        unpricedCount: stat.unpricedCount,
       };
     }) || []
   );
@@ -254,6 +257,7 @@ export function UsageTrendChart({
     return (
       <div data-testid="usage-trend-tooltip" className="max-w-[360px] rounded-[8px] border border-border bg-popover px-3 py-2 text-caption text-fg-1 shadow-v7-md">
         <p className="mb-1 font-semibold">{heading}</p>
+        {!!point?.unpricedCount && <p className="mb-1 text-fg-2">{t("usage.unpricedRequests", {count:point.unpricedCount})}</p>}
         <div className="flex items-center gap-2 tabular-nums">
           <span
             aria-hidden="true"

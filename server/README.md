@@ -42,7 +42,9 @@ docker compose up --build -d
 | `POST /v1/subscriptions/push` | 上传共享订阅和真实采样 |
 | `GET /v1/subscriptions/changes` | 分页下载共享订阅历史 |
 
-健康检查以外的接口需要 Bearer token。当前 schema 为 v6，请求协议为 v4；健康检查声明 `claude_request_timing_v2` 和 `subscription_history_v1` 能力。升级时先更新服务端及代理路由，再更新各客户端。
+健康检查以外的接口需要 Bearer token。当前 schema 为 v7，请求协议为 v4；健康检查声明 `claude_request_timing_v2`、`subscription_history_v1` 和 `request_tariff_v1` 能力。升级时先更新服务端，再更新各客户端；本次 v7 不增加代理路由。
+
+客户端仅向声明 `request_tariff_v1` 的服务器上传含条件价表快照的记录，否则保留这些待传项并继续同步普通记录。下载使用 `recordCapabilities=request_tariff_v1`；遇到含新快照的分页时，服务器拒绝未声明该能力的旧客户端，避免其反序列化时丢失规则信息。该能力独立于 schema 和请求协议版本。
 
 请求上传支持 gzip，下载按 Accept-Encoding 协商 gzip；解压后上传上限为 5 MiB。代理也应限制传输体，并仅开放上述同步接口。正文、项目路径、API Key 和自定义查询脚本不在同步负载中。
 
@@ -116,6 +118,8 @@ journalctl -u harness-scope-backup.service -n 10 --no-pager
 ```
 
 数据库升级先在一致性副本上验证。`--db COPY --compact` 执行迁移、VACUUM 和 WAL 截断后退出，不启动监听，只能在该数据库未被服务使用时执行。v6 升级用 [audit_v6.py](deploy/audit_v6.py) 比较升级前后副本；[audit_v4.py](deploy/audit_v4.py) 仅用于对应旧版迁移审计，不混用。
+
+v6→v7 使用 [audit_v7.py](deploy/audit_v7.py) 核对纯同步服务器副本的所有原有表、载荷、费用、设备和游标完全不变：`python3 server/deploy/audit_v7.py BEFORE.db AFTER.db --report migration.json`。不要只修改 `PRAGMA user_version`；应运行新版程序完成事务迁移。不清库、不重计价，保留匹配的旧数据库与旧程序以便回滚。
 
 正式切换前暂停主服务与备份任务，生成最终备份并保留旧二进制，按副本上验证的流程升级。回滚需恢复匹配的旧数据库和程序。不能只替换程序，也不能在未处理 WAL 状态时用旧主文件覆盖在线数据库。
 

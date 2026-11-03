@@ -240,7 +240,7 @@ fn projection_upgrade_refreshes_old_read_cache_without_revising_facts() {
     assert!(serde_json::from_str::<Value>(&payload).unwrap()["version"]
         .as_str()
         .unwrap()
-        .starts_with("usage-read-v3-opencode-projection:"));
+        .starts_with("usage-read-v4-opencode-fork:"));
 }
 
 #[test]
