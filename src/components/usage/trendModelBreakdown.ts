@@ -8,7 +8,7 @@ export function buildTrendModelBreakdown(
 ) {
   const values = models.map((row) => ({
     key: row.model,
-    value: metric === "cost" ? row.unpricedCount && row.unpricedCount === row.requestCount ? null : parseFiniteNumber(row.totalCost)
+    value: metric === "cost" ? row.unpricedCount && row.unpricedCount === row.requestCount + (row.modelUsageCount ?? 0) ? null : parseFiniteNumber(row.totalCost)
       : metric === "tokens" ? row.totalTokens : row.requestCount,
     costConverted: row.costConverted,
   }));

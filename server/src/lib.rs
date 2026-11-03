@@ -47,7 +47,7 @@ pub fn server_router(engine: Arc<Engine>, token: String) -> anyhow::Result<Route
         .route(
             "/health",
             get(move || async move {
-                Json(json!({"status":"ok","appBuild":harness_scope_core::build_info::current(),"schemaVersion":schema_version,"protocolVersion":4,"supportedProtocolVersions":[1,2,3,4],"requestEncodings":["identity","gzip"],"recordCapabilities":["claude_request_timing_v2",sharing::CAPABILITY,sync::REQUEST_TARIFF_CAPABILITY]}))
+                Json(json!({"status":"ok","appBuild":harness_scope_core::build_info::current(),"schemaVersion":schema_version,"protocolVersion":4,"supportedProtocolVersions":[1,2,3,4],"requestEncodings":["identity","gzip"],"recordCapabilities":["claude_request_timing_v2",sharing::CAPABILITY,sync::REQUEST_TARIFF_CAPABILITY,harness_scope_core::model_usage::CAPABILITY]}))
             }),
         )
         .route("/v1/push", post(push))
@@ -133,6 +133,9 @@ async fn changes(
     tokio::task::spawn_blocking(move || {
         let store = state.engine.lock()?;
         let response = sync::changes(&store, query.after, query.limit)?;
+        anyhow::ensure!(query.record_capabilities.split(',').any(|c| c == harness_scope_core::model_usage::CAPABILITY)
+            || response.changes.iter().all(|c| c.record.model_usage.is_none()),
+            "Upgrade client with model_usage_v2 support to preserve model measurements and source estimates");
         anyhow::ensure!(
             query
                 .record_capabilities

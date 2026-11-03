@@ -17,6 +17,7 @@ fn values(s: &str) -> Vec<Value> {
 }
 fn record(id: &str) -> UsageRecord {
     UsageRecord {
+        model_usage: None,
         timing: None,
         request_metadata: None,
         provider: None,
@@ -532,6 +533,7 @@ fn a_new_sqlite_harness_needs_no_storage_or_protocol_changes() {
                 usage: events
                     .iter()
                     .map(|e| ParsedUsage {
+                        model_usage: None,
                         request_metadata: None,
                         provider: None,
                         id: format!("sqlite:{}", e["id"].as_str().unwrap()),

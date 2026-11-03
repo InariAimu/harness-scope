@@ -90,7 +90,7 @@ function useDetailSections(request: RequestLog) {
   const { t, i18n } = useTranslation();
   const providerNameFor = useProviderName();
   const { costMoney, moneyTitle } = useMoneyFormat();
-  const usd = (value: string) => costMoney(value, 4, request.costConverted);
+  const usd = (value: string | null) => value == null ? "—" : costMoney(value, 4, request.costConverted);
   const locale = getLocaleFromLanguage(getResolvedLang(i18n));
   const freshInput = getFreshInputTokens(request);
   const isCacheInclusive = request.inputTokens !== freshInput;
@@ -117,7 +117,7 @@ function useDetailSections(request: RequestLog) {
     {
       key: "provider",
       label: t("usage.provider"),
-      value: getUsageProviderLabel(request.providerName, t, providerNameFor(request.providerName, request.appType)).shortLabel,
+      value: getUsageProviderLabel(request.providerName, t, providerNameFor(request.providerName, request.appType) ?? request.providerDisplayName ?? undefined).shortLabel,
     },
     {
       key: "providerId",
@@ -178,7 +178,7 @@ function useDetailSections(request: RequestLog) {
     {
       key: "source",
       label: t("usage.detail.source"),
-      value: isProxy
+      value: request.modelUsage ? t("scope.modelUsage.count") : isProxy
         ? t("usage.detail.sourceProxy", { code: request.statusCode })
         : t("usage.detail.sourceSession"),
       title: request.dataSource ?? "proxy",
@@ -216,6 +216,19 @@ function useDetailSections(request: RequestLog) {
     },
   ];
 
+  if (request.modelUsage) {
+    const m = request.modelUsage;
+    const quantity = (v: number | null) => v == null ? t("scope.modelUsage.unknown") : fmtInt(v, locale);
+    basic.push({key:"parent-request",label:t("scope.modelUsage.parentRequest"),value:m.requestId,mono:true}, {key:"operation",label:t("scope.modelUsage.operation"),value:m.operation});
+    tokens.splice(0, tokens.length,
+      {key:"total-input",label:t("usage.inputTokens"),value:quantity(m.tokens.totalInput)},
+      {key:"fresh",label:t("usage.freshInput"),value:quantity(m.tokens.input)},
+      {key:"output",label:t("usage.outputTokens"),value:quantity(m.tokens.output)},
+      {key:"read",label:t("usage.cacheReadTokens"),value:quantity(m.tokens.cacheRead)},
+      {key:"write",label:t("usage.pricing.cacheWrite"),value:quantity(m.tokens.cacheWrite)},
+    );
+    if(m.kind === "image") tokens.push({key:"text-input",label:t("scope.modelUsage.textInput"),value:quantity(m.textInputTokens)}, {key:"image-input",label:t("scope.modelUsage.imageInput"),value:quantity(m.imageInputTokens)});
+  }
   const reasoningTokens = request.reasoningTokens ?? 0;
   if (reasoningTokens > 0) {
     const zh = getResolvedLang(i18n).startsWith("zh");
@@ -248,6 +261,7 @@ function useDetailSections(request: RequestLog) {
       value: unpriced ? "—" : usd(request.cacheCreationCostUsd),
     },
   ];
+  if(request.modelUsage) cost.splice(0, cost.length, {key:"estimate-status",label:t("scope.modelUsage.status"),value:t(`scope.modelUsage.${request.modelUsage.estimateStatus}`)});
   if (multiplier != null && multiplier !== 1) {
     cost.push({
       key: "multiplier",
@@ -288,7 +302,7 @@ function useDetailSections(request: RequestLog) {
       key: "billing-basis",
       label: t("scope.pricing.billingBasis", "金额口径"),
       value:
-        request.billingBasis === "subscription_usage"
+        request.modelUsage ? t("scope.modelUsage.estimate") : request.billingBasis === "subscription_usage"
           ? t(
               "scope.pricing.subscriptionHint",
               "套餐额度折算，不含月费或实际扣款",
@@ -509,7 +523,7 @@ function RequestDetailBody({ request }: { request: RequestLog }) {
           {
             key: "cost-source",
             label: t("scope.costMethod", "费用取得方式"),
-            value: request.costSource || "unknown",
+            value: request.costSource === "source_estimated" ? t("scope.modelUsage.estimated") : request.costSource || "unknown",
           },
           {
             key: "price-source",
@@ -523,13 +537,13 @@ function RequestDetailBody({ request }: { request: RequestLog }) {
           },
         ]}
       />
-      {request.pricingSnapshot != null && (
+      {(request.modelUsage?.pricingSnapshot ?? request.pricingSnapshot) != null && (
         <details className="rounded-panel border border-border p-3">
           <summary className="cursor-pointer text-caption text-fg-2">
             {t("scope.priceSnapshot", "实际单价快照")}
           </summary>
           <pre className="mt-3 whitespace-pre-wrap break-all text-caption">
-            {JSON.stringify(request.pricingSnapshot, null, 2)}
+            {JSON.stringify(request.modelUsage?.pricingSnapshot ?? request.pricingSnapshot, null, 2)}
           </pre>
         </details>
       )}
@@ -569,7 +583,7 @@ export function RequestDetailPanel({
     ? [
         new Date(request.createdAt * 1000).toLocaleString(),
         appDisplayName(request.appType),
-        getUsageProviderLabel(request.providerName, t, providerNameFor(request.providerName, request.appType)).shortLabel,
+        getUsageProviderLabel(request.providerName, t, providerNameFor(request.providerName, request.appType) ?? request.providerDisplayName ?? undefined).shortLabel,
       ].join(" · ")
     : undefined;
 

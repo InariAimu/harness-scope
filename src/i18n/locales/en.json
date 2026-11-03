@@ -2212,7 +2212,7 @@
     "pricedCost": "Priced amount",
     "pricedAverage": "Average per priced request",
     "requestsUnit": "requests",
-    "unpricedRequests": "Unpriced: {{count}} requests",
+    "unpricedRequests": "Unpriced: {{count}} records",
     "unpricedHelp": "Requests with unknown costs are listed separately. They are not free and are excluded from the average per priced request. Hover over the value for their token total.",
     "free": "Free",
     "freeHint": "Free model; this request costs zero",
@@ -4996,6 +4996,27 @@
     "provider": {
       "deepseekOfficial": "DeepSeek Official",
       "routeHint": "Provider ID in the log: {{id}}. Identifies the configured route, not verified upstream ownership."
+    },
+    "modelUsage": {
+      "otherApiProvider": "API connection, separate from ChatGPT Pro. The configured endpoint is not the official OpenAI Platform address.",
+      "platformProvider": "Configured for OpenAI Platform API, separate from ChatGPT Pro subscriptions.",
+      "apiProvider": "API connection, separate from ChatGPT Pro. Historical records have no endpoint evidence.",
+      "count": "Model usages",
+      "note": "{{count}} model measurements, excluded from request counts and average request cost.",
+      "estimate": "Studio estimates use the token prices saved with each record, not actual charges.",
+      "upperBound": "{{count}} estimates are upper bounds because cache details are missing.",
+      "incomplete": "{{count}} incomplete usages; totals include reported tokens only.",
+      "cacheUnknown": "The source did not report a complete cache breakdown. Input includes cache; hit rate is unknown.",
+      "totalHelp": "Total input plus output. Cache is not added twice; reasoning is included in output.",
+      "unknown": "Not reported",
+      "estimated": "Source estimate",
+      "upper_bound": "Cost upper bound",
+      "status": "Estimate status",
+      "parentRequest": "Parent request",
+      "operation": "Operation",
+      "textInput": "Text input tokens",
+      "imageInput": "Image input tokens",
+      "parentDuration": "Parent request duration (excluded from model speed)"
     }
   }
 }

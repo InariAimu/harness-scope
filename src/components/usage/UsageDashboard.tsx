@@ -394,7 +394,7 @@ export function UsageDashboard({
     }
     // 数据刷新后选中项可能掉出列表（如改了时间范围）；补回去保证用户看得见、能清除
     if (providerName && !counts.has(providerName)) counts.set(providerName, 0);
-    return Array.from(counts, ([name, count]) => ({ name, count })).sort(
+    return Array.from(counts, ([name, count]) => ({ name, count, displayName: providerOptionsData?.find(stat => stat.providerName === name)?.providerDisplayName })).sort(
       (a, b) => b.count - a.count,
     );
   }, [providerOptionsData, providerName]);
@@ -621,13 +621,13 @@ export function UsageDashboard({
             className="min-w-[78px] max-w-[156px] shrink gap-1 pe-2 ps-3"
             title={
               providerName
-                ? usageProviderTitle(getUsageProviderLabel(providerName, t))
+                ? usageProviderTitle(getUsageProviderLabel(providerName, t, providerOptions.find(option => option.name === providerName)?.displayName ?? undefined))
                 : t("usage.providerFilter.title")
             }
           >
             <span className="min-w-0 truncate">
               {providerName
-                ? getUsageProviderLabel(providerName, t).label
+                ? getUsageProviderLabel(providerName, t, providerOptions.find(option => option.name === providerName)?.displayName ?? undefined).label
                 : t("usage.providerFilter.label")}
             </span>
             <ChevronDown className="h-3.5 w-3.5 shrink-0 text-fg-2" />
@@ -647,7 +647,7 @@ export function UsageDashboard({
             <MenuMeta>{fmtInt(providerTotal, locale)}</MenuMeta>
           </DropdownMenuItem>
           {providerOptions.map((option) => {
-            const label = getUsageProviderLabel(option.name, t);
+            const label = getUsageProviderLabel(option.name, t, option.displayName ?? undefined);
             return (
               <DropdownMenuItem
                 key={option.name}

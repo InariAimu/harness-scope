@@ -34,7 +34,7 @@ impl Store {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         anyhow::ensure!(
-            version <= 7,
+            version <= 8,
             "Database schema is newer than this application"
         );
         conn.execute_batch("BEGIN IMMEDIATE")?;
@@ -43,7 +43,7 @@ impl Store {
             crate::query_store::install(&conn, version)?;
             crate::upgrade::install(&conn, version)?;
             crate::schema_v7::migrate(&conn, version)?;
-            conn.execute_batch("PRAGMA user_version=7;")?;
+            conn.execute_batch("PRAGMA user_version=8;")?;
             Ok(())
         })();
         if let Err(error) = migration {
@@ -250,7 +250,22 @@ impl Store {
         claude_metadata: bool,
         request_tariff: bool,
     ) -> Result<Vec<UsageRecord>> {
-        self.read_records(&format!("SELECT payload FROM outbox WHERE ({} OR NOT (json_extract(payload,'$.harness')='claude' AND (json_extract(payload,'$.timing') IS NOT NULL OR json_extract(payload,'$.requestMetadata') IS NOT NULL))) AND ({} OR json_extract(payload,'$.cost.snapshot.requestTariff') IS NULL) ORDER BY id LIMIT 200", u8::from(claude_metadata), u8::from(request_tariff)))
+        self.pending_with_capabilities(claude_metadata, request_tariff, false)
+    }
+    pub fn pending_with_capabilities(
+        &self,
+        claude_metadata: bool,
+        request_tariff: bool,
+        model_usage: bool,
+    ) -> Result<Vec<UsageRecord>> {
+        self.read_records(&format!("SELECT payload FROM outbox WHERE ({} OR NOT (json_extract(payload,'$.harness')='claude' AND (json_extract(payload,'$.timing') IS NOT NULL OR json_extract(payload,'$.requestMetadata') IS NOT NULL))) AND ({} OR json_extract(payload,'$.cost.snapshot.requestTariff') IS NULL) AND ({} OR json_extract(payload,'$.modelUsage') IS NULL) ORDER BY id LIMIT 200", u8::from(claude_metadata), u8::from(request_tariff),u8::from(model_usage)))
+    }
+    pub fn pending_model_usage_count(&self) -> Result<u64> {
+        Ok(self.conn.query_row(
+            "SELECT COUNT(*) FROM outbox WHERE json_extract(payload,'$.modelUsage') IS NOT NULL",
+            [],
+            |r| r.get(0),
+        )?)
     }
     pub fn pending_request_tariff_count(&self) -> Result<u64> {
         Ok(self.conn.query_row("SELECT COUNT(*) FROM outbox WHERE json_extract(payload,'$.cost.snapshot.requestTariff') IS NOT NULL", [], |r| r.get(0))?)

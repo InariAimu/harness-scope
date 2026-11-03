@@ -271,6 +271,7 @@ fn parse_call(
         .filter(|t| *t > 0)
         .context("Missing DSH request timestamp")?;
     Ok(Some(ParsedUsage {
+        model_usage: None,
         request_metadata: None,
         provider: crate::providers::parse(source["provider"].as_str()),
         id,

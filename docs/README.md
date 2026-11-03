@@ -31,6 +31,7 @@
 | [DeepSeek Harness](DSH.md) | v0／v4 格式、流式日志和供应商计价 |
 | [Cherry Studio](CHERRY.md) | SQLite 会话、可确认用量和旧汇总限制 |
 | [LM Studio](LMSTUDIO.md) | 本机桌面会话、生成版本、增量用量与未计价口径 |
+| [Image Studio](GPT_IMG_STUDIO.md) | Responses 模型 Token、来源估算、SQLite／JSONL 和同步兼容 |
 | [Copilot 兼容导入与后续设计](COPILOT_IMPORT_DESIGN.md) | 已实现的 VS Code 导入，以及尚未实现的完整原生计量契约 |
 | [速度与首字](TIMING.md) | 估算来源、样本门槛、汇总和未知值 |
 

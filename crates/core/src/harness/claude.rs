@@ -125,6 +125,7 @@ impl HarnessAdapter for Claude {
                 }
             };
             let entry = ParsedUsage {
+                model_usage: None,
                 request_metadata: requests.metadata(&session, id, v),
                 provider: None,
                 id: event_id(&session, id, v),
@@ -152,6 +153,7 @@ impl HarnessAdapter for Claude {
                                 .ok_or_else(|| anyhow::anyhow!("Advisor model missing"))?;
                             let t = self::tokens(iteration)?;
                             Ok(ParsedUsage {
+                                model_usage: None,
                                 id: format!("{}:advisor:{i}", entry.id),
                                 native_event_id: format!("{id}:advisor:{i}"),
                                 model: model.into(),

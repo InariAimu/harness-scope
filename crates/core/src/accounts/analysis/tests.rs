@@ -58,6 +58,7 @@ impl Fixture {
     fn usage(&self, id: &str, offset: i64, input: u64, cache: u64) -> UsageRecord {
         let s = self.engine.lock().unwrap();
         let row = UsageRecord {
+            model_usage: None,
             timing: None,
             request_metadata: None,
             device_id: s.device_id().unwrap(),

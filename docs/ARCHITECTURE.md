@@ -82,15 +82,18 @@
 | 标识 | 当前定义 | 含义 |
 | --- | --- | --- |
 | 应用版本 | 根 `Cargo.toml` 的 workspace 版本 | 产品与构建身份 |
-| SQLite schema | v7 | 本机和服务端表结构 |
+| SQLite schema | v8 | 本机和服务端表结构 |
 | 请求用量协议 | v4 | 请求事实、可选计时和元数据白名单 |
 | 订阅历史能力 | `subscription_history_v1` | 独立订阅目录与采样同步 |
 | Claude 记录能力 | `claude_request_timing_v2` | 新 Claude 计时和请求元数据 |
 | 条件价格能力 | `request_tariff_v1` | 完整供应商条件规则与选中档位快照 |
+| 模型用量能力 | `model_usage_v2` | 模型 Token、可空缓存和来源估算快照，独立于 HTTP 请求次数 |
 
 能力由服务端健康检查声明。旧服务不支持某类记录时，客户端保留对应待传项并提示升级，不丢弃字段后提前确认。先升级服务端和代理路由，再升级读取新记录的客户端；具体步骤见[服务器说明](../server/README.md)。
 
 数据库升级前制作一致性备份；回退应用需恢复对应版本数据库，不能只换旧程序。设备 ID、远端游标和冻结费用不应因常规升级重置。
+
+v7→v8 在查询投影增加 `model_usage` 列并重建触发器和投影，不改写原始记录和已存元数据；桌面端随后一次性初始化 Image Studio 来源，纯同步服务器不添加桌面来源。详情见 [Image Studio](GPT_IMG_STUDIO.md)。
 
 v6→v7 的事务迁移位于 [schema_v7.rs](../crates/core/src/schema_v7.rs) 和 [schema_v7.sql](../crates/core/src/schema_v7.sql)：新增来源关联、撤销候选与 Claude 请求映射，从原始来源路径初始化引用并使相关读取缓存失效，不改写已有事实、冻结价格、修订、设置或游标。迁移失败整笔回滚，成功后才设置 user_version=7。
 

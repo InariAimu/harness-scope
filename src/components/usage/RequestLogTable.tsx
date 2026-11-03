@@ -87,7 +87,7 @@ export function isKnownAppId(appType: string): appType is AppId {
 }
 
 export function appDisplayName(appType: string): string {
-  return isKnownAppId(appType) ? APP_DISPLAY_NAME[appType] : appType;
+  return appType === "gpt-img-studio" ? "GPT Image Studio" : isKnownAppId(appType) ? APP_DISPLAY_NAME[appType] : appType;
 }
 
 /**
@@ -104,6 +104,7 @@ const APP_SHORT_NAME: Record<AppId, string> = {
   dsh: "DSH",
   cherry: "Cherry Studio",
   lmstudio: "LM Studio",
+  "gpt-img-studio": "GPT Image Studio",
   openclaw: "OpenClaw",
   hermes: "Hermes",
   pi: "Pi",
@@ -126,7 +127,7 @@ const DEFAULT_COLUMNS = resolveRequestLogColumns(undefined);
 export function getRequestCacheHitRate(
   log: RequestLog,
 ): { rate: number; cacheable: number } | null {
-  if (log.appType === "lmstudio") return null;
+  if (log.appType === "lmstudio" || log.modelUsage?.cacheBreakdownKnown === false) return null;
   const cacheable =
     getFreshInputTokens(log) + log.cacheCreationTokens + log.cacheReadTokens;
   if (cacheable <= 0) return null;
@@ -240,7 +241,7 @@ export function RequestLogTable({
     },
   };
   const renderHeader = (id: RequestLogColumnId) => {
-    const label = t(id === "freshInput" && (dashboardAppType === "lmstudio" || logs.some(log => log.appType === "lmstudio"))
+    const label = t(id === "freshInput" && (dashboardAppType === "lmstudio" || logs.some(log => log.appType === "lmstudio" || log.modelUsage?.cacheBreakdownKnown === false))
       ? "usage.inputTokens" : REQUEST_LOG_COLUMN_LABEL_KEYS[id]);
     const help = headerHelp[id];
     if (!help) return label;
@@ -260,10 +261,14 @@ export function RequestLogTable({
     const unpriced = isUnpricedUsage(log);
     const free = isFreeUsage(log);
     const freshInput = getFreshInputTokens(log);
+    const inputMissing = !!log.modelUsage && log.modelUsage.tokens.totalInput == null;
+    const outputMissing = !!log.modelUsage && log.modelUsage.tokens.output == null;
+    const readTokens = log.modelUsage ? log.modelUsage.tokens.cacheRead : log.cacheReadTokens;
+    const writeTokens = log.modelUsage ? log.modelUsage.tokens.cacheWrite : log.cacheCreationTokens;
     const isCacheInclusive = log.inputTokens !== freshInput;
     const time = formatLogTime(log.createdAt, now);
     const fullTime = formatLogFullTime(log.createdAt);
-    const providerLabel = getUsageProviderLabel(log.providerName, t, providerNameFor(log.providerName, log.appType));
+    const providerLabel = getUsageProviderLabel(log.providerName, t, providerNameFor(log.providerName, log.appType) ?? log.providerDisplayName ?? undefined);
     const provider = providerLabel.shortLabel;
     const exactTps = formatOutputTokensPerSecond(log);
     // 输出阶段与缺少首字时的端到端回退均为日志估算，保留 ≈。
@@ -313,9 +318,10 @@ export function RequestLogTable({
       log.requestModel && log.requestModel !== log.model
         ? `${log.requestModel} → ${log.model}`
         : log.model;
-    const hasCache = log.cacheReadTokens > 0;
+    const hasCache = (readTokens ?? 0) > 0;
     // OpenAI 协议不单报缓存写入，这几个应用的 0 是「不知道」，不是「没写」
     const cacheWriteUnknown =
+      log.modelUsage ? writeTokens == null :
       (log.appType === "lmstudio" || CACHE_INCLUSIVE_APP_TYPES.has(log.appType)) &&
       log.cacheCreationTokens <= 0;
     const hitRate = getRequestCacheHitRate(log);
@@ -410,28 +416,28 @@ export function RequestLogTable({
         <td
           className={usageTable.td}
           title={
-            isCacheInclusive
+            inputMissing ? t("scope.modelUsage.unknown") : isCacheInclusive
               ? `${fmtInt(freshInput, locale)} (${t("usage.rawInputLabel")}: ${fmtInt(log.inputTokens, locale)})`
               : fmtInt(freshInput, locale)
           }
         >
-          {formatQuantity(freshInput)}
+          {inputMissing ? "—" : formatQuantity(freshInput)}
         </td>
       ),
       output: (
-        <td className={usageTable.td} title={fmtInt(log.outputTokens, locale)}>
-          {formatQuantity(log.outputTokens)}
+        <td className={usageTable.td} title={outputMissing ? t("scope.modelUsage.unknown") : fmtInt(log.outputTokens, locale)}>
+          {outputMissing ? "—" : formatQuantity(log.outputTokens)}
         </td>
       ),
       cacheRead: (
         <td
           className={cn(usageTable.td, !hasCache && usageTable.muted)}
-          title={log.appType === "lmstudio" ? t("scope.lmstudioUnreported") : t("usage.cacheTip", {
-            read: fmtInt(log.cacheReadTokens, locale),
-            write: fmtInt(log.cacheCreationTokens, locale),
+          title={readTokens == null ? t("scope.modelUsage.unknown") : log.appType === "lmstudio" ? t("scope.lmstudioUnreported") : t("usage.cacheTip", {
+            read: readTokens == null ? t("scope.modelUsage.unknown") : fmtInt(readTokens, locale),
+            write: writeTokens == null ? t("scope.modelUsage.unknown") : fmtInt(writeTokens, locale),
           })}
         >
-          {hasCache ? formatQuantity(log.cacheReadTokens) : "—"}
+          {log.modelUsage ? readTokens == null ? "—" : formatQuantity(readTokens) : hasCache ? formatQuantity(log.cacheReadTokens) : "—"}
         </td>
       ),
       cacheWrite: (
@@ -444,11 +450,11 @@ export function RequestLogTable({
           title={
             log.appType === "lmstudio" ? t("scope.lmstudioUnreported") : cacheWriteUnknown
               ? t("usage.cacheWriteNotReported")
-              : fmtInt(log.cacheCreationTokens, locale)
+              : fmtInt(writeTokens ?? 0, locale)
           }
         >
-          {!cacheWriteUnknown && log.cacheCreationTokens > 0
-            ? formatQuantity(log.cacheCreationTokens)
+          {!cacheWriteUnknown && writeTokens != null && (log.modelUsage != null || writeTokens > 0)
+            ? formatQuantity(writeTokens)
             : "—"}
         </td>
       ),
@@ -484,7 +490,7 @@ export function RequestLogTable({
                   )
                 : undefined,
               unpriced ? undefined : usdHint(log.totalCostUsd),
-              log.billingBasis === "subscription_usage"
+              log.modelUsage ? `${t("scope.modelUsage.estimate")} ${t(`scope.modelUsage.${log.modelUsage.estimateStatus}`)}` : log.billingBasis === "subscription_usage"
                 ? t(
                     "scope.pricing.subscriptionHint",
                     "套餐额度折算，不含月费或实际扣款",
@@ -506,6 +512,7 @@ export function RequestLogTable({
               .join(" · ") || undefined
           }
         >
+          {!!log.modelUsage && !unpriced && "≈"}
           {unpriced
             ? t("usage.unpriced")
             : free

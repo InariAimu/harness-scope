@@ -4995,6 +4995,27 @@
     "provider": {
       "deepseekOfficial": "DeepSeek 官方",
       "routeHint": "日志中的供应商 ID：{{id}}；代表配置的路由，不保证上游身份。"
+    },
+    "modelUsage": {
+      "otherApiProvider": "API 连接，独立于 ChatGPT Pro 订阅；配置端点不是 OpenAI Platform 官方地址。",
+      "platformProvider": "请求配置指向 OpenAI Platform API，独立于 ChatGPT Pro 订阅。",
+      "apiProvider": "API 连接，独立于 ChatGPT Pro 订阅；旧记录未保存端点，无法确认实际服务来源。",
+      "count": "模型用量",
+      "note": "{{count}} 条模型用量，不计入请求数或请求均价。",
+      "estimate": "Studio 按记录时的 Token 单价估算，非实际扣款。",
+      "upperBound": "其中 {{count}} 条缓存明细缺失，费用为上界。",
+      "incomplete": "{{count}} 条用量不完整；总量只累加已上报 Token。",
+      "cacheUnknown": "来源未完整上报缓存细分；输入含缓存，不推算命中率。",
+      "totalHelp": "总输入加输出。缓存不重复累加，推理 Token 已包含在输出中。",
+      "unknown": "未上报",
+      "estimated": "来源估算",
+      "upper_bound": "费用上界",
+      "status": "估算状态",
+      "parentRequest": "所属请求",
+      "operation": "操作",
+      "textInput": "文本输入 Tokens",
+      "imageInput": "图像输入 Tokens",
+      "parentDuration": "所属请求耗时（不用于模型速度）"
     }
   }
 }

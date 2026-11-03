@@ -24,6 +24,7 @@ fn display_speed_choice_recomputes_requests_and_weighted_samples_without_changin
     ] {
         s.upsert(
             UsageRecord {
+                model_usage: None,
                 timing: None,
                 request_metadata: None,
                 provider: None,
@@ -391,6 +392,7 @@ fn stats_use_weighted_speed_median_filters_and_device_identity() {
         ("missing", 999, 0, 0),
     ] {
         let record = UsageRecord {
+            model_usage: None,
             timing: None,
             request_metadata: None,
             provider: None,
@@ -507,6 +509,7 @@ fn dsh_decode_speed_is_consistent_in_details_and_mixed_harness_statistics() {
         ("claude", "claude", 300, 0, None, "unknown"),
     ] {
         let record = UsageRecord {
+            model_usage: None,
             timing: None,
             request_metadata: None,
             provider: None,

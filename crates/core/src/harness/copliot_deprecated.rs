@@ -259,6 +259,7 @@ fn request_usage(sid: &str, row: &Value) -> Result<ParsedUsage> {
         .filter(|id| !matches!(id.to_ascii_lowercase().as_str(), "unknown" | "auto"))
         .unwrap_or_else(|| PROVIDER.into());
     Ok(ParsedUsage {
+        model_usage: None,
         request_metadata: None,
         provider: Some(provider),
         id: format!("copliot-session:{sid}:{rid}"),

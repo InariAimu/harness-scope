@@ -46,7 +46,7 @@ export function UsageCompositionChart({
   const name = (key: string) => {
     if (dimension === "models") return key || t("usage.chart.unknownModel");
     if (dimension === "harnesses") return APP_DISPLAY_NAME[key] || key || t("usage.chart.unknownHarness");
-    return getUsageProviderLabel(key, t).label;
+    return getUsageProviderLabel(key, t, providers.data?.find(row => row.providerName === key)?.providerDisplayName ?? undefined).label;
   };
   const metricLabel = t(`usage.trend.${metric}`);
   const unpriced = dimension === "harnesses"
@@ -81,7 +81,7 @@ export function UsageCompositionChart({
   const slices = data.slices.map(slice => {
     const label = slice.other ? t("usage.chart.other") : name(slice.members[0]);
     const details = slice.other ? slice.members.map(name).join("、")
-      : dimension === "providers" ? usageProviderTitle(getUsageProviderLabel(slice.members[0], t)) : label;
+      : dimension === "providers" ? usageProviderTitle(getUsageProviderLabel(slice.members[0], t, providers.data?.find(row => row.providerName === slice.members[0])?.providerDisplayName ?? undefined)) : label;
     const color = slice.other ? "var(--text-3)" : usageCompositionColor(`${dimension}:${slice.members[0]}`);
     const start = offset;
     const length = slice.share * 100;

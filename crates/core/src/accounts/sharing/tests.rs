@@ -375,7 +375,7 @@ fn v5_upgrade_preserves_device_and_existing_history_before_explicit_backfill() {
     }
     drop(e);
     let e = Engine::open(&dir.path().join("scope.db")).unwrap();
-    assert_eq!(e.lock().unwrap().schema_version().unwrap(), 7);
+    assert_eq!(e.lock().unwrap().schema_version().unwrap(), 8);
     assert_eq!(e.lock().unwrap().device_id().unwrap(), device);
     assert_eq!(history_rows(&e, id), before);
     bind(&e, &view, "new");

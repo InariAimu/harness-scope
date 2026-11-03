@@ -20,6 +20,7 @@ fn add(e: &Engine, id: &str, at: i64, harness: &str) {
     let s = e.lock().unwrap();
     s.upsert(
         UsageRecord {
+            model_usage: None,
             timing: None,
             request_metadata: None,
             provider: None,

@@ -14,6 +14,7 @@ fn fixture() -> (tempfile::TempDir, Engine, Value) {
 }
 fn row(model: &str) -> Row {
     Row {
+        model_usage: None,
         request_metadata: Some(crate::model::RequestMetadata {
             service_tier: Some("default".into()),
             service_tier_source: Some("turn_context".into()),

@@ -180,6 +180,7 @@ fn record(
     cost: Option<&str>,
 ) -> UsageRecord {
     UsageRecord {
+        model_usage: None,
         timing: None,
         request_metadata: None,
         device_id: device.into(),

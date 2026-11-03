@@ -14,6 +14,7 @@ export const APP_DISPLAY_NAME: Record<AppId, string> = {
   dsh: "DeepSeek Harness",
   cherry: "Cherry Studio",
   lmstudio: "LM Studio",
+  "gpt-img-studio": "GPT Image Studio",
   "copliot-deprecated": "copliot-deprecated",
   copliot: "Github Copliot",
   openclaw: "OpenClaw",

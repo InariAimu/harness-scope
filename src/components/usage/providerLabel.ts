@@ -56,7 +56,9 @@ export function getUsageProviderLabel(
     return {
       label: customName ?? label,
       shortLabel: customName ?? label,
-      hint: t("scope.provider.routeHint", {
+      hint: (name.startsWith("gpt-img-studio:") ? t(
+        name.startsWith("gpt-img-studio:openai-platform:") ? "scope.modelUsage.platformProvider" : name.startsWith("gpt-img-studio:other:") ? "scope.modelUsage.otherApiProvider" : "scope.modelUsage.apiProvider",
+      ) + "\n" : "") + t("scope.provider.routeHint", {
         defaultValue:
           "日志中的供应商 ID：{{id}}；代表配置的路由，不保证上游身份。",
         id: name,

@@ -9,6 +9,7 @@ export interface TokenUsage {
 }
 
 export interface RequestLog {
+  modelUsage?: ModelUsage | null;
   requestMetadata?: {
     serviceTier?: string;
     serviceTierSource?: "thread_settings" | "turn_context" | "claude_usage";
@@ -38,6 +39,7 @@ export interface RequestLog {
   requestId: string;
   providerId: string;
   providerName?: string;
+  providerDisplayName?: string | null;
   appType: string;
   model: string;
   requestModel?: string;
@@ -50,10 +52,10 @@ export interface RequestLog {
   reasoningTokens?: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
-  inputCostUsd: string;
-  outputCostUsd: string;
-  cacheReadCostUsd: string;
-  cacheCreationCostUsd: string;
+  inputCostUsd: string | null;
+  outputCostUsd: string | null;
+  cacheReadCostUsd: string | null;
+  cacheCreationCostUsd: string | null;
   totalCostUsd: string;
   isStreaming: boolean;
   latencyMs: number | null;
@@ -89,9 +91,39 @@ export interface SessionSpeedEstimate {
 }
 
 export interface CostCoverage {
+  modelUsageCount?: number;
+  incompleteUsageCount?: number;
+  upperBoundCount?: number;
+  pricedRequestCount?: number;
+  requestCostUsd?: string;
   unpricedCount?: number;
   unpricedTokens?: number;
   pricedCount?: number;
+}
+export interface ModelUsage {
+  provider?: { id: string; name: string; kind: string; apiService: "openai-platform" | "other" | "unknown" };
+  sourceDeviceId: string;
+  requestId: string;
+  operation: "image" | "refine" | "naming";
+  kind: "image" | "language";
+  usageAvailable: boolean;
+  cacheBreakdownKnown: boolean;
+  cacheWriteApplicable: boolean;
+  tokens: {
+    totalInput: number | null;
+    input: number | null;
+    output: number | null;
+    cacheRead: number | null;
+    cacheWrite: number | null;
+    reasoning: number | null;
+  };
+  textInputTokens: number | null;
+  imageInputTokens: number | null;
+  estimatedCostUsd: string | null;
+  estimateStatus: "estimated" | "upper_bound" | "unknown";
+  pricingSnapshot: unknown;
+  statusCode: number | null;
+  requestDurationMs: number | null;
 }
 export interface DataSourceSummary extends CostCoverage {
   dataSource: string;
@@ -212,6 +244,7 @@ export interface ProviderStats extends CostCoverage {
   providerId: string;
   appType: string;
   providerName: string;
+  providerDisplayName?: string | null;
   requestCount: number;
   /** 真实消耗 Tokens（新增输入 + 输出 + 缓存写入 + 缓存命中），与指标卡同口径 */
   totalTokens: number;

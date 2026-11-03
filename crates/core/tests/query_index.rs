@@ -49,6 +49,7 @@ fn version_two_upgrade_rebuilds_metadata_projection_without_revising_or_requeuin
 }
 fn record(device: &str, id: &str, at: i64) -> UsageRecord {
     UsageRecord {
+        model_usage: None,
         timing: None,
         request_metadata: None,
         device_id: device.into(),
@@ -127,7 +128,7 @@ fn version_one_upgrade_preserves_facts_outbox_and_exact_costs_and_restarts_once(
         s.conn
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        7
+        8
     );
 }
 

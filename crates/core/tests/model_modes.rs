@@ -17,6 +17,7 @@ fn record(
     first: i64,
 ) -> UsageRecord {
     UsageRecord {
+        model_usage: None,
         device_id: device.into(),
         id: id.into(),
         harness: "codex".into(),

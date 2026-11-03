@@ -146,6 +146,8 @@ impl Default for Cost {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UsageRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_usage: Option<crate::model_usage::ModelUsage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timing: Option<UsageTiming>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_metadata: Option<RequestMetadata>,
@@ -173,6 +175,7 @@ pub struct UsageRecord {
 
 #[derive(Debug, Clone)]
 pub struct ParsedUsage {
+    pub model_usage: Option<crate::model_usage::ModelUsage>,
     pub request_metadata: Option<RequestMetadata>,
     pub provider: Option<String>,
     pub id: String,

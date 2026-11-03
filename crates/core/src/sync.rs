@@ -5,6 +5,7 @@ use rust_decimal::Decimal;
 use std::str::FromStr;
 
 pub const REQUEST_TARIFF_CAPABILITY: &str = "request_tariff_v1";
+pub const RECORD_CAPABILITIES: &str = "request_tariff_v1,model_usage_v2";
 
 pub(crate) fn gzip_json(value: &impl serde::Serialize) -> Result<Vec<u8>> {
     let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
@@ -13,6 +14,31 @@ pub(crate) fn gzip_json(value: &impl serde::Serialize) -> Result<Vec<u8>> {
 }
 
 pub fn validate_record(r: &UsageRecord) -> Result<()> {
+    anyhow::ensure!(
+        r.harness != "gpt-img-studio" || r.model_usage.is_some(),
+        "Missing Image Studio model measurement"
+    );
+    if let Some(usage) = &r.model_usage {
+        usage.validate()?;
+        if let Some(p) = &usage.provider {
+            anyhow::ensure!(
+                r.provider.as_deref() == Some(p.route().as_str()),
+                "Model API route differs from provider snapshot"
+            );
+        }
+        anyhow::ensure!(
+            r.harness == "gpt-img-studio"
+                && r.grain == "event"
+                && r.record_source == "session"
+                && r.count == 0
+                && r.tokens == usage.projection()
+                && r.timing.is_none()
+                && r.request_metadata.is_none()
+                && r.status_code == usage.status_code
+                && r.cost == usage.cost(&r.model, r.occurred_at),
+            "Invalid model usage projection"
+        );
+    }
     if let Some(t) = &r.timing {
         let sources: (&[&str], &str) = match r.harness.as_str() {
             "codex" => (

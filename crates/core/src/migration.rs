@@ -190,6 +190,7 @@ pub fn preview(store: &Store, input: &MigrationInput) -> Result<Preview> {
                 cost.method = "unknown".into()
             }
             let r = UsageRecord {
+                model_usage: None,
                 timing: None,
                 request_metadata: None,
                 provider: None,

@@ -83,7 +83,7 @@ export function ProviderStatsTable({
               </tr>
             ) : (
               pagination.pageRows.map((stat) => {
-                const provider = getUsageProviderLabel(stat.providerName, t, providerNameFor(stat.providerName, stat.appType));
+                const provider = getUsageProviderLabel(stat.providerName, t, providerNameFor(stat.providerName, stat.appType) ?? stat.providerDisplayName ?? undefined);
                 return (
                   <tr
                     key={JSON.stringify([stat.appType, stat.providerId])}
@@ -98,7 +98,8 @@ export function ProviderStatsTable({
                       </span>
                     </td>
                     <td className={usageTable.td} title={fmtInt(stat.requestCount, locale)}>
-                      {formatQuantity(stat.requestCount)}
+                      {stat.modelUsageCount && !stat.requestCount ? "—" : formatQuantity(stat.requestCount)}
+                      {!!stat.modelUsageCount && <div className="text-caption font-normal text-fg-3">{formatQuantity(stat.modelUsageCount)} {t("scope.modelUsage.count")}</div>}
                     </td>
                     <td
                       className={usageTable.td}
@@ -108,9 +109,9 @@ export function ProviderStatsTable({
                     </td>
                     <td
                       className={cn(usageTable.td, "font-medium")}
-                      title={stat.unpricedCount === stat.requestCount ? undefined : moneyTitle(stat.totalCost, 6)}
+                      title={stat.unpricedCount === stat.requestCount + (stat.modelUsageCount ?? 0) ? undefined : moneyTitle(stat.totalCost, 6)}
                     >
-                      {stat.unpricedCount === stat.requestCount && stat.requestCount > 0 ? t("usage.unpriced") : costMoney(stat.totalCost, 2, stat.costConverted)}
+                      {stat.unpricedCount === stat.requestCount + (stat.modelUsageCount ?? 0) && stat.requestCount + (stat.modelUsageCount ?? 0) > 0 ? t("usage.unpriced") : costMoney(stat.totalCost, 2, stat.costConverted)}
                       {!!stat.unpricedCount && <div className="text-caption font-normal text-fg-3">{t("usage.unpricedRequests", { count: stat.unpricedCount })}</div>}
                     </td>
                     <PerformanceCells stat={stat} />

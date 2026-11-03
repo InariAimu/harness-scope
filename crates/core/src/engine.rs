@@ -110,6 +110,29 @@ impl Engine {
                 }
                 store.set_meta("lmstudio_source_initialized", &true)?;
             }
+            if !store
+                .meta::<bool>("gpt_img_studio_source_initialized")?
+                .unwrap_or(false)
+            {
+                if !config.sources.iter().any(|s| s.harness == "gpt-img-studio") {
+                    for (i, root) in registry
+                        .get("gpt-img-studio")?
+                        .descriptor()
+                        .default_roots
+                        .iter()
+                        .enumerate()
+                    {
+                        config.sources.push(Source {
+                            id: format!("gpt-img-studio-{i}"),
+                            harness: "gpt-img-studio".into(),
+                            root: root.clone(),
+                            enabled: Path::new(root).is_file(),
+                        });
+                    }
+                    store.set_meta("config", &config)?;
+                }
+                store.set_meta("gpt_img_studio_source_initialized", &true)?;
+            }
         }
         Ok(Self {
             account_vault: crate::account_credentials::Vault::new(path),
@@ -420,7 +443,7 @@ impl Engine {
             "models_needing_prices" => {
                 let s = self.read_lock()?;
                 let prices = s.prices()?;
-                let mut stmt=s.conn.prepare_cached("SELECT model,provider,MAX(amount_usd IS NULL),harness,MAX(input_tokens+output_tokens+cache_read+cache_write)>0 FROM usage_index WHERE origin='local' AND deleted=0 AND record_source='session' AND cost_method<>'reported' AND (harness NOT IN ('copliot-deprecated','copliot') OR input_tokens+output_tokens+cache_read+cache_write>0) GROUP BY model,provider,harness")?;
+                let mut stmt=s.conn.prepare_cached("SELECT model,provider,MAX(amount_usd IS NULL),harness,MAX(input_tokens+output_tokens+cache_read+cache_write)>0 FROM usage_index WHERE origin='local' AND deleted=0 AND record_source='session' AND cost_method<>'reported' AND model_usage IS NULL AND (harness NOT IN ('copliot-deprecated','copliot') OR input_tokens+output_tokens+cache_read+cache_write>0) GROUP BY model,provider,harness")?;
                 let rows = stmt
                     .query_map([], |r| {
                         Ok((
@@ -987,7 +1010,7 @@ impl Engine {
                         upgrading && r.model==parsed.model && r.tokens==billing_tokens && r.provider==parsed.provider
                     });
                     let unchanged=old.as_ref().filter(|r|r.model==parsed.model && r.tokens==parsed.tokens && r.provider==parsed.provider && r.cost.amount_usd.is_some() && parsed.reported_cost.as_ref().is_none_or(|amount|r.cost.amount_usd.as_ref()==Some(amount)));
-                    let mut cost=if !adapter.allows_price_estimates(parsed.tokens.total()>0) { Cost { rule_version:"unknown".into(), ..Default::default() } } else if let Some(old)=unchanged.or(metadata_upgrade) { old.cost.clone() } else { pricing::resolve_with_settings(&parsed,old.as_ref(),&prices,&pricing_settings)? };
+                    let mut cost=if parsed.model_usage.is_some() { pricing::resolve_with_settings(&parsed,old.as_ref(),&prices,&pricing_settings)? } else if !adapter.allows_price_estimates(parsed.tokens.total()>0) { Cost { rule_version:"unknown".into(), ..Default::default() } } else if let Some(old)=unchanged.or(metadata_upgrade) { old.cost.clone() } else { pricing::resolve_with_settings(&parsed,old.as_ref(),&prices,&pricing_settings)? };
                     if matches!(harness.as_str(), "copliot-deprecated" | "copliot") && cost.method=="estimated" { cost.billing_basis=Some("model_reference".into()); }
                     if let Some(old)=old.as_ref().filter(|r|harness=="codex" && r.model==parsed.model && r.tokens==parsed.tokens && r.provider==parsed.provider) {
                         // Overlapping log copies may visit the upgraded record again.
@@ -999,8 +1022,9 @@ impl Engine {
                     let timing = parsed.timing.clone();
                     let timing_id = parsed.id.clone();
                     let r=UsageRecord{
+                        model_usage: parsed.model_usage.clone(),
         timing: if adapter.syncs_timing() { parsed.timing.clone() } else { None },
-        request_metadata: parsed.request_metadata,provider:parsed.provider,device_id:device.clone(),id:parsed.id,harness:harness.clone(),parser_version:descriptor.parser_version.into(),session_id:Some(parsed.session_id),native_event_id:Some(parsed.native_event_id),occurred_at:parsed.occurred_at,model:parsed.model,grain:"event".into(),count:1,tokens:parsed.tokens,cost,record_source:"session".into(),revision:1,deleted:false,status_code:None,legacy_date:None,legacy_timezone:None};
+        request_metadata: parsed.request_metadata,provider:parsed.provider,device_id:device.clone(),id:parsed.id,harness:harness.clone(),parser_version:descriptor.parser_version.into(),session_id:Some(parsed.session_id),native_event_id:Some(parsed.native_event_id),occurred_at:parsed.occurred_at,model:parsed.model,grain:"event".into(),count:if parsed.model_usage.is_some(){0}else{1},tokens:parsed.tokens,cost,record_source:"session".into(),revision:1,deleted:false,status_code:parsed.model_usage.as_ref().and_then(|m|m.status_code),legacy_date:None,legacy_timezone:None};
                     sync::validate_record(&r)?;
                     if s.upsert(r,&key)?{if old.is_some(){report.updated+=1}else{report.imported+=1}}else{report.skipped+=1}
                     s.save_timing(&timing_id, timing.as_ref())?;
@@ -1163,6 +1187,7 @@ impl Engine {
         let mut changed = 0;
         for mut r in s.local_records()?.into_iter().filter(|r| {
             !r.deleted
+                && r.model_usage.is_none()
                 && harness.is_none_or(|h| r.harness == h)
                 && self.permits_price_estimates(&r.harness, r.tokens.total() > 0)
                 && r.record_source == "session"
@@ -1176,6 +1201,7 @@ impl Engine {
                 pricing::find_for_provider(&prices, &r.model, r.provider.as_deref())
             {
                 let parsed = ParsedUsage {
+                    model_usage: None,
                     id: r.id.clone(),
                     session_id: r.session_id.clone().unwrap_or_default(),
                     native_event_id: r.native_event_id.clone().unwrap_or_default(),
@@ -1396,11 +1422,14 @@ impl Engine {
         let request_tariff = health["recordCapabilities"]
             .as_array()
             .is_some_and(|caps| caps.iter().any(|v| v == sync::REQUEST_TARIFF_CAPABILITY));
+        let model_usage = health["recordCapabilities"]
+            .as_array()
+            .is_some_and(|caps| caps.iter().any(|v| v == crate::model_usage::CAPABILITY));
         let mut cursor = self.lock()?.meta::<i64>("download_cursor")?.unwrap_or(0);
         let mut first: ChangesResponse = client
             .get(format!("{base}/v1/changes"))
             .query(&[("after", cursor), ("limit", 500), ("protocolVersion", 4)])
-            .query(&[("recordCapabilities", sync::REQUEST_TARIFF_CAPABILITY)])
+            .query(&[("recordCapabilities", sync::RECORD_CAPABILITIES)])
             .bearer_auth(&config.server_token)
             .send()?
             .error_for_status()?
@@ -1426,7 +1455,7 @@ impl Engine {
             first = client
                 .get(format!("{base}/v1/changes"))
                 .query(&[("after", cursor), ("limit", 500), ("protocolVersion", 4)])
-                .query(&[("recordCapabilities", sync::REQUEST_TARIFF_CAPABILITY)])
+                .query(&[("recordCapabilities", sync::RECORD_CAPABILITIES)])
                 .bearer_auth(&config.server_token)
                 .send()?
                 .error_for_status()?
@@ -1440,9 +1469,11 @@ impl Engine {
                 && d["name"].as_str() == Some(config.device_name.as_str())
         });
         loop {
-            let records = self
-                .lock()?
-                .pending_compatible(claude_metadata, request_tariff)?;
+            let records = self.lock()?.pending_with_capabilities(
+                claude_metadata,
+                request_tariff,
+                model_usage,
+            )?;
             if records.is_empty() && !publish_name {
                 break;
             }
@@ -1485,7 +1516,7 @@ impl Engine {
             let response: ChangesResponse = client
                 .get(format!("{base}/v1/changes"))
                 .query(&[("after", cursor), ("limit", 500), ("protocolVersion", 4)])
-                .query(&[("recordCapabilities", sync::REQUEST_TARIFF_CAPABILITY)])
+                .query(&[("recordCapabilities", sync::RECORD_CAPABILITIES)])
                 .bearer_auth(&config.server_token)
                 .send()?
                 .error_for_status()?
@@ -1526,6 +1557,14 @@ impl Engine {
         };
         let subscription_pending = crate::accounts::sharing::pending_count(&*self.lock()?)?;
         let mut warnings = Vec::new();
+        let deferred_models = if model_usage {
+            0
+        } else {
+            self.lock()?.pending_model_usage_count()?
+        };
+        if deferred_models > 0 {
+            warnings.push(format!("Sync server needs model_usage_v2 support; {deferred_models} model measurements retained locally. Other records continue syncing."));
+        }
         let deferred_tariffs = if request_tariff {
             0
         } else {
@@ -1542,7 +1581,7 @@ impl Engine {
         }
         let warning = (!warnings.is_empty()).then(|| warnings.join(" "));
         Ok(
-            json!({"uploaded":uploaded,"downloaded":downloaded,"deferredClaude":deferred,"deferredTariffs":deferred_tariffs,"warning":warning,"subscriptionSync":subscription_sync,"subscriptionPending":subscription_pending}),
+            json!({"uploaded":uploaded,"downloaded":downloaded,"deferredClaude":deferred,"deferredTariffs":deferred_tariffs,"deferredModelUsage":deferred_models,"warning":warning,"subscriptionSync":subscription_sync,"subscriptionPending":subscription_pending}),
         )
     }
     pub fn start_background(self: &Arc<Self>) {

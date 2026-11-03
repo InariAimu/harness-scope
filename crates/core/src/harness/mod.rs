@@ -10,6 +10,7 @@ pub mod copliot;
 pub mod copliot_deprecated;
 pub mod dsh;
 pub mod files;
+pub mod gpt_img_studio;
 pub mod lmstudio;
 pub mod opencode;
 mod transcript;
@@ -129,6 +130,7 @@ impl Default for Registry {
                 Arc::new(opencode::OpenCode),
                 Arc::new(cherry::Cherry),
                 Arc::new(lmstudio::LmStudio),
+                Arc::new(gpt_img_studio::GptImgStudio),
                 Arc::new(dsh::Dsh),
                 Arc::new(copliot_deprecated::CopliotDeprecated),
                 Arc::new(copliot::Copliot),

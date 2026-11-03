@@ -29,6 +29,7 @@ export interface IconLibrary {
 export const ICON_QUERY_KEY = ["icon-library"] as const;
 const HARNESS_DEFAULTS: Record<string, string> = {
   claude: "claude", "claude-desktop": "claude", codex: "openai", dsh: "deepseek",
+  "gpt-img-studio": "openai-pixel",
   opencode: "opencode", cherry: "cherry", copliot: "copilot", "copliot-deprecated": "copilot",
 };
 const PROVIDER_DEFAULTS: Record<string, string> = {

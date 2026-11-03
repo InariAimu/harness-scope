@@ -48,6 +48,7 @@ fn active(e: &Engine) -> Vec<UsageRecord> {
 }
 fn old_record(e: &Engine, p: ParsedUsage, session: &str) -> UsageRecord {
     UsageRecord {
+        model_usage: None,
         id: format!("claude:{session}:{}", p.native_event_id),
         device_id: e.lock().unwrap().device_id().unwrap(),
         harness: "claude".into(),
@@ -112,7 +113,7 @@ fn v6_upgrade_preserves_payloads_quotes_cursors_then_deduplicates_with_sync_tomb
     let e = Engine::open(&p.join("scope.db")).unwrap();
     {
         let s = e.lock().unwrap();
-        assert_eq!(s.schema_version().unwrap(), 7);
+        assert_eq!(s.schema_version().unwrap(), 8);
         assert_eq!(s.local_records().unwrap(), before);
         assert_eq!(s.meta::<u64>("remote_cursor").unwrap(), Some(42));
         assert_eq!(
@@ -391,7 +392,8 @@ fn failed_v6_migration_rolls_back_schema_and_is_retryable() {
     let p = dir.path().join("v6.db");
     let c = rusqlite::Connection::open(&p).unwrap();
     c.execute_batch(include_str!("../src/schema.sql")).unwrap();
-    c.execute_batch("PRAGMA user_version=6; INSERT INTO records VALUES('device','broken',1,'not-json','missing');").unwrap();
+    // A real v6 projection already includes the v3 request metadata column.
+    c.execute_batch("ALTER TABLE usage_index ADD COLUMN request_metadata TEXT; PRAGMA user_version=6; INSERT INTO records VALUES('device','broken',1,'not-json','missing');").unwrap();
     assert!(Store::open(&p).is_err());
     assert_eq!(
         c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
@@ -413,11 +415,14 @@ fn failed_v6_migration_rolls_back_schema_and_is_retryable() {
     // Repair the synthetic invalid row; migration can be retried without reset.
     c.execute(
         "UPDATE records SET payload=?1",
-        [json!({"deleted":false,"recordSource":"session"}).to_string()],
+        [json!({"deviceId":"device","id":"broken","revision":1,"deleted":false,"recordSource":"session",
+            "harness":"claude","parserVersion":"synthetic","model":"synthetic-model","occurredAt":1,"grain":"event","count":1,
+            "tokens":Tokens::default(),"cost":Cost::default(),"sessionId":"s","nativeEventId":"broken","provider":null,
+            "statusCode":null,"legacyDate":null,"legacyTimezone":null}).to_string()],
     )
     .unwrap();
     let s = Store::open(&p).unwrap();
-    assert_eq!(s.schema_version().unwrap(), 7);
+    assert_eq!(s.schema_version().unwrap(), 8);
     assert_eq!(
         s.conn
             .query_row("SELECT COUNT(*) FROM record_sources", [], |r| r

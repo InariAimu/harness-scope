@@ -42,6 +42,7 @@ interface UsageTrendChartProps {
 }
 
 export interface UsageTrendStatLike {
+  modelUsageCount?: number;
   unpricedCount?: number;
   modelBreakdown?: TrendModelStats[];
   costConverted?: boolean;
@@ -55,6 +56,7 @@ export interface UsageTrendStatLike {
 }
 
 export interface UsageTrendChartPoint {
+  modelUsageCount?: number;
   unpricedCount?: number;
   modelBreakdown?: TrendModelStats[];
   costConverted?: boolean;
@@ -157,7 +159,7 @@ export function buildUsageTrendChartData(
           stat.totalOutputTokens +
           stat.totalCacheCreationTokens +
           stat.totalCacheReadTokens,
-        cost: stat.unpricedCount && stat.unpricedCount === stat.requestCount ? null : cost ?? null,
+        cost: stat.unpricedCount && stat.unpricedCount === (stat.requestCount ?? 0) + (stat.modelUsageCount ?? 0) ? null : cost ?? null,
         unpricedCount: stat.unpricedCount,
       };
     }) || []

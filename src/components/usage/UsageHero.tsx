@@ -70,10 +70,13 @@ export function aggregateSummaries(items: UsageSummary[]): UsageSummary {
       (sum, item) => sum + (item.subscriptionUsageCount ?? 0),
       0,
     ),
+    modelUsageCount: items.reduce((n,s) => n + (s.modelUsageCount ?? 0), 0),
+    incompleteUsageCount: items.reduce((n,s) => n + (s.incompleteUsageCount ?? 0), 0),
+    upperBoundCount: items.reduce((n,s) => n + (s.upperBoundCount ?? 0), 0),
     totalRequests,
     unpricedCount: items.reduce((sum, s) => sum + (s.unpricedCount ?? 0), 0),
     unpricedTokens: items.reduce((sum, s) => sum + (s.unpricedTokens ?? 0), 0),
-    pricedCount: items.reduce((sum,s) => sum + (s.pricedCount ?? s.totalRequests - (s.unpricedCount ?? 0)),0),
+    pricedCount: items.reduce((sum,s) => sum + (s.pricedCount ?? s.totalRequests + (s.modelUsageCount ?? 0) - (s.unpricedCount ?? 0)),0),
     totalCost: totalCostNum.toFixed(6),
     totalInputTokens: input,
     totalOutputTokens: output,
@@ -206,7 +209,10 @@ export function UsageHero({
   const hitRate = summary?.cacheHitRate ?? 0;
   const totalCost = parseFiniteNumber(summary?.totalCost);
   const requests = summary?.totalRequests ?? 0;
-  const allUnpriced = requests > 0 && summary?.unpricedCount === requests;
+  const modelUsages = summary?.modelUsageCount ?? 0;
+  const units = requests + modelUsages;
+  const allUnpriced = units > 0 && summary?.unpricedCount === units;
+  const inputDisplay = summary?.cacheBreakdownKnown === false ? input + cacheRead + cacheWrite : input;
 
   const hitPercent = Math.max(0, Math.min(100, hitRate * 100));
   const hitPercentLabel = hitPercent.toFixed(hitPercent >= 99.95 ? 0 : 1);
@@ -242,28 +248,27 @@ export function UsageHero({
                 placeholder ?? (allUnpriced ? t("usage.unpriced") : totalCost == null ? "--" : money(totalCost, 2))
               }
               title={allUnpriced || totalCost == null ? undefined : moneyTitle(totalCost, 6)}
-              help={
-                summary?.subscriptionUsageCount
-                  ? {
-                      title: t("scope.pricing.billingBasis", "金额口径"),
-                      body: t(
-                        "scope.pricing.subscriptionTotalHint",
-                        "包含 OpenCode Go 套餐额度折算，不含套餐月费，不能视为实际扣款合计。",
-                      ),
-                    }
-                  : undefined
-              }
+              help={summary?.subscriptionUsageCount || modelUsages > 0 ? {
+                title: t("scope.pricing.billingBasis", "金额口径"),
+                body: [
+                  summary?.subscriptionUsageCount ? t("scope.pricing.subscriptionTotalHint") : "",
+                  modelUsages > 0 ? t("scope.modelUsage.estimate") : "",
+                  modelUsages > 0 ? t("scope.modelUsage.note", { count: modelUsages }) : "",
+                  summary?.upperBoundCount ? t("scope.modelUsage.upperBound", { count: summary.upperBoundCount }) : "",
+                  summary?.incompleteUsageCount ? t("scope.modelUsage.incomplete", { count: summary.incompleteUsageCount }) : "",
+                ].filter(Boolean).join(" "),
+              } : undefined}
             />
             <MetricCard
-              label={t("usage.totalRequests")}
-              value={placeholder ?? formatQuantity(requests)}
-              title={fmtInt(requests, locale)}
+              label={t(modelUsages > 0 && requests === 0 ? "scope.modelUsage.count" : "usage.totalRequests")}
+              value={placeholder ?? formatQuantity(requests || modelUsages)}
+              title={modelUsages > 0 ? t("scope.modelUsage.note", {count: modelUsages}) : fmtInt(requests, locale)}
             />
             <MetricCard
               label={t("usage.realTotal")}
               help={{
                 title: t("usage.metrics.realTotalHelpTitle"),
-                body: t(summary?.cacheBreakdownKnown === false ? "scope.lmstudioTotalHelp" : "usage.metrics.realTotalHelp"),
+                body: t(summary?.cacheBreakdownKnown === false ? "scope.modelUsage.totalHelp" : "usage.metrics.realTotalHelp"),
               }}
               value={placeholder ?? formatQuantity(realTotal)}
               title={fmtInt(realTotal, locale)}
@@ -272,7 +277,7 @@ export function UsageHero({
               label={t("usage.cacheHitRate")}
               help={{
                 title: t("usage.metrics.hitRateHelpTitle"),
-                body: t(summary?.cacheBreakdownKnown === false ? "scope.lmstudioCacheUnknown" : "usage.metrics.hitRateHelp"),
+                body: t(summary?.cacheBreakdownKnown === false ? "scope.modelUsage.cacheUnknown" : "usage.metrics.hitRateHelp"),
               }}
               value={placeholder ?? (summary?.cacheBreakdownKnown === false ? "—" : `${hitPercentLabel}%`)}
             />
@@ -286,8 +291,8 @@ export function UsageHero({
             >
               <MiniMetric
                 label={t(summary?.cacheBreakdownKnown === false ? "usage.inputTokens" : "usage.freshInput")}
-                value={formatQuantity(input)}
-                title={fmtInt(input, locale)}
+                value={formatQuantity(inputDisplay)}
+                title={fmtInt(inputDisplay, locale)}
               />
               <MiniMetric
                 label={t("usage.output")}
@@ -302,7 +307,7 @@ export function UsageHero({
                     : formatQuantity(cacheWrite)
                 }
                 title={
-                  summary?.cacheBreakdownKnown === false ? t("scope.lmstudioCacheUnknown") : cacheWriteState === "na" ? undefined : fmtInt(cacheWrite)
+                  summary?.cacheBreakdownKnown === false ? t("scope.modelUsage.cacheUnknown") : cacheWriteState === "na" ? undefined : fmtInt(cacheWrite)
                 }
                 muted={cacheWriteState === "na"}
                 help={
@@ -314,7 +319,7 @@ export function UsageHero({
               <MiniMetric
                 label={t("usage.cacheRead")}
                 value={summary?.cacheBreakdownKnown === false ? "—" : formatQuantity(cacheRead)}
-                title={summary?.cacheBreakdownKnown === false ? t("scope.lmstudioCacheUnknown") : fmtInt(cacheRead, locale)}
+                title={summary?.cacheBreakdownKnown === false ? t("scope.modelUsage.cacheUnknown") : fmtInt(cacheRead, locale)}
               />
             </div>
           )}

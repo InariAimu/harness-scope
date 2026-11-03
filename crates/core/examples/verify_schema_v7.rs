@@ -20,7 +20,10 @@ fn main() -> Result<()> {
     );
     let conn = Connection::open_with_flags(&database, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    anyhow::ensure!(version == 6, "Expected an untouched v6 copy");
+    anyhow::ensure!(
+        [6, 7].contains(&version),
+        "Expected an untouched v6 or v7 copy"
+    );
     let before = conn
         .prepare("SELECT payload FROM records ORDER BY device_id,id")?
         .query_map([], |r| r.get::<_, String>(0))?
@@ -30,9 +33,9 @@ fn main() -> Result<()> {
         .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
         .collect::<Result<BTreeMap<_, _>, _>>()?;
     drop(conn);
-    let e = Engine::open(&database)?;
-    let after = e
-        .lock()?
+    // Check DDL independently of desktop source initialization.
+    let store = harness_scope_core::store::Store::open(&database)?;
+    let after = store
         .conn
         .prepare("SELECT payload FROM records ORDER BY device_id,id")?
         .query_map([], |r| r.get::<_, String>(0))?
@@ -40,7 +43,7 @@ fn main() -> Result<()> {
     anyhow::ensure!(before == after, "DDL migration changed historical payloads");
     for (key, value) in &meta {
         let actual: String =
-            e.lock()?
+            store
                 .conn
                 .query_row("SELECT value FROM meta WHERE key=?", [key], |r| r.get(0))?;
         anyhow::ensure!(
@@ -48,12 +51,19 @@ fn main() -> Result<()> {
             "DDL migration changed existing metadata: {key}"
         );
     }
+    drop(store);
+    let e = Engine::open(&database)?;
     let before: Vec<UsageRecord> = before
         .into_iter()
         .map(|p| serde_json::from_str(&p))
         .collect::<Result<_, _>>()?;
     let mut scans = Vec::new();
-    for harness in ["claude", "opencode", "lmstudio", "codex"] {
+    let harnesses: &[&str] = if version == 7 {
+        &["gpt-img-studio"]
+    } else {
+        &["claude", "opencode", "lmstudio", "codex"]
+    };
+    for harness in harnesses {
         let a = e.scan_harness(harness, false)?;
         let first = e.lock()?.local_records()?;
         let b = e.scan_harness(harness, false)?;

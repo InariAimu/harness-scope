@@ -70,6 +70,10 @@ pub fn resolve_with_settings(
     prices: &[Price],
     settings: &PricingSettings,
 ) -> Result<Cost> {
+    if let Some(usage) = &parsed.model_usage {
+        usage.validate()?;
+        return Ok(usage.cost(&parsed.model, parsed.occurred_at));
+    }
     if let Some(amount) = &parsed.reported_cost {
         return Ok(Cost {
             billing_basis: (parsed.provider.as_deref() == Some("opencode-go"))

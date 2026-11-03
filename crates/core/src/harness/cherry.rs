@@ -173,6 +173,7 @@ fn parse_usage(e: &Value) -> Result<ParsedUsage> {
         None
     };
     Ok(ParsedUsage {
+        model_usage: None,
         request_metadata: None,
         provider: crate::providers::parse(e["provider"].as_str()),
         id: format!("cherry:{id}"),

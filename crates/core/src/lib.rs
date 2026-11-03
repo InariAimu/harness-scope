@@ -10,6 +10,7 @@ pub mod harness;
 mod icons;
 pub mod migration;
 pub mod model;
+pub mod model_usage;
 pub mod network;
 pub mod pricing;
 mod pricing_match;

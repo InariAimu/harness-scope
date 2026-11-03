@@ -174,6 +174,7 @@ fn generation(step: &Value, session_id: &str) -> Result<ParsedUsage> {
             }
         });
     Ok(ParsedUsage {
+        model_usage: None,
         id: format!("lmstudio:{id}"),
         native_event_id: id.into(),
         session_id: session_id.into(),

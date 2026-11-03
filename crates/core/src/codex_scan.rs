@@ -543,6 +543,7 @@ fn apply(engine: &Engine, session: &str, work: &[Work]) -> Result<(u64, u64, u64
                 crate::pricing::resolve_with_settings(&parsed, previous.as_ref(), &prices, &pricing)?
             };
             let record = UsageRecord {
+                model_usage: None,
                 id: record_id.clone(), native_event_id: Some(parsed.native_event_id),
                 session_id: Some(parsed.session_id), device_id: device.clone(),
                 harness: "codex".into(), parser_version: codex::VERSION.into(),

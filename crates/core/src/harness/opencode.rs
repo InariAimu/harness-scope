@@ -167,6 +167,7 @@ fn parse_usage(row: &Value, part_starts: Option<&Vec<i64>>) -> Result<Option<Par
         UsageTiming::estimate(created, end, first, source, "opencode_content_start")
     });
     Ok(Some(ParsedUsage {
+        model_usage: None,
         request_metadata: None,
         provider: crate::providers::parse(
             d["providerID"]

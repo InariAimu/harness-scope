@@ -424,6 +424,7 @@ fn make_usage(
     let read = c[2].min(c[0]);
     let write = c[3].min(c[0] - read);
     Ok(ParsedUsage {
+        model_usage: None,
         id: format!("codex:v6:{}:{suffix}", id.rollout),
         session_id: id.session.clone(),
         native_event_id: suffix,
