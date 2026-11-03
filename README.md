@@ -13,6 +13,32 @@ Harness Scope 是一个以本机数据为基础的桌面应用：从编程工具
 - **跨设备查看**：同步用量事实，以及明确关联到同一共享订阅的额度历史；离线时保留本机数据和待传队列。
 - **接续旧统计**：预览并迁入 CC Switch schema v20 的历史用量，按分界日衔接原生日志。
 
+## Screenshot
+
+### 用量总览：从汇总追到每次请求
+
+把不同 AI 编程工具与设备的用量放在同一个视图中，集中查看费用、请求数、Tokens 和缓存命中率。按时间、工具、供应商或模型筛选后，可以继续核对逐请求的输入输出、缓存、费用、生成速度与首字估算；连接自部署同步服务器后，还能汇总其他设备已同步的用量。
+
+![用量总览：汇总指标、每日趋势、筛选器与逐请求明细](.github/images/readme/usage-overview.webp)
+
+### 工具分布：看清用量花在哪个 Harness
+
+将 Codex、DeepSeek Harness、Claude Code、OpenCode、Cherry Studio 等工具放在同一张分布图中，直接比较各自的用量与占比。支持切换 Tokens、请求数和成本，方便了解自己的工具使用习惯，以及主要消耗来自哪里。
+
+![工具用量分布：各 Harness 的 Tokens 总量与占比](.github/images/readme/harness-usage-breakdown.webp)
+
+### 模型分布：比较模型的实际使用占比
+
+在相同时间范围内按模型汇总用量，对照各模型的总量与占比，也可以切换到请求数或成本视角。结合工具、供应商和设备筛选，查看不同场景下的模型使用构成。
+
+![模型用量分布：各模型的 Tokens 总量与占比](.github/images/readme/model-usage-breakdown.webp)
+
+### 订阅续航与每日预算：把剩余额度换成使用节奏
+
+结合官方额度窗口、近期关联请求和参考配置，查看当前消耗速率、能否覆盖到重置，以及重置前的建议使用强度。Codex 预测可分别展示 Standard 与 Fast 档位，支持调整采样时长和目标重置时间，帮助安排接下来的使用节奏；结果受样本与参考规则影响，属于参考估算。
+
+![订阅参考预测：消耗速率、重置前续航及 Standard 和 Fast 建议强度](.github/images/readme/subscription-runway-budget.webp)
+
 ## 支持的工具
 
 | 工具 | 数据来源 | 支持范围 |
