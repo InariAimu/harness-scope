@@ -398,7 +398,18 @@ fn incomplete_zstd_is_retried_without_revoking_completed_usage() {
     std::fs::write(&path, &bytes).unwrap();
     let e = engine(tmp.path(), &path);
     assert_eq!(e.scan(false).unwrap().imported, 2);
-    let before = e.lock().unwrap().local_records().unwrap();
+    let before = {
+        let store = e.lock().unwrap();
+        // Force a different quote timestamp without depending on the wall clock.
+        for mut record in store.local_records().unwrap() {
+            assert!(record.cost.amount_usd.is_none());
+            assert!(record.cost.snapshot.is_some());
+            record.cost.priced_at = 123;
+            store.upsert(record, "fixture").unwrap();
+        }
+        store.conn.execute("DELETE FROM outbox", []).unwrap();
+        store.local_records().unwrap()
+    };
     let mut torn = bytes.clone();
     let mut frame = zstd::encode_all(
         b"{\"type\":\"turn/start\",\"seq\":16,\"time\":1792112407000,\"data\":{\"turn\":2}}\n"
@@ -415,6 +426,7 @@ fn incomplete_zstd_is_retried_without_revoking_completed_usage() {
     std::fs::write(&path, &torn).unwrap();
     assert!(e.scan(false).unwrap().errors.is_empty());
     assert_eq!(e.lock().unwrap().local_records().unwrap(), before);
+    assert!(e.lock().unwrap().pending().unwrap().is_empty());
 }
 
 fn rc5_retry() -> Vec<Value> {
