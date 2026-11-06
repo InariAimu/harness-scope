@@ -55,7 +55,9 @@ Copilot 的完整 Credits／PRU 计量、Agent Host 和 CLI 导入仍未实现�
 
 ## 开始使用
 
-目前提供源码运行与本机可执行文件构建，安装器、签名和自动更新尚未配置。
+在 [GitHub Releases](https://github.com/InariAimu/harness-scope/releases) 下载 Windows x64、Linux x64 和 macOS 通用桌面程序；Linux 另提供同步服务端。各文件的依赖、签名状态和校验方法见对应版本的发布说明。自动更新尚未配置。
+
+也可以从源码运行：
 
 准备 Node.js 22.12+、Rust 和对应平台的 [Tauri 开发依赖](https://v2.tauri.app/start/prerequisites/)，在仓库根目录执行：
 
@@ -74,7 +76,7 @@ Windows 可执行文件的构建步骤见[开发与构建](docs/DEVELOPMENT.md)�
 
 日志中的用量、模型参考费用、订阅额度估算和实际账单是不同口径。缺少价格或计时依据时显示未知；Copilot 兼容导入中的缺失 Token 有专门限制。不同设备上的同一份原生日志副本目前没有全局去重，应避免重复采集。
 
-同步服务采用单用户共享令牌模型，不提供多人权限或远端会话正文浏览。Windows 桌面和 Linux 服务端有自动化检查；其他桌面平台的安装与运行需要单独验证。
+同步服务采用单用户共享令牌模型，不提供多人权限或远端会话正文浏览。Windows 桌面和 Linux 服务端有完整 CI 检查；三平台发布流程另做原生构建和启动检查，平台特有交互仍需单独验证。
 
 ## 文档
 

@@ -1,5 +1,8 @@
 name: checks
-on: [push, pull_request]
+on:
+  push:
+    branches: ["**"]
+  pull_request:
 jobs:
   core-and-ui:
     runs-on: windows-latest
@@ -16,6 +19,7 @@ jobs:
       - run: npm ci
       - run: npm run version:check
       - run: npm run test:version
+      - run: npm run test:release
       - run: npm test
       - run: python -m unittest discover -s scripts -p "test_*.py"
       - run: npm run build

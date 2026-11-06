@@ -1,0 +1,176 @@
+name: Release packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version tag to build (must match the application version)
+        required: true
+        default: v0.2.0
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-packages-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag }}
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  windows:
+    name: Windows x64 desktop
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-windows
+      - run: npm ci
+      - run: node scripts/release.mjs prepare
+      - run: npm run desktop:build -- -- --locked
+      - name: Verify startup
+        shell: pwsh
+        run: |
+          $app = Start-Process -FilePath (Resolve-Path target/release/harness-scope-desktop.exe) -WindowStyle Hidden -PassThru
+          try {
+            Start-Sleep -Seconds 10
+            if ($app.HasExited) { throw "Desktop exited during startup: $($app.ExitCode)" }
+          } finally {
+            if (!$app.HasExited) { Stop-Process -Id $app.Id }
+          }
+      - run: node scripts/release.mjs stage windows
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-windows
+          path: output/release-stage/*
+          if-no-files-found: error
+          retention-days: 14
+
+  linux:
+    name: Linux x64 desktop and sync server
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-linux
+      - name: Install desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev patchelf libfuse2 xvfb dbus-x11
+      - run: npm ci
+      - run: node scripts/release.mjs prepare
+      - run: npm run tauri -- build --ci --config src-tauri/tauri.release.conf.json --bundles deb,appimage -- --locked
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+      - run: cargo build --release --locked -p harness-scope-service
+      - name: Verify startup and package metadata
+        run: |
+          target/release/harness-scope-service --help
+          dpkg-deb --info target/release/bundle/deb/*.deb
+          set +e
+          WEBKIT_DISABLE_DMABUF_RENDERER=1 timeout --signal=TERM 10s xvfb-run -a target/release/harness-scope-desktop
+          status=$?
+          set -e
+          test "$status" -eq 124
+      - run: node scripts/release.mjs stage linux
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-linux
+          path: output/release-stage/*
+          if-no-files-found: error
+          retention-days: 14
+
+  macos:
+    name: macOS universal desktop
+    runs-on: macos-15
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-macos-universal
+      - run: npm ci
+      - run: node scripts/release.mjs prepare
+      - run: npm run tauri -- build --ci --target universal-apple-darwin --config src-tauri/tauri.release.conf.json --bundles app,dmg -- --locked
+      - name: Verify architectures, signature and startup
+        run: |
+          app="target/universal-apple-darwin/release/bundle/macos/Harness Scope.app"
+          lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/harness-scope-desktop"
+          codesign --verify --deep --strict "$app"
+          hdiutil verify target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          python3 - <<'PY'
+          import subprocess
+          app = subprocess.Popen(["target/universal-apple-darwin/release/bundle/macos/Harness Scope.app/Contents/MacOS/harness-scope-desktop"])
+          try:
+              app.wait(timeout=10)
+              raise SystemExit(f"Desktop exited during startup: {app.returncode}")
+          except subprocess.TimeoutExpired:
+              app.terminate()
+              app.wait(timeout=10)
+          PY
+      - run: node scripts/release.mjs stage macos
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-macos
+          path: output/release-stage/*
+          if-no-files-found: error
+          retention-days: 14
+
+  collect:
+    name: Verify release asset set
+    needs: [windows, linux, macos]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: output/release-stage
+          merge-multiple: true
+      - run: node scripts/release.mjs collect
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-assets
+          path: output/release-assets/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14

@@ -12,6 +12,7 @@
 npm ci
 npm run version:check
 npm run test:version
+npm run test:release
 npm test
 python -m unittest discover -s scripts -p "test_*.py"
 npm run build
