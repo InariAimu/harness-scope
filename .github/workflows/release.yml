@@ -79,7 +79,7 @@ jobs:
       - name: Install desktop dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev patchelf libfuse2 xvfb dbus-x11
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev patchelf libfuse2 xvfb dbus-x11
       - run: npm ci
       - run: node scripts/release.mjs prepare
       - run: npm run tauri -- build --ci --config src-tauri/tauri.release.conf.json --bundles deb,appimage -- --locked
