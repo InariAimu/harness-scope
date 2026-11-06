@@ -73,6 +73,8 @@ struct SummaryAccumulator {
     priced_request_count: u64,
     request_cost: Decimal,
     cache_breakdown_unknown: bool,
+    cache_hit_rate_input_tokens: u64,
+    cache_hit_rate_read_tokens: u64,
     tokens: Tokens,
     count: u64,
     cost: Decimal,
@@ -101,6 +103,11 @@ impl SummaryAccumulator {
     }
     fn add(&mut self, r: SummaryValue<'_>) {
         self.cache_breakdown_unknown |= r.cache_breakdown_unknown;
+        if !r.cache_breakdown_unknown {
+            self.cache_hit_rate_input_tokens +=
+                r.tokens.input + r.tokens.cache_read + r.tokens.cache_write;
+            self.cache_hit_rate_read_tokens += r.tokens.cache_read;
+        }
         let model_count = u64::from(r.model_usage.is_some());
         self.model_usage_count += model_count;
         self.incomplete_usage_count += u64::from(r.model_usage.is_some_and(|m| !m.usage_available));
@@ -140,7 +147,7 @@ impl SummaryAccumulator {
     }
     fn finish(&self) -> Value {
         let t = &self.tokens;
-        let cacheable = t.input + t.cache_read + t.cache_write;
+        let cacheable = self.cache_hit_rate_input_tokens;
         let units = self.count + self.model_usage_count;
         json!({
             "totalRequests":self.count, "modelUsageCount":self.model_usage_count,
@@ -151,7 +158,9 @@ impl SummaryAccumulator {
             "totalCacheReadTokens":t.cache_read, "totalCacheCreationTokens":t.cache_write,
             "successRate":if self.known>0 {Some(self.success as f64/self.known as f64*100.)}else{None},
             "realTotalTokens":t.total(),
-            "cacheHitRate":if cacheable>0{t.cache_read as f64/cacheable as f64}else{0.},
+            "cacheHitRate":if cacheable>0{Some(self.cache_hit_rate_read_tokens as f64/cacheable as f64)}else if self.cache_breakdown_unknown{None}else{Some(0.)},
+            "cacheHitRateInputTokens":cacheable,
+            "cacheHitRateReadTokens":self.cache_hit_rate_read_tokens,
             "cacheBreakdownKnown":!self.cache_breakdown_unknown,
             "unpricedCount":self.unpriced, "unpricedTokens":self.unpriced_tokens,
             "pricedCount":units-self.unpriced, "knownStatusCount":self.known,

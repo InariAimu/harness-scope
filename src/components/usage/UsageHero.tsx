@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   fmtInt,
+  formatHitRatePercent,
   getLocaleFromLanguage,
   getResolvedLang,
   parseFiniteNumber,
@@ -47,6 +48,8 @@ export function aggregateSummaries(items: UsageSummary[]): UsageSummary {
   let output = 0;
   let cacheCreation = 0;
   let cacheRead = 0;
+  let cacheHitRateInput = 0;
+  let cacheHitRateRead = 0;
 
   for (const s of items) {
     totalRequests += s.totalRequests;
@@ -60,11 +63,20 @@ export function aggregateSummaries(items: UsageSummary[]): UsageSummary {
     output += s.totalOutputTokens;
     cacheCreation += s.totalCacheCreationTokens;
     cacheRead += s.totalCacheReadTokens;
+    if (s.cacheHitRateInputTokens != null && s.cacheHitRateReadTokens != null) {
+      cacheHitRateInput += s.cacheHitRateInputTokens;
+      cacheHitRateRead += s.cacheHitRateReadTokens;
+    } else if (s.cacheBreakdownKnown !== false) {
+      // Older summaries without eligible counts are usable only when fully known.
+      cacheHitRateInput +=
+        s.totalInputTokens + s.totalCacheCreationTokens + s.totalCacheReadTokens;
+      cacheHitRateRead += s.totalCacheReadTokens;
+    }
   }
 
-  const cacheableInput = input + cacheCreation + cacheRead;
+  const cacheBreakdownKnown = items.every(item => item.cacheBreakdownKnown !== false);
   return {
-    cacheBreakdownKnown: items.every(item => item.cacheBreakdownKnown !== false),
+    cacheBreakdownKnown,
     costConverted: items.some((item) => item.costConverted),
     subscriptionUsageCount: items.reduce(
       (sum, item) => sum + (item.subscriptionUsageCount ?? 0),
@@ -86,7 +98,11 @@ export function aggregateSummaries(items: UsageSummary[]): UsageSummary {
     successRate:
       knownStatusCount > 0 ? (successCount / knownStatusCount) * 100 : null,
     realTotalTokens: input + output + cacheCreation + cacheRead,
-    cacheHitRate: cacheableInput > 0 ? cacheRead / cacheableInput : 0,
+    cacheHitRateInputTokens: cacheHitRateInput,
+    cacheHitRateReadTokens: cacheHitRateRead,
+    cacheHitRate: cacheHitRateInput > 0
+      ? cacheHitRateRead / cacheHitRateInput
+      : cacheBreakdownKnown ? 0 : null,
   };
 }
 
@@ -206,7 +222,10 @@ export function UsageHero({
   const cacheWrite = summary?.totalCacheCreationTokens ?? 0;
   const cacheRead = summary?.totalCacheReadTokens ?? 0;
   const realTotal = summary?.realTotalTokens ?? 0;
-  const hitRate = summary?.cacheHitRate ?? 0;
+  const hitRate = summary?.cacheBreakdownKnown === false &&
+    summary.cacheHitRateInputTokens == null
+    ? null
+    : summary ? summary.cacheHitRate : 0;
   const totalCost = parseFiniteNumber(summary?.totalCost);
   const requests = summary?.totalRequests ?? 0;
   const modelUsages = summary?.modelUsageCount ?? 0;
@@ -214,8 +233,6 @@ export function UsageHero({
   const allUnpriced = units > 0 && summary?.unpricedCount === units;
   const inputDisplay = summary?.cacheBreakdownKnown === false ? input + cacheRead + cacheWrite : input;
 
-  const hitPercent = Math.max(0, Math.min(100, hitRate * 100));
-  const hitPercentLabel = hitPercent.toFixed(hitPercent >= 99.95 ? 0 : 1);
   const placeholder = isLoading ? "…" : undefined;
 
   const cacheWriteHelp =
@@ -277,9 +294,9 @@ export function UsageHero({
               label={t("usage.cacheHitRate")}
               help={{
                 title: t("usage.metrics.hitRateHelpTitle"),
-                body: t(summary?.cacheBreakdownKnown === false ? "scope.modelUsage.cacheUnknown" : "usage.metrics.hitRateHelp"),
+                body: t(summary?.cacheBreakdownKnown === false ? "usage.metrics.hitRateKnownHelp" : "usage.metrics.hitRateHelp"),
               }}
-              value={placeholder ?? (summary?.cacheBreakdownKnown === false ? "—" : `${hitPercentLabel}%`)}
+              value={placeholder ?? formatHitRatePercent(hitRate)}
             />
           </div>
           {moreOpen && (

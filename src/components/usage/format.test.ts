@@ -1,10 +1,17 @@
 import { expect, it } from "vitest";
 import {
   formatFirstTokenSeconds,
+  formatHitRatePercent,
   getEstimatedTokensPerSecond,
   getOutputTokensPerSecond,
 } from "./format";
 import type { SessionSpeedEstimate } from "@/types/usage";
+
+it("keeps an unknown cache hit rate distinct from a known cache miss", () => {
+  expect(formatHitRatePercent(null)).toBe("—");
+  expect(formatHitRatePercent(0)).toBe("0.0%");
+  expect(formatHitRatePercent(0.8)).toBe("80.0%");
+});
 
 it("calculates proxy generation speed after the first token", () => {
   expect(

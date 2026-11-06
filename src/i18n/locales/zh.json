@@ -2207,7 +2207,7 @@
     "preset30d": "近 30 天",
     "presetAll": "全部",
     "totalRequests": "总请求数",
-    "totalCost": "总成本",
+    "totalCost": "API等价成本",
     "cost": "成本",
     "unpriced": "未计价",
     "pricedCost": "已计价金额",
@@ -2450,7 +2450,8 @@
       "realTotalHelpTitle": "真实消耗 Tokens 怎么算",
       "realTotalHelp": "新增输入 + 输出 + 缓存写入 + 缓存命中。新增输入不含缓存；部分协议（如 OpenAI）不上报缓存写入，这一项可能偏低。",
       "hitRateHelpTitle": "缓存命中率怎么算",
-      "hitRateHelp": "缓存命中 ÷（新增输入 + 缓存写入 + 缓存命中）。"
+      "hitRateHelp": "缓存命中 ÷（新增输入 + 缓存写入 + 缓存命中）。",
+      "hitRateKnownHelp": "仅使用缓存细分已知的记录：缓存命中 ÷（新增输入 + 缓存写入 + 缓存命中）。缓存未知的记录不参与计算；没有可计算记录时显示 —。"
     },
     "heatmap": {
       "title": "用量热力图",

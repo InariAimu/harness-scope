@@ -105,7 +105,8 @@ export function resolveSidebarToday(
 }
 
 /** 命中率百分比：`98.6%`；四舍五入到 100.0 的写成 `100%` */
-export function formatHitRatePercent(rate: number): string {
+export function formatHitRatePercent(rate: number | null): string {
+  if (rate == null) return "—";
   const percent = Math.max(0, Math.min(100, rate * 100));
   return `${percent.toFixed(percent >= 99.95 ? 0 : 1)}%`;
 }

@@ -58,6 +58,9 @@ fn model_tokens_frozen_quotes_and_http_request_statistics_stay_separate() {
     assert_eq!(s["totalCost"], "0.01188");
     assert_eq!(s["upperBoundCount"], 1);
     assert_eq!(s["cacheBreakdownKnown"], false);
+    assert_eq!(s["cacheHitRateInputTokens"], 1000);
+    assert_eq!(s["cacheHitRateReadTokens"], 800);
+    assert_eq!(s["cacheHitRate"], 0.8);
     assert!(q(&e, "models")
         .as_array()
         .unwrap()
@@ -94,6 +97,76 @@ fn model_tokens_frozen_quotes_and_http_request_statistics_stay_separate() {
     let e = Engine::open(&dir.path().join("scope.db")).unwrap();
     scan(&e);
     assert_eq!(q(&e, "summary")["modelUsageCount"], 2);
+}
+
+#[test]
+fn cache_hit_rate_excludes_unknown_records_and_keeps_known_records_in_the_same_app() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    scan(&e);
+    let original = e.lock().unwrap().local_records().unwrap();
+    let direct = harness_scope_core::query::summary(&original);
+    assert_eq!(direct["cacheHitRate"], 0.8);
+    let apps = q(&e, "summaryByApp");
+    assert_eq!(apps[0]["summary"]["cacheHitRate"], 0.8);
+    assert_eq!(apps[0]["summary"]["realTotalTokens"], 2200);
+
+    let unknown = e
+        .execute(
+            "usage_query",
+            json!({"kind":"summary", "model":"synthetic-image"}),
+        )
+        .unwrap();
+    assert!(unknown["cacheHitRate"].is_null());
+    assert_eq!(unknown["cacheHitRateInputTokens"], 0);
+    assert_eq!(unknown["realTotalTokens"], 1100);
+
+    let mut http = original
+        .iter()
+        .find(|r| r.model == "synthetic-language")
+        .unwrap()
+        .clone();
+    http.id = "cache-miss-http".into();
+    http.harness = "claude".into();
+    http.model_usage = None;
+    http.count = 1;
+    http.tokens = Tokens {
+        input: 100,
+        output: 100,
+        cache_write: 100,
+        ..Default::default()
+    };
+    let mut local = http.clone();
+    local.id = "unknown-local-cache".into();
+    local.harness = "lmstudio".into();
+    local.tokens = Tokens {
+        input: 90_000,
+        output: 100,
+        ..Default::default()
+    };
+    let store = e.lock().unwrap();
+    store.upsert(http, "synthetic-http").unwrap();
+    store.upsert(local, "synthetic-local").unwrap();
+    drop(store);
+
+    let mixed = q(&e, "summary");
+    assert_eq!(mixed["cacheHitRateInputTokens"], 1200);
+    assert_eq!(mixed["cacheHitRateReadTokens"], 800);
+    assert!((mixed["cacheHitRate"].as_f64().unwrap() - 2.0 / 3.0).abs() < 1e-12);
+    assert_eq!(mixed["realTotalTokens"], 92_600);
+    assert_eq!(mixed["totalRequests"], 2);
+    assert_eq!(mixed["modelUsageCount"], 2);
+    let local = e
+        .execute(
+            "usage_query",
+            json!({"kind":"summary", "appType":"lmstudio"}),
+        )
+        .unwrap();
+    assert!(local["cacheHitRate"].is_null());
+    let known = e
+        .execute("usage_query", json!({"kind":"summary", "appType":"claude"}))
+        .unwrap();
+    assert_eq!(known["cacheHitRate"], 0.0);
 }
 
 #[test]

@@ -208,8 +208,12 @@ export interface UsageSummary extends CostCoverage {
   successRate: number | null;
   /** input + output + cache_creation + cache_read, all cache-normalized */
   realTotalTokens: number;
-  /** cache_read / (input + cache_creation + cache_read), range 0–1 */
-  cacheHitRate: number;
+  /** Only records with known cache breakdowns participate; null if none are usable. */
+  cacheHitRate: number | null;
+  /** Fresh input + cache writes + cache reads from eligible records. */
+  cacheHitRateInputTokens?: number;
+  /** Cache reads from the same eligible records, for weighted aggregation. */
+  cacheHitRateReadTokens?: number;
 }
 
 export interface UsageSummaryByApp {

@@ -12,7 +12,7 @@ Scope 首次升级时会添加本机 Image Studio 来源；如果数据库尚不
 
 - 模型记录 schema 为 `gpt-img-studio.model-usage`，`schemaVersion: 1`，稳定 ID 为 `请求 UUID:component:序号`。Scope 再加入 Studio 安装身份，重复扫描和同机副本使用相同身份。
 - `modelUsage` 保存原始请求 ID、操作、模型类型、可空 Token、缓存可用性和来源价格快照。它不包含提示词、图片、密钥或响应正文。
-- `totalInput + output` 是总 Token。缓存细分已知时使用新增输入、缓存命中、缓存写入三部分；未知时只累计总输入，细分显示未上报，不推算缓存命中率。推理 Token 已包含在输出中。
+- `totalInput + output` 是总 Token。缓存细分已知时使用新增输入、缓存命中、缓存写入三部分；未知时只累计总输入，细分显示未上报，不推算该条记录的缓存命中率。总览计算命中率时排除缓存未知的记录，其余已知记录按 Token 总量加权。推理 Token 已包含在输出中。
 - 金额是 Studio 在调用时计算的参考估算，`source_estimated` 不等于供应商实际扣款。`estimated` 表示可计算，`upper_bound` 表示缺少缓存折扣细分的费用上界，`unknown` 表示无法计价。Scope 的改价和重新计价不会覆盖来源报价。
 - `modelUsageCount` 单独计数，HTTP `totalRequests` / `requestCount` 对这类记录为 0。费用覆盖的 `pricedCount` / `unpricedCount` 包含请求和模型记录，缺失用量另计 `incompleteUsageCount`。
 

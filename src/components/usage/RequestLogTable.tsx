@@ -579,7 +579,12 @@ export function RequestLogTable({
     return (
       <tr
         key={log.requestId}
-        className={onOpenDetail ? usageTable.rowInteractive : usageTable.row}
+        className={cn(
+          onOpenDetail ? usageTable.rowInteractive : usageTable.row,
+          !inputMissing &&
+            freshInput >= 64_000 &&
+            "text-danger-text [&_*]:!text-danger-text",
+        )}
         onClick={() => onOpenDetail?.(log.requestId)}
       >
         {columns.map((id) => (
