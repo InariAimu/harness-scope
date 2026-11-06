@@ -1,0 +1,56 @@
+name: Build binaries
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-desktop:
+    name: Windows x64 desktop
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: npm ci
+      - name: Build desktop executable
+        run: npm run desktop:build -- -- --locked
+      - uses: actions/upload-artifact@v7
+        with:
+          path: target/release/harness-scope-desktop.exe
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+  linux-server:
+    name: Linux x64 sync server
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build sync server
+        run: cargo build --release --locked -p harness-scope-service
+      # Keep the executable bit when users extract the artifact.
+      - name: Archive sync server
+        run: tar -czf harness-scope-service-linux-x86_64.tar.gz -C target/release harness-scope-service
+      - uses: actions/upload-artifact@v7
+        with:
+          path: harness-scope-service-linux-x86_64.tar.gz
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
