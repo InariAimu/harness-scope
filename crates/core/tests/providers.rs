@@ -39,6 +39,67 @@ fn record(e: &Engine, p: &ParsedUsage) -> UsageRecord {
 }
 
 #[test]
+fn openai_model_override_keeps_other_model_references_and_backfills_unknown_costs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let engine = Engine::open(&tmp.path().join("scope.db")).unwrap();
+    let mut sol_reference = reference();
+    sol_reference.model_id = "gpt-6.1-sol".into();
+    sol_reference.source_key = Some("openai/gpt-6.1-sol".into());
+    let mut review_reference = sol_reference.clone();
+    review_reference.model_id = "codex-auto-review".into();
+    review_reference.source_key = Some("openai/codex-auto-review".into());
+    engine
+        .execute(
+            "save_prices",
+            json!({"entries": [sol_reference, review_reference.clone()]}),
+        )
+        .unwrap();
+
+    let mut sol = usage(Some("openai"));
+    sol.model = "gpt-6.1-sol".into();
+    let mut pending = record(&engine, &sol);
+    pending.harness = "codex".into();
+    engine.lock().unwrap().upsert(pending, "fixture").unwrap();
+
+    let mut review_override = review_reference;
+    review_override.provider = Some("openai".into());
+    review_override.source = "manual".into();
+    review_override.source_key = None;
+    review_override.input_cost_per_million = "0".into();
+    review_override.output_cost_per_million = "0".into();
+    review_override.cache_read_cost_per_million = "0".into();
+    let mut custom_override = review_override.clone();
+    custom_override.provider = Some("custom-route".into());
+    engine
+        .execute(
+            "save_prices",
+            json!({"entries": [review_override, custom_override]}),
+        )
+        .unwrap();
+
+    let store = engine.lock().unwrap();
+    let backfilled = store.record(&sol.id).unwrap().unwrap();
+    assert_eq!(backfilled.cost.amount_usd.as_deref(), Some("1.01"));
+    assert_eq!(
+        backfilled.cost.billing_basis.as_deref(),
+        Some("model_reference")
+    );
+
+    let prices = store.prices().unwrap();
+    let settings = store.pricing_settings().unwrap();
+    let new_sol = pricing::resolve_with_settings(&sol, None, &prices, &settings).unwrap();
+    assert_eq!(new_sol.amount_usd, backfilled.cost.amount_usd);
+    assert_eq!(new_sol.price_source, "models_dev");
+
+    let mut review = sol;
+    review.model = "codex-auto-review".into();
+    let free_review = pricing::resolve_with_settings(&review, None, &prices, &settings).unwrap();
+    assert_eq!(free_review.amount_usd.as_deref(), Some("0"));
+    assert_eq!(free_review.price_source, "manual");
+    assert!(pricing::find_for_provider(&prices, "gpt-6.1-sol", Some("custom-route")).is_none());
+}
+
+#[test]
 fn provider_tariffs_and_unconfigured_model_references_are_separate() {
     let mut prices = pricing::builtin();
     prices.push(reference());
