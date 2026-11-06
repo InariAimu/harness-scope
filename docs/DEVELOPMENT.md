@@ -49,6 +49,17 @@ npm run tauri -- build --debug --no-bundle -- --locked
 
 本机最新已验证产物集中在 [releases/](../releases/README.md)，按 `windows-x86_64/`（桌面版）和 `linux-x86_64/`（同步服务端）区分，并附构建清单与 SHA-256。可执行文件和生成清单不进入 Git；该目录不是独立便携数据目录，也不会自动发布到 GitHub。
 
+## GitHub Actions 构建
+
+[Build binaries](../.github/workflows/build.yml) 在推送、提交拉取请求及手动触发时构建优化版。登录 GitHub 后，在仓库的 **Actions → Build binaries** 中打开对应的运行记录，在 **Artifacts** 下载：
+
+| 产物 | 用途 |
+| --- | --- |
+| `harness-scope-desktop.exe` | Windows x64 桌面版，内嵌前端，需要 WebView2 |
+| `harness-scope-service-linux-x86_64.tar.gz` | Linux x64 同步服务端，使用 `tar -xzf` 解包，需要 glibc 2.39 或以上 |
+
+产物保留 14 天，不会创建 GitHub Release。手动构建时，在 **Run workflow** 中选择要编译的分支。
+
 ## 浏览器开发与合成演示
 
 浏览器通过 Vite 的 `/api` 代理访问本机 Rust 服务。`--local` 服务具有本机文件访问能力，强制限制在 loopback；生产同步服务不提供该命令 API。
