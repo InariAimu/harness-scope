@@ -39,6 +39,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-windows
+          cache-on-failure: true
       - run: npm ci
       - run: node scripts/release.mjs prepare
       - run: npm run desktop:build -- -- --locked
@@ -76,6 +77,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-linux
+          cache-on-failure: true
       - name: Install desktop dependencies
         run: |
           sudo apt-get update
@@ -123,13 +125,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-macos-universal
+          cache-on-failure: true
       - run: npm ci
       - run: node scripts/release.mjs prepare
       - run: npm run tauri -- build --ci --target universal-apple-darwin --config src-tauri/tauri.release.conf.json --bundles app,dmg -- --locked
       - name: Verify architectures, signature and startup
         run: |
           app="target/universal-apple-darwin/release/bundle/macos/Harness Scope.app"
-          lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/harness-scope-desktop"
+          lipo "$app/Contents/MacOS/harness-scope-desktop" -verify_arch arm64 x86_64
           codesign --verify --deep --strict "$app"
           hdiutil verify target/universal-apple-darwin/release/bundle/dmg/*.dmg
           python3 - <<'PY'
