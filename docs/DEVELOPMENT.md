@@ -60,6 +60,29 @@ npm run tauri -- build --debug --no-bundle -- --locked
 
 产物保留 14 天，不会创建 GitHub Release。手动构建时，在 **Run workflow** 中选择要编译的分支。
 
+## 三平台 Release
+
+[Release packages](../.github/workflows/release.yml) 是手动触发的正式版本打包流程。它在 Windows、Ubuntu 22.04 和 macOS runner 上分别生成 Windows x64 EXE、Linux x64 AppImage/DEB 与同步服务端压缩包，以及兼容 Apple Silicon/Intel 的 macOS 通用 DMG。macOS 最低版本为 11.0；Linux 构建要求 glibc 2.35+，DEB 还需要 WebKitGTK 4.1。
+
+工作流以选定提交为源，在 runner 内创建与应用版本一致的本地标签来生成正式构建标识。已有标签若指向其他提交会拒绝构建。流程仅上传 Actions artifacts，不修改远程标签或发布 Release；应先完成所有平台构建及同一提交的 `checks`，再发布：
+
+```powershell
+gh workflow run release.yml --ref main -f tag=v0.2.0
+gh run list --workflow release.yml
+# 使用上一步实际成功的运行 ID。
+gh run download <RUN_ID> -n release-assets -D output/release-v0.2.0/assets
+# 按 build-manifest.json 核对提交、平台和版本，并校验 SHA256SUMS.txt。
+git tag -a v0.2.0 <VERIFIED_COMMIT> -m "Harness Scope v0.2.0"
+git push origin refs/tags/v0.2.0
+gh release create v0.2.0 'output/release-v0.2.0/assets/*' --verify-tag --draft --title 'Harness Scope v0.2.0' --notes-file .github/release-notes/v0.2.0.md
+gh release view v0.2.0
+gh release edit v0.2.0 --draft=false --latest
+```
+
+下载文件的完整性由 `SHA256SUMS.txt` 和 `build-manifest.json` 记录，后者也保留各架构的源代码提交及实际构建身份。缺少平台、混入开发构建或校验和不符时，汇总步骤失败。
+
+发布配置 [tauri.release.conf.json](../src-tauri/tauri.release.conf.json) 仅在打包时启用，不改变日常 Windows EXE 构建。当前 Windows 未签名；macOS 使用 ad-hoc 签名，未配置 Developer ID 或 Apple 公证，首次安装可能需要用户在系统安全设置中确认。自动更新未配置。
+
 ## 浏览器开发与合成演示
 
 浏览器通过 Vite 的 `/api` 代理访问本机 Rust 服务。`--local` 服务具有本机文件访问能力，强制限制在 loopback；生产同步服务不提供该命令 API。

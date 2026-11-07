@@ -10,6 +10,7 @@
     "version:check": "node scripts/version.mjs --check",
     "version:sync": "node scripts/version.mjs --sync",
     "test:version": "node --test scripts/version.test.mjs",
+    "test:release": "node --test scripts/release.test.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "desktop": "tauri dev",
