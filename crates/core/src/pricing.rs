@@ -276,9 +276,12 @@ pub fn find_for_provider<'a>(
         ) {
             return Some(price);
         }
-        if prices
-            .iter()
-            .any(|p| p.provider.as_deref().map(crate::providers::pricing_id) == Some(id))
+        // OpenAI prices override only the matched model. Other OpenAI models
+        // still use the same imported references as an unconfigured route.
+        if id != "openai"
+            && prices
+                .iter()
+                .any(|p| p.provider.as_deref().map(crate::providers::pricing_id) == Some(id))
         {
             // A price for another model on this route must not block the
             // recognized DeepSeek model's official reference fallback.
