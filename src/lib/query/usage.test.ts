@@ -4,7 +4,7 @@ import { usageApi } from "@/lib/api/usage";
 import { setScope } from "@/lib/client";
 import { prefetchHarnessUsage, usageKeys } from "./usage";
 vi.mock("@/lib/api/usage", () => ({
-  usageApi: { getUsageTrends: vi.fn(), getRequestLogs: vi.fn() },
+  usageApi: { getUsageTrends: vi.fn(), getRequestLogs: vi.fn(), getSpeedTrends: vi.fn(), getSpeedDaily: vi.fn() },
 }));
 beforeEach(() => {
   setScope("local");
@@ -18,6 +18,34 @@ beforeEach(() => {
   });
 });
 describe("harness intent prefetch", () => {
+  it("prefetches calendar data for All with separate device and filter keys", async () => {
+    const client = new QueryClient();
+    vi.mocked(usageApi.getSpeedDaily).mockResolvedValue({days:[],selectedRecordCount:0,excludedRecordCount:0});
+    await prefetchHarnessUsage(client,{preset:"all"},"codex","Asia/Shanghai",undefined,"speed");
+    expect(usageApi.getSpeedDaily).toHaveBeenCalledWith("codex");
+    expect(usageApi.getSpeedTrends).not.toHaveBeenCalled();
+    expect(client.getQueryData([...usageKeys.speedDaily({appType:"codex"}),"Asia/Shanghai"])).toBeDefined();
+    const local = usageKeys.speedDaily({providerName:"a",model:"m"});
+    expect(local).not.toEqual(usageKeys.speedDaily({providerName:"b",model:"m"}));
+    setScope("all");
+    expect(local).not.toEqual(usageKeys.speedDaily({providerName:"a",model:"m"}));
+    client.clear();
+  });
+  it("warms only speed data on the speed route and keys filters and devices separately", async () => {
+    const client = new QueryClient();
+    const range = { preset: "1d" as const };
+    vi.mocked(usageApi.getSpeedTrends).mockResolvedValue({ buckets: [] } as any);
+    await prefetchHarnessUsage(client, range, "all", "UTC", undefined, "speed");
+    expect(usageApi.getSpeedTrends).toHaveBeenCalledOnce();
+    expect(usageApi.getRequestLogs).not.toHaveBeenCalled();
+    expect(usageApi.getUsageTrends).not.toHaveBeenCalled();
+    expect(client.getQueryData([...usageKeys.speedTrends(range, {}), "UTC"])).toEqual({ buckets: [] });
+    const local = usageKeys.speedTrends(range, { model: "a", providerName: "route" });
+    expect(local).not.toEqual(usageKeys.speedTrends(range, { model: "b", providerName: "route" }));
+    setScope("all");
+    expect(local).not.toEqual(usageKeys.speedTrends(range, { model: "a", providerName: "route" }));
+    client.clear();
+  });
   it("keeps different device scopes in separate caches", async () => {
     const client = new QueryClient();
     await prefetchHarnessUsage(client, { preset: "today" }, "codex", "UTC");

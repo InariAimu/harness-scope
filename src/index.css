@@ -149,6 +149,7 @@
     --chart-2: var(--theme-accent-plus);
     --chart-category-lightness: 53%;
     --chart-grid: #ececf0;
+    --chart-mean: #6b7280;
 
     /* Agent accents share the theme; neutral text and diff statuses stay separate. */
     --agent-claude: var(--action-text);
@@ -221,6 +222,7 @@
     --danger-text: #fca5a5;
     --danger-soft: #3a1414;
     --chart-grid: #2c2c31;
+    --chart-mean: #ffffff;
     --chart-category-lightness: 65%;
 
     --agent-codex: #d4d4d8;

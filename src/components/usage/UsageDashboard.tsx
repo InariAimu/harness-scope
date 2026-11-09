@@ -13,6 +13,7 @@ import { toast } from "@/lib/toast";
 import {
   Check,
   ChartColumn,
+  Gauge,
   ChevronDown,
   Database,
   Loader2,
@@ -53,6 +54,7 @@ import { getUsageRangePresetLabel, resolveUsageRange } from "@/lib/usageRange";
 import { cn } from "@/lib/utils";
 import { UsageHero } from "./UsageHero";
 import { UsageChartPanel } from "./UsageChartPanel";
+import { SpeedDashboard } from "./SpeedDashboard";
 import { RequestLogTable } from "./RequestLogTable";
 import { ProviderStatsTable } from "./ProviderStatsTable";
 import { ModelStatsTable } from "./ModelStatsTable";
@@ -146,6 +148,8 @@ function MenuMeta({ children }: { children: React.ReactNode }) {
 }
 
 interface UsageDashboardProps {
+  /** Both routes share the same filters, device controls and refresh lifecycle. */
+  view?: "usage" | "speed";
   backgroundCollection?: boolean;
   deviceControls?: ReactNode;
   refreshIntervalMs?: number;
@@ -166,6 +170,7 @@ interface UsageDashboardProps {
  * 用量统计全局页（v7 S6）：页头 → 筛选行 → 指标 → 趋势图 → 子页签（请求日志 / 供应商 / 模型 / 定价）。
  */
 export function UsageDashboard({
+  view = "usage",
   backgroundCollection = false,
   deviceControls,
   refreshIntervalMs: savedRefreshIntervalMs,
@@ -552,6 +557,7 @@ export function UsageDashboard({
                 "all",
                 timeZone,
                 statusCode,
+                view,
               );
           }}
           onFocus={() => {
@@ -562,6 +568,7 @@ export function UsageDashboard({
                 "all",
                 timeZone,
                 statusCode,
+                view,
               );
           }}
         >
@@ -588,6 +595,7 @@ export function UsageDashboard({
                       app,
                       timeZone,
                       statusCode,
+                      view,
                     );
                 }}
                 onFocus={() => {
@@ -598,6 +606,7 @@ export function UsageDashboard({
                       app,
                       timeZone,
                       statusCode,
+                      view,
                     );
                 }}
               >
@@ -850,7 +859,9 @@ export function UsageDashboard({
   );
 
   const body =
-    isEmpty && pricingWhileEmpty ? (
+    view === "speed" ? (
+      <SpeedDashboard range={range} appType={scopedAppType} providerName={providerName} model={model} />
+    ) : isEmpty && pricingWhileEmpty ? (
       // 空库里只有定价可配：不画全是 0 的概览和趋势，直接给页签
       <div
         id="main-content"
@@ -926,10 +937,10 @@ export function UsageDashboard({
   return (
     <div ref={containerRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <AppPageHeader
-        icon={<ChartColumn className="h-5 w-5" strokeWidth={1.5} />}
-        title={t("nav.usage")}
+        icon={view === "speed" ? <Gauge className="h-5 w-5" strokeWidth={1.5} /> : <ChartColumn className="h-5 w-5" strokeWidth={1.5} />}
+        title={t(view === "speed" ? "speed.title" : "nav.usage")}
         titleExtra={
-          <HelpTip title={t("nav.usage")}>{t("usage.subtitle")}</HelpTip>
+          <HelpTip title={t(view === "speed" ? "speed.title" : "nav.usage")}>{t(view === "speed" ? "speed.help" : "usage.subtitle")}</HelpTip>
         }
         actions={headerActions}
       />

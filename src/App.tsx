@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   ChartColumn,
+  Gauge,
   History,
   LayoutGrid,
   Settings,
@@ -207,6 +208,11 @@ export default function App() {
                   Icon: ChartColumn,
                 },
                 {
+                  id: "speed",
+                  name: label("速度统计", "Speed"),
+                  Icon: Gauge,
+                },
+                {
                   id: "sessions",
                   name: label("会话", "Sessions"),
                   Icon: History,
@@ -278,8 +284,9 @@ export default function App() {
             </>
           ) : (
             <>
-              {page === "usage" && (
+              {(page === "usage" || page === "speed") && (
                 <UsageDashboard
+                  view={page}
                   backgroundCollection
                   key={device}
                   refreshIntervalMs={data.config.scanIntervalSeconds * 1000}

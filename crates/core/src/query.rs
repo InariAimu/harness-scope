@@ -9,6 +9,8 @@ use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, str::FromStr};
 
+mod speed;
+
 struct SummaryValue<'a> {
     model_usage: Option<&'a crate::model_usage::ModelUsage>,
     cache_breakdown_unknown: bool,
@@ -415,14 +417,18 @@ pub fn query(store: &Store, kind: &str, args: &Value) -> Result<Value> {
                 .ok_or_else(|| anyhow::anyhow!("Invalid local midnight"))
         };
         (midnight(day)?, midnight(day.succ_opt().unwrap())? - 1)
-    } else if kind == "trends" {
+    } else if matches!(kind, "trends" | "speedTrends" | "speedDaily") {
         let end = args["endDate"]
             .as_i64()
             .unwrap_or_else(|| chrono::Utc::now().timestamp());
         (
-            args["startDate"]
-                .as_i64()
-                .unwrap_or_else(|| end.saturating_sub(86_400)),
+            args["startDate"].as_i64().unwrap_or_else(|| {
+                if kind == "speedDaily" {
+                    0
+                } else {
+                    end.saturating_sub(86_400)
+                }
+            }),
             end,
         )
     } else {
@@ -482,6 +488,8 @@ pub fn query(store: &Store, kind: &str, args: &Value) -> Result<Value> {
             end_to_end,
         ),
         "trends" => trends(store, &selection, start, end, timezone),
+        "speedTrends" => speed::trends(store, &selection, start, end),
+        "speedDaily" => speed::daily(store, &selection, start, end, timezone),
         "summary" | "todaySummary" | "summaryByApp" | "sources" => {
             let mut groups: BTreeMap<String, SummaryAccumulator> = BTreeMap::new();
             if matches!(kind, "summary" | "todaySummary") {

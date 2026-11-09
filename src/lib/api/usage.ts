@@ -1,4 +1,5 @@
 import { command, getScope } from "@/lib/client";
+import type { SpeedDaily, SpeedTrends } from "@/types/speed";
 import type {
   UsageSummary,
   UsageSummaryByApp,
@@ -41,6 +42,10 @@ export const usageApi = {
     }),
   getUsageTrends: (...args: Parameters<typeof filters>) =>
     query<DailyStats[]>("trends", filters(...args)),
+  getSpeedTrends: (...args: Parameters<typeof filters>) =>
+    query<SpeedTrends>("speedTrends", filters(...args)),
+  getSpeedDaily: (appType?: string, providerName?: string, model?: string) =>
+    query<SpeedDaily>("speedDaily", filters(0, Math.floor(Date.now() / 1000), appType, providerName, model)),
   getUsageFirstDate: (
     appType?: string,
     providerName?: string,

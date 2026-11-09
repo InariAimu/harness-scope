@@ -25,9 +25,24 @@ export function prefetchHarnessUsage(
   appType: string,
   timeZone: string,
   statusCode?: number,
+  view: "usage" | "speed" = "usage",
 ) {
   const effective = normalizeScopeFilters({ appType });
   const bounds = resolveUsageRange(range, Date.now(), timeZone);
+  if (view === "speed") {
+    if (range.preset === "all") {
+      return client.prefetchQuery({
+        queryKey: [...usageKeys.speedDaily(effective), timeZone],
+        queryFn: () => usageApi.getSpeedDaily(effective.appType),
+        staleTime: USAGE_STALE_TIME_MS,
+      });
+    }
+    return client.prefetchQuery({
+      queryKey: [...usageKeys.speedTrends(range, effective), timeZone],
+      queryFn: () => usageApi.getSpeedTrends(bounds.startDate, bounds.endDate, effective.appType),
+      staleTime: USAGE_STALE_TIME_MS,
+    });
+  }
   return Promise.all([
     client.prefetchQuery({
       queryKey: [
@@ -96,6 +111,12 @@ type RequestLogsKey = {
 // Query keys
 export const usageKeys = {
   all: ["usage"] as const,
+  speedDaily: (filters?: UsageScopeFilters) =>
+    ["usage", "speed-daily", filters?.appType ?? null, filters?.providerName ?? null, filters?.model ?? null, getScope()] as const,
+  speedTrends: (range: UsageRangeSelection, filters?: UsageScopeFilters) =>
+    ["usage", "speed-trends", range.preset, range.customStartDate ?? 0,
+      range.customEndDate ?? 0, range.liveEndTime ?? false,
+      filters?.appType ?? null, filters?.providerName ?? null, filters?.model ?? null, getScope()] as const,
   hasRecords: () => ["usage", "has-records", getScope()] as const,
   summary: (
     preset: UsageRangeSelection["preset"],
@@ -353,6 +374,34 @@ export function useUsageTrends(
     placeholderData: keepPreviousData,
     refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS,
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
+  });
+}
+
+export function useSpeedDaily(filters?: UsageScopeFilters) {
+  const timeZone = useUsageTimezone();
+  const effective = normalizeScopeFilters(filters);
+  return useQuery({
+    queryKey: [...usageKeys.speedDaily(effective), timeZone],
+    queryFn: () => usageApi.getSpeedDaily(effective.appType, effective.providerName, effective.model),
+    staleTime: USAGE_STALE_TIME_MS,
+    placeholderData: keepPreviousData,
+    refetchInterval: false,
+  });
+}
+
+export function useSpeedTrends(range: UsageRangeSelection, filters?: UsageScopeFilters) {
+  const timeZone = useUsageTimezone();
+  const effective = normalizeScopeFilters(filters);
+  return useQuery({
+    queryKey: [...usageKeys.speedTrends(range, effective), timeZone],
+    queryFn: () => {
+      const { startDate, endDate } = resolveUsageRange(range, Date.now(), timeZone);
+      return usageApi.getSpeedTrends(startDate, endDate, effective.appType, effective.providerName, effective.model);
+    },
+    staleTime: USAGE_STALE_TIME_MS,
+    placeholderData: keepPreviousData,
+    // The shared usage event bridge and rolling-range timer own refreshes.
+    refetchInterval: false,
   });
 }
 
