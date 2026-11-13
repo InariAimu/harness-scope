@@ -50,12 +50,7 @@ docker compose up --build -d
 
 ## Debian 部署模板
 
-[deploy/](deploy/) 提供构建、systemd、Nginx、证书和定时备份模板。**这些脚本保留了原部署环境的固定域名、IP 校验及站点文件名，首次部署必须修改为自己的配置。** 重点检查：
-
-- [install.sh](deploy/install.sh)：Nginx 站点文件名与启用链接。
-- [enable-https.sh](deploy/enable-https.sh)：域名、DNS 地址校验、证书和站点路径。
-- [nginx-http.conf](deploy/nginx-http.conf)、[nginx.conf](deploy/nginx.conf)：server_name 与证书路径。
-- [build.sh](deploy/build.sh) 和 systemd 单元：安装根目录、工具链及资源限制是否适合目标机器。
+[deploy/](deploy/) 提供构建、systemd、Nginx、证书和定时备份模板。部署时向 [install.sh](deploy/install.sh) 和 [enable-https.sh](deploy/enable-https.sh) 传入相同的域名。脚本会生成对应域名的 Nginx 站点配置，填入 `server_name`、证书路径和日志文件名。部署前检查 [build.sh](deploy/build.sh) 和 systemd 单元的安装根目录、工具链及资源限制是否适合目标机器。
 
 部署机需准备 Python 3、Nginx、Certbot、curl、tar 及 Rust 构建所需系统依赖。模板的默认布局为：
 
@@ -82,13 +77,19 @@ ssh scope-server "tar -xzf /opt/harness-scope/source.tar.gz -C /opt/harness-scop
 
 ```bash
 bash /opt/harness-scope/src/server/deploy/build.sh
-# 安装前完成域名等配置调整；升级现有服务时先做一致性备份
-bash /opt/harness-scope/src/server/deploy/install.sh
+# 升级现有服务时先做一致性备份，并传入该服务已有的域名
+bash /opt/harness-scope/src/server/deploy/install.sh scope.example.com
 ```
 
 构建脚本当前固定 Rust 1.91.0、单构建任务，不修改全局 PATH。安装脚本要求 root，创建专用无登录用户、发布目录、服务和备份计时器；首次生成令牌，后续保留现有令牌与数据库。服务仅监听 loopback，以 SIGINT 优雅停机。
 
-配置自己的 DNS 与 80／443 访问后，使用已调整的 `enable-https.sh` 申请证书。它使用 Certbot webroot，续期成功后检查并重载 Nginx。客户端填写自己的 HTTPS 域名。
+将 `scope.example.com` 换成自己的域名。配置 DNS 和 80／443 端口访问后，以 root 运行以下命令申请证书。如果传入第二个参数，脚本会先检查该域名的 IPv4 解析结果是否包含指定地址。下例中的 `192.0.2.10` 为文档示例值。
+
+```bash
+bash /opt/harness-scope/src/server/deploy/enable-https.sh scope.example.com 192.0.2.10
+```
+
+脚本使用 Certbot webroot，续期成功后检查并重载 Nginx。客户端填写自己的 HTTPS 地址，例如 `https://scope.example.com`。
 
 ## 同步验证
 

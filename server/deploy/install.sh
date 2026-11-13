@@ -1,9 +1,18 @@
 #!/bin/bash
 set -euo pipefail
+if [[ $# -ne 1 ]]; then
+    printf 'Usage: bash %s DOMAIN\n' "$0" >&2
+    exit 1
+fi
+files=$(dirname -- "${BASH_SOURCE[0]}")
+source "$files/site-config.sh"
+domain=${1,,}
+validate_domain "$domain"
 test "$(id -u)" = 0 || { echo 'Run as root' >&2; exit 1; }
 base=/opt/harness-scope
-files="$base/src/server/deploy"
 binary="$base/build-target/release/harness-scope-service"
+site="/etc/nginx/sites-available/$domain"
+enabled="/etc/nginx/sites-enabled/$domain"
 test -x "$binary"
 if ! id harness-scope >/dev/null 2>&1; then
     useradd --system --home-dir /var/lib/harness-scope --shell /usr/sbin/nologin harness-scope
@@ -27,11 +36,11 @@ install -m 0644 "$files/harness-scope.service" /etc/systemd/system/harness-scope
 install -m 0644 "$files/harness-scope-backup.service" /etc/systemd/system/harness-scope-backup.service
 install -m 0644 "$files/harness-scope-backup.timer" /etc/systemd/system/harness-scope-backup.timer
 install -m 0644 "$files/nginx-proxy.conf" /etc/nginx/snippets/harness-scope-proxy.conf
-if [ ! -e /etc/nginx/sites-available/hs.amu.moe ]; then
-    install -m 0644 "$files/nginx-http.conf" /etc/nginx/sites-available/hs.amu.moe
+if [ ! -e "$site" ]; then
+    install_site_config "$domain" "$files/nginx-http.conf" "$site"
 fi
-if [ ! -e /etc/nginx/sites-enabled/hs.amu.moe ]; then
-    ln -s /etc/nginx/sites-available/hs.amu.moe /etc/nginx/sites-enabled/hs.amu.moe
+if [ ! -e "$enabled" ]; then
+    ln -s "$site" "$enabled"
 fi
 nginx -t
 systemctl daemon-reload
