@@ -13,7 +13,7 @@ $env:HARNESS_SCOPE_TOKEN = python -c "import secrets; print(secrets.token_urlsaf
 cargo run --release --locked -p harness-scope-service -- --db data/server.db --bind 127.0.0.1:8787
 ```
 
-保留生成的令牌供客户端配置，远程访问通过 HTTPS 反向代理。在桌面「设置 → 多设备同步」填写服务器地址和相同令牌。
+保留生成的令牌供客户端配置，公网访问通过 HTTPS 反向代理。在桌面「设置 → 多设备同步」填写服务器地址和相同令牌。受信任的内网部署若已提供 HTTP 地址，可在每台客户端填写该 `http://` 地址并勾选「允许 HTTP」。HTTP 会明文传输同步令牌和数据。
 
 ```powershell
 cargo test -p harness-scope-service --locked

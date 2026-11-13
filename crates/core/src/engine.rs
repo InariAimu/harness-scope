@@ -250,15 +250,25 @@ impl Engine {
                 Ok(json!(name))
             }
             "save_config" | "patch_config" => {
+                let patch = &args["patch"];
+                // Take the sync lock before the store lock, as sync() does. An
+                // in-flight sync must finish before changing its endpoint or token.
+                let _sync_guard = if name == "save_config"
+                    || patch.get("serverUrl").is_some()
+                    || patch.get("serverToken").is_some()
+                    || patch.get("allowHttp").is_some()
+                {
+                    Some(self.lock_sync()?)
+                } else {
+                    None
+                };
                 // Merge under the write lock: an autosave must not restore a stale
                 // device name, source list, sync credential or another preference.
                 let s = self.lock()?;
                 let old = s.config()?;
                 let mut value = args["config"].clone();
                 if name == "patch_config" {
-                    let patch = args["patch"]
-                        .as_object()
-                        .context("Missing settings patch")?;
+                    let patch = patch.as_object().context("Missing settings patch")?;
                     anyhow::ensure!(!patch.is_empty(), "Empty settings patch");
                     value = serde_json::to_value(&old)?;
                     for (key, next) in patch {
@@ -276,6 +286,7 @@ impl Engine {
                                     | "scanIntervalSeconds"
                                     | "serverUrl"
                                     | "serverToken"
+                                    | "allowHttp"
                             ),
                             "Unsupported setting: {key}"
                         );
@@ -337,8 +348,8 @@ impl Engine {
                 if c.server_token.is_empty() && !args["clearToken"].as_bool().unwrap_or(false) {
                     c.server_token = old.server_token
                 }
-                if old.server_url != c.server_url {
-                    s.transaction(|| {
+                s.transaction(|| {
+                    if old.server_url != c.server_url {
                         s.conn.execute(
                             "DELETE FROM record_timings WHERE device_id<>?1",
                             [s.device_id()?],
@@ -348,10 +359,10 @@ impl Engine {
                         s.set_meta("remote_instance_id", &String::new())?;
                         s.set_meta("remote_schema_version", &Option::<u32>::None)?;
                         s.set_meta("remote_schema_checked_at", &Option::<i64>::None)?;
-                        s.requeue_all()
-                    })?
-                }
-                s.set_meta("config", &c)?;
+                        s.requeue_all()?;
+                    }
+                    s.set_meta("config", &c)
+                })?;
                 if collection_changed {
                     self.wake_collection();
                 }
@@ -1353,11 +1364,13 @@ impl Engine {
         adapter.delete_session(&path, &session.session_id)?;
         Ok(json!(true))
     }
-    pub fn sync(&self) -> Result<Value> {
-        let _guard = self
-            .sync_lock
+    fn lock_sync(&self) -> Result<MutexGuard<'_, ()>> {
+        self.sync_lock
             .lock()
-            .map_err(|_| anyhow::anyhow!("Sync lock poisoned"))?;
+            .map_err(|_| anyhow::anyhow!("Sync lock poisoned"))
+    }
+    pub fn sync(&self) -> Result<Value> {
+        let _guard = self.lock_sync()?;
         let result = self.sync_inner();
         let s = self.lock()?;
         match &result {
@@ -1378,17 +1391,8 @@ impl Engine {
             !config.server_url.trim().is_empty() && !config.server_token.is_empty(),
             "Configure server URL and token first"
         );
-        let url = reqwest::Url::parse(&config.server_url)?;
-        anyhow::ensure!(
-            url.scheme() == "https"
-                || (url.scheme() == "http"
-                    && matches!(
-                        url.host_str(),
-                        Some("localhost" | "127.0.0.1" | "[::1]" | "::1")
-                    )),
-            "Use HTTPS for remote sync servers"
-        );
-        let base = config.server_url.trim_end_matches('/');
+        let url = sync::server_url(&config.server_url, config.allow_http)?;
+        let base = url.as_str().trim_end_matches('/');
         let network = crate::network::load(&*self.read_lock()?)?;
         let client = network.client()?;
         let health: Value = client
@@ -1399,21 +1403,17 @@ impl Engine {
             .json()?;
         {
             let s = self.lock()?;
-            // A server URL change during the request must not label the new server
-            // with the previous server's schema. Older servers leave it unknown.
-            if s.config()?.server_url == config.server_url {
-                let schema = health["schemaVersion"]
-                    .as_u64()
-                    .and_then(|v| u32::try_from(v).ok())
-                    .filter(|v| *v > 0);
-                s.transaction(|| {
-                    s.set_meta("remote_schema_version", &schema)?;
-                    s.set_meta(
-                        "remote_schema_checked_at",
-                        &chrono::Utc::now().timestamp_millis(),
-                    )
-                })?;
-            }
+            let schema = health["schemaVersion"]
+                .as_u64()
+                .and_then(|v| u32::try_from(v).ok())
+                .filter(|v| *v > 0);
+            s.transaction(|| {
+                s.set_meta("remote_schema_version", &schema)?;
+                s.set_meta(
+                    "remote_schema_checked_at",
+                    &chrono::Utc::now().timestamp_millis(),
+                )
+            })?;
         }
         anyhow::ensure!(health["protocolVersion"].as_u64().is_some_and(|v| v >= 4), "Sync server must be upgraded to protocol v4 to preserve timing and request metadata; pending records have been retained");
         let claude_metadata = health["recordCapabilities"]

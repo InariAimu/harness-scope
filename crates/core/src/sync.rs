@@ -4,6 +4,9 @@ use rusqlite::{params, OptionalExtension};
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
+mod transport;
+pub(crate) use transport::server_url;
+
 pub const REQUEST_TARIFF_CAPABILITY: &str = "request_tariff_v1";
 pub const RECORD_CAPABILITIES: &str = "request_tariff_v1,model_usage_v2";
 

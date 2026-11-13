@@ -15,6 +15,7 @@ import type { Snapshot, Config } from "@/App";
 import { command } from "@/lib/client";
 import { AppPageHeader } from "@/components/shell/AppPageHeader";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { AccentColorSettings } from "@/components/settings/AccentColorSettings";
@@ -53,6 +54,7 @@ export function SettingsPage({
     i18n.language.startsWith("zh") ? zh : en;
   const [config, setConfig] = useState<Config>(() => ({
     ...snapshot.config,
+    allowHttp: snapshot.config.allowHttp ?? false,
     accentColor: normalizeAccentColor(snapshot.config.accentColor) ?? DEFAULT_ACCENT_COLOR,
     interfaceSkin: normalizeInterfaceSkin(snapshot.config.interfaceSkin),
     skinTransparency: skinPercentage(snapshot.config.skinTransparency, DEFAULT_SKIN_TRANSPARENCY),
@@ -108,7 +110,7 @@ export function SettingsPage({
     setConfig((current) => {
       const next = { ...current };
       for (const key of Object.keys(snapshot.config) as (keyof Config)[]) {
-        if (!pending.current.has(key) && key !== "serverUrl" && key !== "serverToken") {
+        if (!pending.current.has(key) && key !== "serverUrl" && key !== "serverToken" && key !== "allowHttp") {
           Object.assign(next, { [key]: snapshot.config[key] });
         }
       }
@@ -345,9 +347,25 @@ export function SettingsPage({
                 <Input
                   placeholder="https://usage.example.com"
                   value={config.serverUrl}
+                  disabled={busy}
                   onChange={(e) => setConfig((current) => ({ ...current, serverUrl: e.target.value }))}
                 />
               </Field>
+              <label className="mb-2 flex items-center gap-2 text-body">
+                <Checkbox
+                  checked={config.allowHttp}
+                  disabled={busy}
+                  aria-describedby="sync-http-description"
+                  onCheckedChange={(allowHttp) => setConfig((current) => ({ ...current, allowHttp }))}
+                />
+                {l("允许 HTTP", "Allow HTTP")}
+              </label>
+              <p id="sync-http-description" className="mb-4 text-caption text-fg-3">
+                {l(
+                  "远程服务器使用 http:// 时需要开启。HTTP 会明文传输同步令牌和数据。",
+                  "Required for remote http:// URLs. HTTP sends the sync token and data without encryption.",
+                )}
+              </p>
               <Field label={l("访问令牌", "Access token")}>
                 <Input
                   type="password"
@@ -358,6 +376,7 @@ export function SettingsPage({
                       : l("输入服务器令牌", "Enter server token")
                   }
                   value={config.serverToken}
+                  disabled={busy}
                   onChange={(e) => setConfig((current) => ({ ...current, serverToken: e.target.value }))}
                 />
               </Field>
@@ -373,7 +392,14 @@ export function SettingsPage({
                   disabled={busy}
                   onClick={() =>
                     void run(async () => {
-                      await command("patch_config", { patch: { serverUrl: config.serverUrl, serverToken: config.serverToken } });
+                      const saved = await command<Config>("patch_config", {
+                        patch: {
+                          serverUrl: config.serverUrl,
+                          serverToken: config.serverToken,
+                          allowHttp: config.allowHttp,
+                        },
+                      });
+                      client.setQueryData<Snapshot>(["snapshot"], (current) => current ? { ...current, config: saved } : current);
                       setConfig((current) => ({ ...current, serverToken: "" }));
                       const result = await command<{
                         uploaded: number;

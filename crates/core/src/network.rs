@@ -1,5 +1,5 @@
 //! One device-local outbound policy for sync, provider APIs, and public catalog downloads.
-use crate::{store::Store, Engine};
+use crate::{store::Store, sync, Engine};
 use anyhow::{Context, Result};
 use hyper_util::client::proxy::matcher::Matcher;
 use reqwest::{blocking::Client, Url};
@@ -142,9 +142,9 @@ impl Settings {
 }
 
 fn view(engine: &Engine, settings: Settings) -> Result<Value> {
-    let server = engine.read_lock()?.config()?.server_url;
+    let config = engine.read_lock()?.config()?;
     let targets = [
-        ("sync", server.as_str()),
+        ("sync", config.server_url.trim()),
         ("modelsDev", MODELS_DEV_URL),
         ("deepseek", "https://api.deepseek.com/user/balance"),
         ("opencodeGo", "https://opencode.ai/inference/go/v1/usage"),
@@ -155,9 +155,14 @@ fn view(engine: &Engine, settings: Settings) -> Result<Value> {
         .map(|(id, target)| {
             let configured = !target.is_empty();
             // Matcher strips credentials; do not return raw environment variables.
-            let route = configured.then(|| settings.route(target)).transpose();
+            let route = match id {
+                _ if !configured => Ok(None),
+                "sync" => sync::server_url(target, config.allow_http)
+                    .and_then(|url| settings.route(url.as_str())),
+                _ => settings.route(target),
+            };
             let invalid = route.is_err();
-            let proxy = route.ok().flatten().flatten();
+            let proxy = route.ok().flatten();
             json!({"id":id,"configured":configured,"proxy":proxy,"invalid":invalid})
         })
         .collect();

@@ -49,6 +49,7 @@ export interface Config {
   sources: Source[];
   serverUrl: string;
   serverToken: string;
+  allowHttp: boolean;
   scanIntervalSeconds: number;
   theme: string;
   accentColor: string;

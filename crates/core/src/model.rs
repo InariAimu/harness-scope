@@ -375,6 +375,8 @@ pub struct Config {
     pub sources: Vec<Source>,
     pub server_url: String,
     pub server_token: String,
+    #[serde(default)]
+    pub allow_http: bool,
     pub scan_interval_seconds: u64,
     pub theme: String,
     #[serde(default = "default_accent_color")]
@@ -411,6 +413,7 @@ impl Default for Config {
             sources: Vec::new(),
             server_url: String::new(),
             server_token: String::new(),
+            allow_http: false,
             scan_interval_seconds: 60,
             theme: "system".into(),
             accent_color: default_accent_color(),

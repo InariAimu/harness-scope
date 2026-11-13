@@ -10,6 +10,69 @@ use tower::ServiceExt;
 const TOKEN: &str = "synthetic-test-token-at-least-24-characters";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn remote_http_sync_requires_opt_in_and_uses_the_configured_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = Arc::new(Engine::open(&dir.path().join("server.db")).unwrap());
+    let schema = server.lock().unwrap().schema_version().unwrap();
+    // Act as a local HTTP proxy for a remote hostname without using external DNS.
+    let router = axum::Router::new().nest("/scope", server_router(server, TOKEN.into()).unwrap());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy = format!("http://{}", listener.local_addr().unwrap());
+    let handle = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let path = dir.path().join("client.db");
+    tokio::task::spawn_blocking(move || {
+        let client = Engine::open(&path).unwrap();
+        let url = "http://sync-fixture.invalid/scope/";
+        client
+            .execute(
+                "patch_config",
+                json!({"patch":{"serverUrl":url,"serverToken":TOKEN}}),
+            )
+            .unwrap();
+        let network = client
+            .execute(
+                "save_network_settings",
+                json!({"settings":{"mode":"manual","proxyUrl":proxy}}),
+            )
+            .unwrap();
+        assert_eq!(network["routes"][0]["id"], "sync");
+        assert_eq!(network["routes"][0]["invalid"], true);
+        assert!(client
+            .sync()
+            .unwrap_err()
+            .to_string()
+            .contains("Allow HTTP"));
+
+        client
+            .execute("patch_config", json!({"patch":{"allowHttp":true}}))
+            .unwrap();
+        drop(client);
+        let client = Engine::open(&path).unwrap();
+        let network = client.execute("network_settings", json!({})).unwrap();
+        assert_eq!(network["routes"][0]["invalid"], false);
+        assert!(network["routes"][0]["proxy"].is_string());
+        client.sync().unwrap();
+        let snapshot = client.execute("snapshot", json!({})).unwrap();
+        assert_eq!(snapshot["config"]["allowHttp"], true);
+        assert_eq!(snapshot["config"]["serverUrl"], url);
+        assert_eq!(snapshot["remoteSchemaVersion"], schema);
+        assert!(snapshot["lastSyncError"].is_null());
+
+        client
+            .execute("patch_config", json!({"patch":{"allowHttp":false}}))
+            .unwrap();
+        assert!(client
+            .sync()
+            .unwrap_err()
+            .to_string()
+            .contains("Allow HTTP"));
+    })
+    .await
+    .unwrap();
+    handle.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn claude_capability_defers_only_unsupported_revisions_and_resumes_without_loss() {
     use std::sync::atomic::{AtomicBool, Ordering};
     let dir = tempfile::tempdir().unwrap();
@@ -423,6 +486,32 @@ async fn v4_engines_sync_timing_updates_and_reset_remote_timing_without_losing_l
         r.timing.as_mut().unwrap().duration_ms = 6000;
         s.transaction(|| s.upsert(r, "fixture")).unwrap();
     }
+    let sync_state = || {
+        let s = clients[0].lock().unwrap();
+        (
+            s.meta::<i64>("download_cursor").unwrap().unwrap(),
+            s.meta::<i64>("subscription_download_cursor")
+                .unwrap()
+                .unwrap(),
+            s.pending_count().unwrap(),
+            s.records("all").unwrap().len(),
+            s.timings().unwrap().len(),
+        )
+    };
+    let before = sync_state();
+    assert!(before.0 > 0);
+    assert_eq!(before.2, 1);
+    for allow_http in [true, false] {
+        clients[0]
+            .execute("patch_config", json!({"patch":{"allowHttp":allow_http}}))
+            .unwrap();
+        assert_eq!(sync_state(), before);
+    }
+    // A second client with an empty outbox must not requeue acknowledged records.
+    clients[1]
+        .execute("patch_config", json!({"patch":{"allowHttp":true}}))
+        .unwrap();
+    assert_eq!(clients[1].lock().unwrap().pending_count().unwrap(), 0);
     let run = clients.clone();
     tokio::task::spawn_blocking(move || {
         run[0].sync().unwrap();
