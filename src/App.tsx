@@ -26,7 +26,7 @@ import { syncModelsDevPricingOnStartup } from "@/lib/modelsDevAutoSync";
 import { Button } from "@/components/ui/button";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { isWindows, DRAG_REGION_ATTR } from "@/lib/platform";
+import { isMac, isWindows, DRAG_REGION_ATTR } from "@/lib/platform";
 import {
   AppPageHeader,
   WindowControlsContext,
@@ -172,7 +172,7 @@ export default function App() {
       skinMaskStrength={data?.config.skinMaskStrength}
     >
     <WindowControlsContext.Provider
-      value={isTauri() && isWindows() ? <WindowControls /> : null}
+      value={isTauri() && (isWindows() || isMac()) ? <WindowControls /> : null}
     >
       <div className="scope-shell">
         <aside className={`scope-sidebar ${collapsed ? "is-collapsed" : ""}`}>

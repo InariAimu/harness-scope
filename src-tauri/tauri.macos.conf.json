@@ -1,5 +1,18 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "title": "Harness Scope",
+        "visible": false,
+        "decorations": false,
+        "width": 1000,
+        "height": 667,
+        "minWidth": 900,
+        "minHeight": 620
+      }
+    ]
+  },
   "bundle": {
     "icon": ["icons/icon-macos.icns", "icons/icon-macos.png"]
   }
