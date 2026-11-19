@@ -237,6 +237,12 @@ export function ApplicationsPage({
                 )}
               </p>
             )}
+            {(h.id === "gemini" || h.id === "antigravity") && (
+              <p className="mt-3 text-caption text-fg-2">{l(
+                "只读本机会话及原生生成用量；输入扣除缓存，输出包含思考 Token。Antigravity 接入原生首字及输出耗时，仅保留本机；Gemini CLI 会话文件缺少计时则保持未知。费用为模型价表参考值，不代表 Google 订阅扣费；未知模型保留原名并显示未计价。缺失用量会提示延后处理。",
+                "Reads local sessions and native generation usage. Fresh input excludes cache; output includes thinking. Antigravity provides native TTFT and streaming duration on this device; missing Gemini CLI timing remains unknown. Costs are model reference estimates, not subscription charges. Unknown models remain unpriced. Missing usage is deferred with diagnostics.",
+              )}</p>
+            )}
             {h.id === "codex" && <p className="mt-3 text-caption text-fg-2">{l(
               "日常刷新跳过压缩归档；本机首次无数据采集或确认重新导入时，读取包括 .jsonl.zst / .json.zst 在内的历史。",
               "Routine refreshes skip compressed archives. The first import on an empty local database, or a confirmed reimport, reads historical archives including .jsonl.zst / .json.zst.",

@@ -1,0 +1,11 @@
+{
+  "sessionId": "gemini-synthetic",
+  "projectHash": "synthetic-project",
+  "startTime": "2026-11-19T01:00:00Z",
+  "lastUpdated": "2026-11-19T01:00:02Z",
+  "directories": ["/synthetic/workspace"],
+  "messages": [
+    {"id":"user-1","type":"user","timestamp":"2026-11-19T01:00:00Z","content":"Private synthetic Gemini prompt"},
+    {"id":"call-1","type":"gemini","timestamp":"2026-11-19T01:00:01Z","content":[{"text":"Private synthetic Gemini response"}],"model":"gemini-2.5-pro","thoughts":[{"subject":"Synthetic thought","description":"private thought body"}],"tokens":{"input":100,"output":20,"cached":40,"thoughts":10,"tool":5,"total":135},"toolCalls":[{"id":"tool-1","name":"read_file","args":{"path":"private-file"},"result":[{"text":"Private tool result"}],"status":"success"}]}
+  ]
+}

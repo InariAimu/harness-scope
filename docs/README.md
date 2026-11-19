@@ -28,6 +28,7 @@
 | --- | --- |
 | [Claude Code](CLAUDE.md) | 请求合并、计时、推理细分和供应商边界 |
 | [Codex](CODEX.md) | rollout 身份、分段与继承、初始 Fast 档位和回填 |
+| [Gemini CLI 与 Antigravity](GOOGLE_CLIENTS.md) | 原生 JSON／JSONL／SQLite 会话、生成用量与 Google 分类 |
 | [DeepSeek Harness](DSH.md) | v0／v4 格式、流式日志和供应商计价 |
 | [Cherry Studio](CHERRY.md) | SQLite 会话、可确认用量和旧汇总限制 |
 | [LM Studio](LMSTUDIO.md) | 本机桌面会话、生成版本、增量用量与未计价口径 |

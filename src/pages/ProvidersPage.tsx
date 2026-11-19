@@ -386,21 +386,21 @@ export function ProvidersPage({
               </span>
               <span className="inline-flex items-center gap-1">
                 <KeyRound size={12} />
-                {account!.custom && !account!.custom.enabled ? l("用量查询已关闭", "Usage query disabled") : account!.provider === "openai-codex"
+                {account!.provider === "google" ? l("本地会话用量", "Local session usage") : account!.custom && !account!.custom.enabled ? l("用量查询已关闭", "Usage query disabled") : account!.provider === "openai-codex"
                   ? l("使用本机 Codex 登录", "Local Codex login")
                   : selected.keyConfigured
                     ? l("Key 已保存", "Key saved")
                     : l("未配置 Key", "No key configured")}
               </span>
               <span>
-                {selected.snapshot
+                {account!.provider === "google" ? l("无需查询凭据", "No query credentials required") : selected.snapshot
                   ? `${l("上次成功", "Last success")} ${date(selected.snapshot.fetchedAt)}`
                   : l("尚未查询", "Not fetched yet")}
               </span>
               {refreshing && (
                 <span>{l("正在查询官方数据…", "Fetching provider data…")}</span>
               )}
-              <span>
+              {account!.provider !== "google" && <span>
                 {l("自动刷新", "Auto refresh")}: {l("前台", "Foreground")}{" "}
                 {intervalText(account!.refresh.foregroundSeconds)} ·{" "}
                 {l("后台", "Background")}{" "}
@@ -411,7 +411,7 @@ export function ProvidersPage({
                     "The foreground interval applies while this account page has focus; otherwise the background interval applies.",
                   )}
                 </ProviderHelp>
-              </span>
+              </span>}
             </div>
             {error && (
               <div
@@ -426,7 +426,7 @@ export function ProvidersPage({
                   )}
               </div>
             )}
-            {account!.provider !== "openai-codex" &&
+            {account!.provider !== "openai-codex" && account!.provider !== "google" &&
               !account!.custom &&
               !selected.keyConfigured && (
                 <div className="rounded-control border border-border bg-subtle px-3 py-2 text-caption text-fg-2">
@@ -436,7 +436,12 @@ export function ProvidersPage({
                   )}
                 </div>
               )}
-            {account!.custom ? (
+            {account!.provider === "google" ? (
+              <section className="scope-card !p-4 text-caption text-fg-2">{l(
+                "Google 本地用量分类：汇总已关联的 Gemini CLI / Antigravity 会话，并记录订阅信息。模型费用是 API 价表参考值；官方剩余额度暂不可查询。",
+                "Google local usage: aggregates linked Gemini CLI / Antigravity sessions and records subscription details. Model costs are API reference estimates. Official remaining quotas are currently unavailable.",
+              )}</section>
+            ) : account!.custom ? (
               data?.kind === "customUsage" ? <CustomUsagePanel data={data} zh={zh} locale={locale} timezone={snapshot.config.timezone} /> :
               <section className="scope-card !p-4 text-caption text-fg-3">{account!.custom.enabled
                 ? l("刷新后显示自定义查询的余额或额度。", "Refresh to see balances or quotas from your custom query.")
@@ -579,7 +584,7 @@ export function ProvidersPage({
                 )}
               </div>
             )}
-            <ProviderHistoryPanel key={`history:${account!.id}`} view={selected} zh={zh} locale={locale} timezone={snapshot.config.timezone} usageVersion={snapshot.usageVersion} />
+            {account!.provider !== "google" && <ProviderHistoryPanel key={`history:${account!.id}`} view={selected} zh={zh} locale={locale} timezone={snapshot.config.timezone} usageVersion={snapshot.usageVersion} />}
             <section className="scope-card !p-4">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="font-semibold">
@@ -758,7 +763,7 @@ export function ProvidersPage({
                         ],
                         [
                           l("按价表折算", "Priced usage"),
-                          costMoney(
+                          usage.data.summary.totalRequests > 0 && usage.data.summary.unpricedCount === usage.data.summary.totalRequests ? l("未计价", "Unpriced") : costMoney(
                             usage.data.summary.totalCost,
                             4,
                             usage.data.summary.costConverted,
@@ -819,7 +824,7 @@ export function ProvidersPage({
                                   {formatQuantity(v.summary.realTotalTokens)}
                                 </td>
                                 <td className="text-end tabular-nums">
-                                  {costMoney(
+                                  {v.summary.totalRequests > 0 && v.summary.unpricedCount === v.summary.totalRequests ? l("未计价", "Unpriced") : costMoney(
                                     v.summary.totalCost,
                                     4,
                                     v.summary.costConverted,

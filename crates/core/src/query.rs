@@ -254,8 +254,9 @@ fn log(r: &UsageRecord, timing: Option<&UsageTiming>, end_to_end: bool) -> Value
         v["latencyMs"] = json!(t.duration_ms);
         v["durationMs"] = json!(t.duration_ms);
         v["firstTokenMs"] = json!(t.first_token_ms);
-        v["timingMethod"] = json!(if r.harness == "lmstudio"
-            && t.duration_source == "lmstudio_prediction_stats"
+        v["timingMethod"] = json!(if (r.harness == "lmstudio"
+            && t.duration_source == "lmstudio_prediction_stats")
+            || (r.harness == "antigravity" && t.duration_source == "antigravity_chat_model")
         {
             "reported"
         } else {

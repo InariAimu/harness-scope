@@ -52,7 +52,7 @@ function AccountSummary({ view, now, zh, locale, onOpen, sorting }: {
 }) {
   const { account, snapshot } = view;
   const data = snapshot?.data;
-  const age = snapshotAge(snapshot?.fetchedAt, now, zh);
+  const age = view.account.provider === "google" ? (zh ? "本地用量" : "Local usage") : snapshotAge(snapshot?.fetchedAt, now, zh);
   const groups = data?.kind === "codexQuota"
     ? data.buckets.map((bucket) => ({ id: bucket.id, name: bucket.name ?? bucket.id, windows: bucket.windows }))
     : data?.kind === "quota" ? [{ id: "quota", name: "", windows: data.windows }] : [];
@@ -87,7 +87,7 @@ function AccountSummary({ view, now, zh, locale, onOpen, sorting }: {
           {group.windows.map((window) => <QuotaRow key={window.id} window={window} now={now} zh={zh} />)}
         </span>
       ))}
-      {(!data || (data.kind !== "balance" && data.kind !== "customUsage" && !groups.some((g) => g.windows.length))) && (
+      {view.account.provider !== "google" && (!data || (data.kind !== "balance" && data.kind !== "customUsage" && !groups.some((g) => g.windows.length))) && (
         <span className="block text-caption leading-5 text-fg-3">—</span>
       )}
     </button>

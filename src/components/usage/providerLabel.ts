@@ -65,9 +65,20 @@ export function getUsageProviderLabel(
       }),
     };
   }
+  if (app === "gemini" || app === "antigravity") {
+    const label = customName ?? "Google";
+    return {
+      label,
+      shortLabel: label,
+      hint: t("scope.provider.googleLocalHint", {
+        defaultValue: "按 {{app}} 本地来源归入 Google 分类；日志未提供独立 API 路由，不代表已验证的上游或订阅扣费。",
+        app: APP_DISPLAY_NAME[app],
+      }),
+    };
+  }
   return {
-    label: t("usage.sessionProvider.label", { app: APP_DISPLAY_NAME[app] }),
-    shortLabel: t("usage.sessionProvider.short"),
+    label: customName ?? t("usage.sessionProvider.label", { app: APP_DISPLAY_NAME[app] }),
+    shortLabel: customName ?? t("usage.sessionProvider.short"),
     hint: t("usage.sessionProvider.hint"),
   };
 }

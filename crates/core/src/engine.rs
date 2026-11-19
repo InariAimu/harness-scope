@@ -133,6 +133,29 @@ impl Engine {
                 }
                 store.set_meta("gpt_img_studio_source_initialized", &true)?;
             }
+            for harness in ["gemini", "antigravity"] {
+                let key = format!("{harness}_source_initialized");
+                if !store.meta::<bool>(&key)?.unwrap_or(false) {
+                    if !config.sources.iter().any(|s| s.harness == harness) {
+                        for (i, root) in registry
+                            .get(harness)?
+                            .descriptor()
+                            .default_roots
+                            .iter()
+                            .enumerate()
+                        {
+                            config.sources.push(Source {
+                                id: format!("{harness}-{i}"),
+                                harness: harness.into(),
+                                root: root.clone(),
+                                enabled: Path::new(root).exists(),
+                            });
+                        }
+                        store.set_meta("config", &config)?;
+                    }
+                    store.set_meta(&key, &true)?;
+                }
+            }
         }
         Ok(Self {
             account_vault: crate::account_credentials::Vault::new(path),
@@ -1022,7 +1045,7 @@ impl Engine {
                     });
                     let unchanged=old.as_ref().filter(|r|r.model==parsed.model && r.tokens==parsed.tokens && r.provider==parsed.provider && r.cost.amount_usd.is_some() && parsed.reported_cost.as_ref().is_none_or(|amount|r.cost.amount_usd.as_ref()==Some(amount)));
                     let mut cost=if parsed.model_usage.is_some() { pricing::resolve_with_settings(&parsed,old.as_ref(),&prices,&pricing_settings)? } else if !adapter.allows_price_estimates(parsed.tokens.total()>0) { Cost { rule_version:"unknown".into(), ..Default::default() } } else if let Some(old)=unchanged.or(metadata_upgrade) { old.cost.clone() } else { pricing::resolve_with_settings(&parsed,old.as_ref(),&prices,&pricing_settings)? };
-                    if matches!(harness.as_str(), "copliot-deprecated" | "copliot") && cost.method=="estimated" { cost.billing_basis=Some("model_reference".into()); }
+                    if matches!(harness.as_str(), "copliot-deprecated" | "copliot" | "gemini" | "antigravity") && cost.method=="estimated" { cost.billing_basis=Some("model_reference".into()); }
                     if let Some(old)=old.as_ref().filter(|r|r.model==parsed.model && r.tokens==parsed.tokens && r.provider==parsed.provider) {
                         // Rescans may quote unresolved costs again for any harness.
                         // A timestamp alone must not revise or requeue the same price.

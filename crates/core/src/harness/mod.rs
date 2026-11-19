@@ -1,4 +1,5 @@
 //! Adapters own formats, not persistence, pricing, networking or application state.
+pub mod antigravity;
 pub mod cherry;
 pub mod claude;
 mod claude_requests;
@@ -10,6 +11,8 @@ pub mod copliot;
 pub mod copliot_deprecated;
 pub mod dsh;
 pub mod files;
+pub mod gemini;
+mod google_local;
 pub mod gpt_img_studio;
 pub mod lmstudio;
 pub mod opencode;
@@ -127,6 +130,8 @@ impl Default for Registry {
             adapters: vec![
                 Arc::new(claude::Claude),
                 Arc::new(codex::Codex),
+                Arc::new(gemini::Gemini),
+                Arc::new(antigravity::Antigravity),
                 Arc::new(opencode::OpenCode),
                 Arc::new(cherry::Cherry),
                 Arc::new(lmstudio::LmStudio),

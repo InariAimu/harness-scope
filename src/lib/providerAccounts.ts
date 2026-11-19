@@ -4,13 +4,19 @@ export const ACCOUNT_PROVIDER_NAMES = {
   deepseek: "DeepSeek",
   "opencode-go": "OpenCode Go",
   "openai-codex": "OpenAI / Codex",
+  google: "Google / Gemini / Antigravity",
 };
+export const GOOGLE_USAGE_LINKS = [
+  { harness: "gemini", provider: "gemini (Session)" },
+  { harness: "antigravity", provider: "antigravity (Session)" },
+];
 export const isCustomProvider = (provider: string) => provider === "custom" || provider.startsWith("custom:");
 export function accountProviderName(provider: AccountProvider, accounts: ProviderAccountView[] = [], zh = true) {
   if (isCustomProvider(provider)) return accounts.find(v => v.account.provider === provider)?.account.name ?? (zh ? "自定义供应商" : "Custom provider");
   return ACCOUNT_PROVIDER_NAMES[provider as keyof typeof ACCOUNT_PROVIDER_NAMES];
 }
 export function accountCanRefresh(view: ProviderAccountView) {
+  if (view.account.provider === "google") return false;
   return view.canRefresh ?? (view.account.custom
     ? view.account.custom.enabled && (!view.account.custom.script.includes("{{apiKey}}") || view.keyConfigured)
     : view.account.provider === "openai-codex" || view.keyConfigured);
@@ -27,7 +33,7 @@ export function customRemainingPercent(item: CustomUsageItem, now: number) {
 /** Raw IDs stay the filter keys. Cross-tool aggregates only alias an unambiguous name. */
 export function customProviderName(accounts: ProviderAccountView[], provider: string | undefined, harness?: string) {
   if (!provider) return undefined;
-  const matches = accounts.filter(v => isCustomProvider(v.account.provider) && v.account.links.some(l => l.provider === provider && (!harness || harness === "all" || l.harness === harness)));
+  const matches = accounts.filter(v => (isCustomProvider(v.account.provider) || v.account.provider === "google") && v.account.links.some(l => l.provider === provider && (!harness || harness === "all" || l.harness === harness)));
   return matches.length === 1 ? matches[0].account.name : undefined;
 }
 export const routeKey = (route: { harness: string; provider: string }) =>
