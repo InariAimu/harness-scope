@@ -150,18 +150,16 @@ fn read(path: &Path, usage_only: bool) -> Result<(Vec<Value>, String, Vec<String
                 active.retain(|m| !ids.contains(&m["id"]));
             }
             if let Some(ids) = p["orderIds"].as_array() {
-                let mut ordered = Vec::new();
-                for id in ids {
-                    if let Some(m) = active.iter().find(|m| m["id"] == *id) {
-                        ordered.push(m.clone());
-                    }
+                // Only the listed suffix is reordered. Keep the earlier history in place.
+                let mut positions = BTreeMap::new();
+                for (index, id) in ids.iter().filter_map(Value::as_str).enumerate() {
+                    positions.entry(id).or_insert(index);
                 }
-                for m in &active {
-                    if !ids.contains(&m["id"]) {
-                        ordered.push(m.clone());
-                    }
-                }
-                active = ordered;
+                active.sort_by_key(|message| {
+                    message["id"]
+                        .as_str()
+                        .and_then(|id| positions.get(id).copied())
+                });
             }
         } else if record["id"].is_string() && record["type"].is_string() {
             if !remember(&record, &mut usage) {

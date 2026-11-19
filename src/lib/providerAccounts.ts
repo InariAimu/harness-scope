@@ -1,4 +1,14 @@
 import type { QuotaWindow, ProviderAccountView, AccountProvider, CustomUsageItem } from "@/types/providerAccounts";
+import type { UsageSummary } from "@/types/usage";
+
+export function isEntirelyUnpriced(
+  summary: Pick<UsageSummary, "pricedCount" | "unpricedCount" | "totalRequests" | "modelUsageCount">,
+) {
+  const unpriced = summary.unpricedCount ?? 0;
+  if (unpriced === 0) return false;
+  if (summary.pricedCount != null) return summary.pricedCount === 0;
+  return unpriced === summary.totalRequests + (summary.modelUsageCount ?? 0);
+}
 
 export const ACCOUNT_PROVIDER_NAMES = {
   deepseek: "DeepSeek",

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { nativeMoney, quotaDisplay, routeKey, accountCanRefresh, accountProviderName, customProviderName, customRemainingPercent, GOOGLE_USAGE_LINKS } from "./providerAccounts";
+import { isEntirelyUnpriced, nativeMoney, quotaDisplay, routeKey, accountCanRefresh, accountProviderName, customProviderName, customRemainingPercent, GOOGLE_USAGE_LINKS } from "./providerAccounts";
 import type { ProviderAccountView, CustomUsageItem } from "@/types/providerAccounts";
 import type { QuotaWindow } from "@/types/providerAccounts";
 
@@ -99,4 +99,12 @@ it("links exact harness and provider pairs without delimiter collisions", () => 
   expect(routeKey({ harness: "a/b", provider: "c" })).not.toBe(
     routeKey({ harness: "a", provider: "b/c" }),
   );
+});
+
+it("keeps priced usage visible when totals include model-only records", () => {
+  const mixed = { totalRequests: 1, modelUsageCount: 1, unpricedCount: 1 };
+  expect(isEntirelyUnpriced({ ...mixed, pricedCount: 1 })).toBe(false);
+  expect(isEntirelyUnpriced(mixed)).toBe(false);
+  expect(isEntirelyUnpriced({ totalRequests: 0, modelUsageCount: 1, unpricedCount: 1, pricedCount: 0 })).toBe(true);
+  expect(isEntirelyUnpriced({ totalRequests: 0, unpricedCount: 0, pricedCount: 0 })).toBe(false);
 });

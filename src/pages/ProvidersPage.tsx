@@ -36,6 +36,7 @@ import {
   accountCanRefresh,
   accountProviderName,
   isCustomProvider,
+  isEntirelyUnpriced,
 } from "@/lib/providerAccounts";
 import { ProviderAccountEditor } from "./ProviderAccountEditor";
 import { GoUsagePanel } from "@/components/providers/GoUsagePanel";
@@ -763,7 +764,7 @@ export function ProvidersPage({
                         ],
                         [
                           l("按价表折算", "Priced usage"),
-                          usage.data.summary.totalRequests > 0 && usage.data.summary.unpricedCount === usage.data.summary.totalRequests ? l("未计价", "Unpriced") : costMoney(
+                          isEntirelyUnpriced(usage.data.summary) ? l("未计价", "Unpriced") : costMoney(
                             usage.data.summary.totalCost,
                             4,
                             usage.data.summary.costConverted,
@@ -824,7 +825,7 @@ export function ProvidersPage({
                                   {formatQuantity(v.summary.realTotalTokens)}
                                 </td>
                                 <td className="text-end tabular-nums">
-                                  {v.summary.totalRequests > 0 && v.summary.unpricedCount === v.summary.totalRequests ? l("未计价", "Unpriced") : costMoney(
+                                  {isEntirelyUnpriced(v.summary) ? l("未计价", "Unpriced") : costMoney(
                                     v.summary.totalCost,
                                     4,
                                     v.summary.costConverted,

@@ -650,3 +650,56 @@ fn inspect_local_antigravity_read_only() {
     assert!(count > 0);
     assert!(timed > 0);
 }
+
+#[test]
+fn antigravity_wal_updates_cached_transcript_and_metadata() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("conversation.db");
+    let writer = native_db(&path, "review-session");
+    writer
+        .execute_batch("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;")
+        .unwrap();
+    let engine = Engine::open(&dir.path().join("harness.db")).unwrap();
+    configure(&engine, vec![("antigravity", &path)]);
+    let args = json!({"providerId":"antigravity","sourcePath":path,"sessionId":"review-session"});
+    let first = engine.execute("session_transcript", args.clone()).unwrap();
+    assert_eq!(first["header"]["total"], 3);
+    assert_eq!(
+        engine.sessions().unwrap()[0].last_active_at,
+        Some(1795050001000)
+    );
+    writer.execute("INSERT INTO steps(idx,metadata,step_payload) SELECT 3,?1,step_payload FROM steps WHERE idx=0", [metadata(1795050010, "review-session")]).unwrap();
+    assert_eq!(
+        engine.sessions().unwrap()[0].last_active_at,
+        Some(1795050010000)
+    );
+    assert_eq!(Antigravity.read_messages(&path, None).unwrap().len(), 4);
+    let fresh = engine.execute("session_transcript", args).unwrap();
+    assert_eq!(fresh["header"]["total"], 4);
+}
+
+#[test]
+fn gemini_partial_order_keeps_unlisted_prefix() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("session-order.jsonl");
+    let mut lines = vec![json!({"$set":{"sessionId":"test","startTime":"2026-10-01T00:00:00Z"}})];
+    for id in ["A", "B", "C"] {
+        lines.push(json!({"id":id,"type":"user","content":id,"timestamp":"2026-10-01T00:00:00Z"}));
+    }
+    lines.push(json!({"$patch":{"orderIds":["C","B"]}}));
+    std::fs::write(
+        &path,
+        lines
+            .iter()
+            .map(Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+    .unwrap();
+    let rows = Gemini.read_messages(&path, None).unwrap();
+    let ids = rows
+        .iter()
+        .map(|row| row["id"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(ids, ["A", "C", "B"]);
+}
