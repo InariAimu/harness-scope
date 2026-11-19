@@ -6,6 +6,7 @@ import {
   resolveMoneyDisplay,
   resolveSidebarToday,
   resolveTrendChartType,
+  trendChartSettings,
   resolveSpeedCalculation,
   USD_DISPLAY,
 } from "./format";
@@ -29,6 +30,22 @@ it("uses bars for existing settings and unrecognized chart styles", () => {
   expect(resolveTrendChartType({ trendChartType: "bar" })).toBe("bar");
   expect(resolveTrendChartType({ trendChartType: "line" })).toBe("bar");
   expect(resolveTrendChartType({ trendChartType: "" })).toBe("bar");
+});
+
+it("reads existing model-segmented bars, including when the bar style was implicit", () => {
+  expect(resolveTrendChartType({ segmentTrendByModel: true })).toBe("stackedBar");
+  expect(resolveTrendChartType({ trendChartType: "bar", segmentTrendByModel: true })).toBe("stackedBar");
+  expect(resolveTrendChartType({ trendChartType: "area", segmentTrendByModel: true })).toBe("area");
+});
+
+it.each([
+  ["bar", "bar", false],
+  ["stackedBar", "bar", true],
+  ["area", "area", false],
+] as const)("saves and restores the %s selection", (style, trendChartType, segmentTrendByModel) => {
+  const patch = trendChartSettings(style);
+  expect(patch).toEqual({ trendChartType, segmentTrendByModel });
+  expect(resolveTrendChartType(patch)).toBe(style);
 });
 
 it("converts USD for display with a per-currency rate and safe defaults", () => {

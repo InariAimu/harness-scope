@@ -2,7 +2,6 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown } from "lucide-react";
 import { fieldClass, Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,6 +40,7 @@ import {
   SIDEBAR_TODAY_MAX_ITEMS,
   type SidebarTodayItem,
   TREND_CHART_TYPES,
+  trendChartSettings,
   type TrendChartType,
 } from "./format";
 import {
@@ -244,7 +244,6 @@ export function UsageDisplaySection({
     }
   };
 
-  const savedChartType = resolveTrendChartType(value);
   const savedSpeedCalculation = resolveSpeedCalculation(value);
   const [speedCalculation, setSpeedCalculation] = useState(savedSpeedCalculation);
   const [savingSpeedCalculation, setSavingSpeedCalculation] = useState(false);
@@ -263,16 +262,15 @@ export function UsageDisplaySection({
     }
   };
 
-  const [chartType, setChartType] = useState<TrendChartType>(savedChartType);
-  const [savingSegmentation, setSavingSegmentation] = useState(false);
-  useEffect(() => {
-    if (!pendingSaves.current) setChartType(savedChartType);
-  }, [savedChartType]);
+  const [pendingChartType, setPendingChartType] = useState<TrendChartType | null>(null);
+  const chartType = pendingChartType ?? resolveTrendChartType(value);
 
   const changeChartType = async (next: TrendChartType) => {
-    setChartType(next);
-    if ((await save({ trendChartType: next })) === false) {
-      setChartType(savedChartType);
+    setPendingChartType(next);
+    try {
+      await save(trendChartSettings(next));
+    } finally {
+      setPendingChartType(null);
     }
   };
 
@@ -373,6 +371,7 @@ export function UsageDisplaySection({
           </span>
           <Select
             value={chartType}
+            disabled={pendingChartType !== null}
             onValueChange={(next) => {
               // Radix Select 偶尔回报空串，忽略
               const picked = TREND_CHART_TYPES.find((c) => c === next);
@@ -395,22 +394,6 @@ export function UsageDisplaySection({
               ))}
             </SelectContent>
           </Select>
-          <label htmlFor={`${rateId}-segments`} className="text-body text-fg-2 md:col-start-3 md:ps-5">
-            {t("usage.display.segmentTrendByModel")}
-          </label>
-          <Switch
-            id={`${rateId}-segments`}
-            checked={value?.segmentTrendByModel ?? false}
-            disabled={chartType !== "bar" || savingSegmentation}
-            onCheckedChange={async (enabled) => {
-              setSavingSegmentation(true);
-              try {
-                await save({ segmentTrendByModel: enabled });
-              } finally {
-                setSavingSegmentation(false);
-              }
-            }}
-          />
           {currency !== "USD" && (
             <>
               <label htmlFor={rateId} className="text-body text-fg-2">

@@ -77,16 +77,23 @@ export type SidebarTodayItem = (typeof SIDEBAR_TODAY_ITEMS)[number];
 /** 侧栏那一格窄，两项已经是上下两行 */
 export const SIDEBAR_TODAY_MAX_ITEMS = 2;
 
-export const TREND_CHART_TYPES = ["bar", "area"] as const;
+export const TREND_CHART_TYPES = ["bar", "stackedBar", "area"] as const;
 
 export type TrendChartType = (typeof TREND_CHART_TYPES)[number];
 
-/** 趋势图样式：没设置或认不出的值按柱形图 */
+// The stored settings predate the single chart-style selector.
 export function resolveTrendChartType(
   settings: UsageDisplaySettings | undefined,
 ): TrendChartType {
-  const saved = settings?.trendChartType;
-  return TREND_CHART_TYPES.find((type) => type === saved) ?? "bar";
+  if (settings?.trendChartType === "area") return "area";
+  return settings?.segmentTrendByModel === true ? "stackedBar" : "bar";
+}
+
+export function trendChartSettings(style: TrendChartType) {
+  return {
+    trendChartType: style === "area" ? "area" : "bar",
+    segmentTrendByModel: style === "stackedBar",
+  };
 }
 
 /**

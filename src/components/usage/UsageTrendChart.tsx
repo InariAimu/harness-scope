@@ -232,7 +232,7 @@ export function UsageTrendChart({
       }),
     [trends, isHourly, dateLocale, startDate, endDate, timeZone],
   );
-  const segmented = chartType === "bar" && display?.segmentTrendByModel === true && !composition;
+  const segmented = chartType === "stackedBar" && !composition;
   const stacks = useMemo(
     () => segmented ? buildTrendModelStacks(chartData, metric, rate) : null,
     [segmented, chartData, metric, rate],
@@ -257,7 +257,8 @@ export function UsageTrendChart({
       ? moneyTick(value)
       : formatQuantity(value);
 
-  const Chart = chartType === "bar" ? BarChart : AreaChart;
+  const isBarChart = chartType !== "area";
+  const Chart = isBarChart ? BarChart : AreaChart;
   // 成本先换算成显示币种再画，Y 轴才会按这个币种挑整齐的刻度。
   const dataKey =
     metric === "cost"
@@ -466,7 +467,7 @@ export function UsageTrendChart({
                 allowEscapeViewBox={segmented ? { x: true, y: true } : undefined}
                 content={renderTooltip}
                 cursor={
-                  chartType === "bar"
+                  isBarChart
                     ? { fill: "var(--bg-subtle)" }
                     : { stroke: "var(--text-3)", strokeDasharray: "3 3" }
                 }
@@ -482,7 +483,7 @@ export function UsageTrendChart({
                   maxBarSize={36}
                   isAnimationActive={false}
                 />)
-              ) : chartType === "bar" ? (
+              ) : isBarChart ? (
                 <Bar
                   dataKey={dataKey}
                   name={metricLabel}

@@ -2,10 +2,10 @@ Harness Scope — Linux x64 同步服务端
 
 这是同步服务器的 ELF 可执行程序，不是桌面 GUI。
 依赖：x86_64 Linux、glibc 2.39 或以上、libgcc_s.so.1 及标准 glibc 运行库。
-已在 Debian 13 x86_64 部署并完成 HTTPS 真实同步对账；不适用于 Alpine/musl 或 ARM64。
+Alpine/musl 或 ARM64 系统需要与其运行库和架构匹配的构建。
 无需 Node.js、Rust；不包含令牌、用户数据库或生产服务器配置。
 
-从 Windows 复制到 Linux 后，在此目录运行：
+在 Linux 上打开程序所在目录，执行以下命令检查程序能否启动。
 chmod +x ./harness-scope-service
 ./harness-scope-service --help
 
@@ -19,5 +19,4 @@ export HARNESS_SCOPE_TOKEN
 systemd、反向代理和一致性备份配置见仓库 server/README.md。
 
 已有数据库升级前保留一致性备份及匹配旧程序。不要把新版数据库交给旧程序运行。
-实际构建版本及 SHA-256 见上级 manifest.json 和 SHA256SUMS.txt。
-数据库 schema v7；同步协议 v4；支持 request_tariff_v1 条件价格快照。
+构建版本见上级 manifest.json。运行 sha256sum ./harness-scope-service，并与上级目录 SHA256SUMS.txt 中该程序的值比对。

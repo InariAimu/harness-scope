@@ -27,6 +27,6 @@ Antigravity 阅读器投影用户消息、模型响应、思考和工具调用�
 
 - [Gemini CLI 原生记录类型](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/services/chatRecordingTypes.ts)
 - [Gemini CLI 原生记录读写](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/services/chatRecordingService.ts)
-- Antigravity 本机安装包中 `cortex.proto`、`codeium_common.proto`、`gemini_coder/proto/trajectory.proto` 的字段描述与 SQLite 模式。解析器无需安装包、守护进程、端口或登录凭据，不执行原工具。
+- Antigravity 会话的 SQLite 模式，以及安装包中 `cortex.proto`、`codeium_common.proto` 和 `gemini_coder/proto/trajectory.proto` 的字段描述。解析器直接读取会话数据库，无需安装包、守护进程、端口或登录凭据。
 
 合成样本位于 `tests/fixtures/gemini/` 和 `tests/fixtures/antigravity/`。运行 `cargo test --release --locked -p harness-scope-core --test google_clients`；原生日志只读验证为显式忽略的 `inspect_local_antigravity_read_only`，通过 `HARNESS_SCOPE_ANTIGRAVITY_PROBE` 指定目录后单独运行，不导入正式数据库。

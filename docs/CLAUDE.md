@@ -2,7 +2,7 @@
 
 [文档索引](README.md) · [速度与首字](TIMING.md)
 
-Claude Code 适配器读取 `~/.claude/projects` 的 JSONL；新配置会优先使用 `$CLAUDE_CONFIG_DIR/projects`。已保存的来源目录继续以「应用」页配置为准。支持范围以回归样本及本机实测版本为准。
+Claude Code 适配器读取 `~/.claude/projects` 的 JSONL；新配置会优先使用 `$CLAUDE_CONFIG_DIR/projects`。已保存的来源目录继续以「应用」页配置为准。不同版本的日志可能提供不同字段，各项统计所需的字段见下文。
 
 ## 请求与 Tokens
 
