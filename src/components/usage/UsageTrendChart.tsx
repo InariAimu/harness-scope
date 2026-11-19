@@ -1,6 +1,6 @@
 import { useUsageNumberFormat } from "@/hooks/useUsageNumberFormat";
 import { useMoneyFormat } from "@/hooks/useMoneyFormat";
-import { useMemo, type ReactNode } from "react";
+import { useId, useMemo, useRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Area,
@@ -9,9 +9,12 @@ import {
   BarChart,
   CartesianGrid,
   ResponsiveContainer,
+  Rectangle,
   Tooltip,
   XAxis,
   YAxis,
+  type BarShapeProps,
+  type TooltipContentProps,
 } from "recharts";
 import { useUsageTrends } from "@/lib/query/usage";
 import { useUsageDisplay } from "@/lib/query/usageDisplay";
@@ -26,7 +29,9 @@ import { resolveUsageRange, usageDateParts } from "@/lib/usageRange";
 import { useUsageTimezone } from "@/lib/query/usageTimezone";
 import type { TrendModelStats, UsageRangeSelection } from "@/types/usage";
 import { usageCompositionColor, type UsageChartMetric } from "./composition";
-import { buildTrendModelBreakdown } from "./trendModelBreakdown";
+import { buildTrendModelBreakdown, buildTrendModelStacks, type TrendModelSeries } from "./trendModelBreakdown";
+import { TREND_BAR_ACTIVE_SCALE, TREND_BAR_OUTLINE_WIDTH, TREND_BAR_REST_TRANSFORM, trendBarGeometry, type TrendBarRect } from "./trendBarShape";
+import { TrendTooltipFrame, type TrendPointer } from "./trendTooltip";
 
 interface UsageTrendChartProps {
   range: UsageRangeSelection;
@@ -190,6 +195,9 @@ export function UsageTrendChart({
   title,
 }: UsageTrendChartProps) {
   const { t, i18n } = useTranslation();
+  const clipPrefix = `trend-column-${useId().replace(/:/g, "")}`;
+  const plotRef = useRef<HTMLDivElement>(null);
+  const pointerRef = useRef<TrendPointer | null>(null);
   const { costMoney, moneyTick, rate } = useMoneyFormat();
   const formatQuantity = useUsageNumberFormat();
   const { data: display } = useUsageDisplay();
@@ -224,6 +232,9 @@ export function UsageTrendChart({
       }),
     [trends, isHourly, dateLocale, startDate, endDate, timeZone],
   );
+  const stacks = useMemo(() => buildTrendModelStacks(chartData, metric, rate), [chartData, metric, rate]);
+  const barBounds = useMemo(() => new Map<string, TrendBarRect>(), [stacks]);
+  type StackPoint = (typeof stacks.data)[number];
 
   // 单指标：图只画切换选中的那一个指标，单 Y 轴，图例和 tooltip 跟着走。
   const metricLabel =
@@ -250,20 +261,77 @@ export function UsageTrendChart({
           point.cost == null ? null : point.cost * rate
       : metric;
 
-  const renderTooltip = ({ active, payload }: any) => {
+  const modelName = (name: string | null) => name == null
+    ? t("usage.trend.unallocated", { defaultValue: language.startsWith("zh") ? "未细分" : "Unallocated" })
+    : name || t("usage.chart.unknownModel");
+
+  const renderSegment = (series: TrendModelSeries, props: BarShapeProps) => {
+    const { x, y, width, height, isActive } = props;
+    const point = props.payload as StackPoint | undefined;
+    if (!point || width <= 0 || height <= 0) return <g />;
+    const value = point.modelValues[series.id];
+    const [start, end] = Array.isArray(props.value) ? props.value : [0, point.plotValues[series.id] ?? 0];
+    const total = Object.values(point.plotValues).reduce<number>((sum, n) => sum + (n ?? 0), 0);
+    const geometry = trendBarGeometry({ x, y, width, height }, start, end, total);
+    if (!geometry) return <g />;
+    barBounds.set(JSON.stringify([point.xKey, series.id]), geometry.hoverBounds);
+    const clipId = `${clipPrefix}-${series.id}-${props.originalDataIndex}`;
+    const tag = {
+      "data-testid": "usage-trend-segment", "data-model": series.model ?? "", "data-series": series.id,
+      "data-unallocated": series.model == null, "data-bucket": point.xKey, "data-value": value ?? undefined,
+      "data-active": isActive ? "true" : "false", "data-scale": 1,
+      "data-clip-id": clipId, "data-radius": geometry.radius,
+      role: "img",
+      "aria-label": `${point.tooltipLabel} · ${modelName(series.model)} · ${metricLabel}: ${formatMetric(value, point.modelCostConverted[series.id])}`,
+    };
+    return <g>
+      <defs>
+        <clipPath id={clipId} clipPathUnits="userSpaceOnUse"><path d={geometry.clipPath} /></clipPath>
+        <clipPath id={`${clipId}-baseline`} clipPathUnits="userSpaceOnUse"><rect {...geometry.baselineClip} /></clipPath>
+      </defs>
+      {/* The base remains mounted and receives pointer input at its original size. */}
+      <Rectangle {...tag} x={x} y={y} width={width} height={height} fill={series.color} clipPath={`url(#${clipId})`} />
+      <g clipPath={`url(#${clipId}-baseline)`}>
+        <path data-testid="usage-trend-highlight" data-model={series.model ?? ""} data-bucket={point.xKey}
+          data-active={isActive ? "true" : "false"} data-scale={isActive ? TREND_BAR_ACTIVE_SCALE : 1}
+          data-baseline={geometry.baseline} d={geometry.segmentPath} fill={series.color}
+          className="transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none"
+          style={{ transform: isActive ? geometry.activeTransform : TREND_BAR_REST_TRANSFORM, opacity: isActive ? 1 : 0, transformOrigin: "0 0" }}
+          stroke="var(--text-3)" strokeWidth={TREND_BAR_OUTLINE_WIDTH} strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke" pointerEvents="none" aria-hidden="true" onTransitionEnd={props.onTransitionEnd} />
+      </g>
+    </g>;
+  };
+
+  const renderTooltip = ({ active, payload }: TooltipContentProps) => {
     if (!active || !payload || payload.length === 0) return null;
-    const point = payload[0]?.payload as UsageTrendChartPoint | undefined;
+    const point = payload[0]?.payload as StackPoint | undefined;
     const heading = point?.tooltipLabel ?? point?.label ?? "";
-    const breakdown = buildTrendModelBreakdown(point?.modelBreakdown, metric);
-    const modelName = (name: string) => name || t("usage.chart.unknownModel");
-    return (
+    const total = point?.[metric] ?? 0;
+    const rows = chartType === "bar" && point
+      ? stacks.series.flatMap(series => {
+          const value = point.modelValues[series.id];
+          return value != null && value > 0 ? [{
+            key: series.id, label: modelName(series.model), value,
+            share: total > 0 ? value / total : 0, color: series.color,
+            costConverted: point.modelCostConverted[series.id],
+            active: payload[0].dataKey === series.dataKey,
+          }] : [];
+        })
+      : buildTrendModelBreakdown(point?.modelBreakdown, metric).slices.map(slice => ({
+          key: slice.key, label: slice.other ? t("usage.chart.other") : modelName(slice.members[0]),
+          value: slice.value, share: slice.share, costConverted: slice.costConverted,
+          color: slice.other ? "var(--text-3)" : usageCompositionColor(`models:${slice.members[0]}`), active: false,
+        }));
+    const content = (
       <div data-testid="usage-trend-tooltip" className="max-w-[360px] rounded-[8px] border border-border bg-popover px-3 py-2 text-caption text-fg-1 shadow-v7-md">
         <p className="mb-1 font-semibold">{heading}</p>
         {!!point?.unpricedCount && <p className="mb-1 text-fg-2">{t("usage.unpricedRequests", {count:point.unpricedCount})}</p>}
         <div className="flex items-center gap-2 tabular-nums">
           <span
             aria-hidden="true"
-            className="h-2 w-2 rounded-[2px] bg-chart-1"
+            className="h-2 w-2 rounded-[2px]"
+            style={{ backgroundColor: chartType === "bar" ? "var(--text-3)" : "var(--chart-1)" }}
           />
           <span className="text-fg-2">{metricLabel}</span>
           <span className="ms-auto ps-3">
@@ -273,20 +341,32 @@ export function UsageTrendChart({
             )}
           </span>
         </div>
-        {breakdown.slices.length > 0 && (
+        {rows.length > 0 && (
           <div className="mt-2 border-t border-border pt-2">
-            <ul className="m-0 grid list-none grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 p-0 tabular-nums">
-              {breakdown.slices.map((slice) => (
-                <li key={slice.key} className="contents">
+            <ul className="relative m-0 max-h-[260px] list-none overflow-y-auto p-0 tabular-nums">
+              {rows.map((row) => (
+                <li key={row.key} data-testid="usage-trend-tooltip-model" data-active={row.active ? "true" : "false"}
+                  className={`grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 rounded-[3px] px-1.5 py-1 ${row.active ? "bg-subtle font-semibold" : ""}`}
+                  style={{ borderInlineStart: `2px solid ${row.active ? "var(--text-3)" : "transparent"}` }}
+                  ref={element => {
+                    // Only scroll the tooltip list, keeping even a small model's
+                    // highlighted row visible without moving the page.
+                    const list = element?.parentElement;
+                    if (!row.active || !element || !list) return;
+                    if (element.offsetTop < list.scrollTop) list.scrollTop = element.offsetTop;
+                    else if (element.offsetTop + element.offsetHeight > list.scrollTop + list.clientHeight)
+                      list.scrollTop = element.offsetTop + element.offsetHeight - list.clientHeight;
+                  }}
+                >
                   <span className="flex min-w-0 items-center gap-1.5 text-fg-2">
-                    <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-[2px]" style={{ backgroundColor: slice.other ? "var(--text-3)" : usageCompositionColor(`models:${slice.members[0]}`) }} />
+                    <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-[2px]" style={{ backgroundColor: row.color }} />
                     <span className="min-w-0 break-all">
-                      {slice.other ? t("usage.chart.other") : modelName(slice.members[0])}
+                      {row.label}
                     </span>
                   </span>
-                  <span className="whitespace-nowrap text-end">{formatMetric(slice.value, slice.costConverted)}</span>
+                  <span className="whitespace-nowrap text-end">{formatMetric(row.value, row.costConverted)}</span>
                   <span className="whitespace-nowrap text-end text-fg-3">
-                    {slice.share === 1 ? "100%" : slice.share < 0.001 ? `<${percent.format(0.001)}` : percent.format(slice.share)}
+                    {row.share === 1 ? "100%" : row.share < 0.001 ? `<${percent.format(0.001)}` : percent.format(row.share)}
                   </span>
                 </li>
               ))}
@@ -295,6 +375,11 @@ export function UsageTrendChart({
         )}
       </div>
     );
+    const activeSeries = stacks.series.find(series => series.dataKey === payload[0].dataKey);
+    return chartType === "bar" && point && activeSeries
+      ? <TrendTooltipFrame plotRef={plotRef} pointerRef={pointerRef}
+          getBounds={() => barBounds.get(JSON.stringify([point.xKey, activeSeries.id]))}>{content}</TrendTooltipFrame>
+      : content;
   };
 
   return (
@@ -313,7 +398,7 @@ export function UsageTrendChart({
           data-testid="usage-trend-legend"
           className="inline-flex items-center gap-1.5 whitespace-nowrap text-caption text-fg-2"
         >
-          {!composition && <span
+          {!composition && chartType !== "bar" && <span
             aria-hidden="true"
             className="h-2.5 w-2.5 rounded-[2px] bg-chart-1"
           />}
@@ -322,7 +407,18 @@ export function UsageTrendChart({
         {controls}
       </div>
 
-      <div className="mt-1 h-[132px] w-full">
+      {!composition && chartType === "bar" && stacks.series.length > 0 && (
+        <ul data-testid="usage-trend-model-legend" className="m-0 mt-1 flex list-none items-center gap-3 overflow-x-auto p-0 pb-1 text-caption text-fg-2">
+          {stacks.series.map(series => <li key={series.id} title={`${modelName(series.model)} · ${percent.format(series.share)}`}
+            data-model={series.model ?? ""} className="inline-flex shrink-0 items-center gap-1.5">
+            <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-[2px]" style={{ backgroundColor: series.color }} />
+            <span className="max-w-[180px] truncate">{modelName(series.model)}</span>
+          </li>)}
+        </ul>
+      )}
+
+      <div ref={plotRef} data-testid="usage-trend-plot" className="mt-1 h-[132px] w-full [&_.recharts-surface]:overflow-visible"
+        onPointerMoveCapture={event => { pointerRef.current = { x: event.clientX, y: event.clientY }; }}>
         {composition ?? (isLoading ? (
           <div className="flex h-full items-center justify-center">
             <Loader2 className="h-5 w-5 animate-spin text-fg-3" />
@@ -330,7 +426,7 @@ export function UsageTrendChart({
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <Chart
-              data={chartData}
+              data={chartType === "bar" ? stacks.data : chartData}
               margin={{ top: 6, right: 0, left: 0, bottom: 0 }}
             >
               <CartesianGrid
@@ -361,6 +457,9 @@ export function UsageTrendChart({
                 tickFormatter={formatYTick}
               />
               <Tooltip
+                shared={chartType === "bar" ? false : undefined}
+                position={chartType === "bar" ? { x: 0, y: 0 } : undefined}
+                allowEscapeViewBox={{ x: true, y: true }}
                 content={renderTooltip}
                 cursor={
                   chartType === "bar"
@@ -369,14 +468,16 @@ export function UsageTrendChart({
                 }
               />
               {chartType === "bar" ? (
-                <Bar
-                  dataKey={dataKey}
-                  name={metricLabel}
-                  fill="var(--chart-1)"
-                  radius={[3, 3, 0, 0]}
+                stacks.series.map(series => <Bar key={series.id}
+                  dataKey={series.dataKey}
+                  name={modelName(series.model)}
+                  stackId="models"
+                  fill={series.color}
+                  shape={props => renderSegment(series, props)}
+                  activeBar={props => renderSegment(series, props)}
                   maxBarSize={36}
                   isAnimationActive={false}
-                />
+                />)
               ) : (
                 <Area
                   type="monotone"
