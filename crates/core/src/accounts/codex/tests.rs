@@ -1,5 +1,28 @@
 use super::*;
 
+#[cfg(target_os = "macos")]
+#[test]
+fn chatgpt_discovery_checks_system_then_user_applications_for_an_executable() {
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    let temp = tempfile::tempdir().unwrap();
+    let system = temp.path().join("Applications");
+    let user = temp.path().join("home/Applications");
+    let cli = "ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex";
+    let discover = || macos_chatgpt_binary([system.clone(), user.clone()]);
+    assert_eq!(discover(), None);
+
+    for (dir, mode) in [(&system, 0o644), (&user, 0o755)] {
+        let binary = dir.join(cli);
+        fs::create_dir_all(binary.parent().unwrap()).unwrap();
+        fs::write(&binary, b"").unwrap();
+        fs::set_permissions(binary, fs::Permissions::from_mode(mode)).unwrap();
+    }
+    assert_eq!(discover(), Some(user.join(cli)));
+    fs::set_permissions(system.join(cli), fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(discover(), Some(system.join(cli)));
+}
+
 fn row(minutes: i64) -> Value {
     json!({"usedPercent":12.5,"windowDurationMins":minutes,"resetsAt":1793082977i64})
 }

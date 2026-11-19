@@ -77,7 +77,7 @@ export function accountError(message: string, zh: boolean) {
   if (message.includes("Invalid custom query amount")) return "用量数值无效，请返回数字或十进制字符串。";
   if (message.includes("Custom usage query is disabled")) return "此供应商的自定义用量查询已关闭。";
   if (message.includes("Codex executable not found"))
-    return "未找到 Codex 程序，请在账号设置中填写 codex.exe 的绝对路径。";
+    return "未找到 Codex 程序，请在账号设置中填写 Codex 可执行文件的绝对路径。";
   if (message.includes("Codex home directory not found"))
     return "Codex 数据目录不存在，请检查账号设置。";
   if (message.includes("local ChatGPT login"))

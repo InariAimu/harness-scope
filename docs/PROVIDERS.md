@@ -15,7 +15,7 @@
 | OpenAI／Codex | 本机已有 Codex 登录 | App Server 返回的套餐标识和额度窗口 |
 | 自定义供应商 | 按需填写 Base URL、API Key 和查询脚本 | 提取器返回的余额或额度 |
 
-Codex 默认检测桌面版或 PATH 中的程序，也可指定程序和数据目录。查询使用 `account/read`、`account/rateLimits/read`，不发送模型请求；只保存白名单额度字段及身份摘要，认证仍由 Codex 管理。缺失窗口不视为无限额度。
+Codex 优先使用手动指定的程序路径。在 macOS 上留空时，依次查找 `/Applications`、`~/Applications` 下 ChatGPT.app 内置的 Codex，再查找 PATH 中的 `codex`。Windows 会先检测桌面版，再查找 PATH。数据目录留空会沿用本机 Codex 登录。查询使用 `account/read`、`account/rateLimits/read`，不发送模型请求；只保存白名单额度字段及身份摘要，认证仍由 Codex 管理。缺失窗口不视为无限额度。
 
 套餐名称、月费、币种、本期开始和下次续费手动记录，也可不配置查询凭据。官方窗口重置时间与账单续费日期分别显示，不互相覆盖。
 

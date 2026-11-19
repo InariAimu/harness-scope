@@ -139,6 +139,6 @@ it("explains local Codex login failures without suggesting an API key for subscr
   expect(error).toContain("ChatGPT");
   expect(error).not.toContain("API Key");
   expect(accountError("Codex executable not found", true)).toContain(
-    "codex.exe",
+    "可执行文件的绝对路径",
   );
 });

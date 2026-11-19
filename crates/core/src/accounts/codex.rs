@@ -48,6 +48,14 @@ fn binary(settings: &Settings) -> Result<PathBuf> {
         );
         return Ok(path);
     }
+    #[cfg(target_os = "macos")]
+    {
+        let system_apps = PathBuf::from("/Applications");
+        let user_apps = dirs::home_dir().map(|home| home.join("Applications"));
+        if let Some(binary) = macos_chatgpt_binary(std::iter::once(system_apps).chain(user_apps)) {
+            return Ok(binary);
+        }
+    }
     let mut candidates = vec![];
     #[cfg(windows)]
     if let Some(local) = std::env::var_os("LOCALAPPDATA") {
@@ -69,6 +77,22 @@ fn binary(settings: &Settings) -> Result<PathBuf> {
         .find(|p| p.is_file())
         .context("Codex executable not found; configure its absolute path")
 }
+
+#[cfg(target_os = "macos")]
+fn macos_chatgpt_binary(app_dirs: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+
+    app_dirs
+        .into_iter()
+        .map(|dir| {
+            dir.join("ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex")
+        })
+        .find(|path| {
+            path.metadata()
+                .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+        })
+}
+
 pub(super) fn fetch(settings: &Settings, network: &crate::network::Settings) -> Result<Value> {
     validate(settings)?;
     let (account, limits) =
