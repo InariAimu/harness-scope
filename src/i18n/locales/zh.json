@@ -2225,6 +2225,7 @@
       "logColumns": "请求日志的列",
       "logColumnsSummary": "{{shown}} / {{total}} 列",
       "trendChartType": "趋势图样式",
+      "segmentTrendByModel": "柱形图按模型分段",
       "trendChartTypes": {
         "bar": "柱形图",
         "area": "曲线面积图"

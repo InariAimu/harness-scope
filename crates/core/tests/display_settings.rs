@@ -20,6 +20,8 @@ fn old_database_defaults_and_display_preferences_survive_restart() {
     // Upgrading an existing display-settings record adds only the new preference.
     let upgraded = save(&e, json!({"trendChartType":"area"}));
     assert_eq!(upgraded["currency"], "CNY");
+    assert!(upgraded.get("segmentTrendByModel").is_none());
+    save(&e, json!({"segmentTrendByModel":true}));
     let upgraded = save(&e, json!({"numberUnitStyle":"chinese","numberDecimals":2}));
     assert_eq!(upgraded["trendChartType"], "area");
     save(&e, json!({"speedCalculation":"end_to_end"}));
@@ -31,6 +33,11 @@ fn old_database_defaults_and_display_preferences_survive_restart() {
     assert_eq!(value["sidebarTodayItems"], json!(["cost", "requests"]));
     assert_eq!(value["requestLogColumns"]["app"], false);
     assert_eq!(value["trendChartType"], "area");
+    assert_eq!(value["segmentTrendByModel"], true);
+    assert_eq!(
+        save(&e, json!({"segmentTrendByModel":false}))["segmentTrendByModel"],
+        false
+    );
     assert_eq!(value["numberUnitStyle"], "chinese");
     assert_eq!(value["numberDecimals"], 2);
     assert_eq!(value["speedCalculation"], "end_to_end");
@@ -91,6 +98,7 @@ fn invalid_patches_are_rejected_atomically() {
         json!({"currency":"CNY","trendChartType":"line"}),
         json!({"trendChartType":""}),
         json!({"trendChartType":42}),
+        json!({"segmentTrendByModel":"true"}),
         json!({"numberUnitStyle":"auto"}),
         json!({"numberUnitStyle":42}),
         json!({"currency":"CNY","speedCalculation":"fast"}),

@@ -287,6 +287,8 @@ pub struct UsageDisplaySettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trend_chart_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub segment_trend_by_model: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub number_unit_style: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub number_decimals: Option<u8>,
@@ -342,6 +344,9 @@ impl UsageDisplaySettings {
                 "Unsupported trend chart type"
             );
             self.trend_chart_type = Some(chart_type);
+        }
+        if let Some(enabled) = patch.segment_trend_by_model {
+            self.segment_trend_by_model = Some(enabled);
         }
         if let Some(unit_style) = patch.number_unit_style {
             anyhow::ensure!(

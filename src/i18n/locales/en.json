@@ -2224,6 +2224,7 @@
       "logColumns": "Request log columns",
       "logColumnsSummary": "{{shown}} of {{total}} columns",
       "trendChartType": "Trend chart",
+      "segmentTrendByModel": "Split bars by model",
       "trendChartTypes": {
         "bar": "Bar",
         "area": "Area"

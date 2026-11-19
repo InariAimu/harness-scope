@@ -232,9 +232,13 @@ export function UsageTrendChart({
       }),
     [trends, isHourly, dateLocale, startDate, endDate, timeZone],
   );
-  const stacks = useMemo(() => buildTrendModelStacks(chartData, metric, rate), [chartData, metric, rate]);
+  const segmented = chartType === "bar" && display?.segmentTrendByModel === true && !composition;
+  const stacks = useMemo(
+    () => segmented ? buildTrendModelStacks(chartData, metric, rate) : null,
+    [segmented, chartData, metric, rate],
+  );
   const barBounds = useMemo(() => new Map<string, TrendBarRect>(), [stacks]);
-  type StackPoint = (typeof stacks.data)[number];
+  type StackPoint = NonNullable<typeof stacks>["data"][number];
 
   // 单指标：图只画切换选中的那一个指标，单 Y 轴，图例和 tooltip 跟着走。
   const metricLabel =
@@ -308,7 +312,7 @@ export function UsageTrendChart({
     const point = payload[0]?.payload as StackPoint | undefined;
     const heading = point?.tooltipLabel ?? point?.label ?? "";
     const total = point?.[metric] ?? 0;
-    const rows = chartType === "bar" && point
+    const rows = stacks && point
       ? stacks.series.flatMap(series => {
           const value = point.modelValues[series.id];
           return value != null && value > 0 ? [{
@@ -331,7 +335,7 @@ export function UsageTrendChart({
           <span
             aria-hidden="true"
             className="h-2 w-2 rounded-[2px]"
-            style={{ backgroundColor: chartType === "bar" ? "var(--text-3)" : "var(--chart-1)" }}
+            style={{ backgroundColor: segmented ? "var(--text-3)" : "var(--chart-1)" }}
           />
           <span className="text-fg-2">{metricLabel}</span>
           <span className="ms-auto ps-3">
@@ -375,8 +379,8 @@ export function UsageTrendChart({
         )}
       </div>
     );
-    const activeSeries = stacks.series.find(series => series.dataKey === payload[0].dataKey);
-    return chartType === "bar" && point && activeSeries
+    const activeSeries = stacks?.series.find(series => series.dataKey === payload[0].dataKey);
+    return point && activeSeries
       ? <TrendTooltipFrame plotRef={plotRef} pointerRef={pointerRef}
           getBounds={() => barBounds.get(JSON.stringify([point.xKey, activeSeries.id]))}>{content}</TrendTooltipFrame>
       : content;
@@ -398,7 +402,7 @@ export function UsageTrendChart({
           data-testid="usage-trend-legend"
           className="inline-flex items-center gap-1.5 whitespace-nowrap text-caption text-fg-2"
         >
-          {!composition && chartType !== "bar" && <span
+          {!composition && !segmented && <span
             aria-hidden="true"
             className="h-2.5 w-2.5 rounded-[2px] bg-chart-1"
           />}
@@ -407,7 +411,7 @@ export function UsageTrendChart({
         {controls}
       </div>
 
-      {!composition && chartType === "bar" && stacks.series.length > 0 && (
+      {stacks && stacks.series.length > 0 && (
         <ul data-testid="usage-trend-model-legend" className="m-0 mt-1 flex list-none items-center gap-3 overflow-x-auto p-0 pb-1 text-caption text-fg-2">
           {stacks.series.map(series => <li key={series.id} title={`${modelName(series.model)} · ${percent.format(series.share)}`}
             data-model={series.model ?? ""} className="inline-flex shrink-0 items-center gap-1.5">
@@ -426,7 +430,7 @@ export function UsageTrendChart({
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <Chart
-              data={chartType === "bar" ? stacks.data : chartData}
+              data={stacks?.data ?? chartData}
               margin={{ top: 6, right: 0, left: 0, bottom: 0 }}
             >
               <CartesianGrid
@@ -457,9 +461,9 @@ export function UsageTrendChart({
                 tickFormatter={formatYTick}
               />
               <Tooltip
-                shared={chartType === "bar" ? false : undefined}
-                position={chartType === "bar" ? { x: 0, y: 0 } : undefined}
-                allowEscapeViewBox={{ x: true, y: true }}
+                shared={segmented ? false : undefined}
+                position={segmented ? { x: 0, y: 0 } : undefined}
+                allowEscapeViewBox={segmented ? { x: true, y: true } : undefined}
                 content={renderTooltip}
                 cursor={
                   chartType === "bar"
@@ -467,7 +471,7 @@ export function UsageTrendChart({
                     : { stroke: "var(--text-3)", strokeDasharray: "3 3" }
                 }
               />
-              {chartType === "bar" ? (
+              {stacks ? (
                 stacks.series.map(series => <Bar key={series.id}
                   dataKey={series.dataKey}
                   name={modelName(series.model)}
@@ -478,6 +482,15 @@ export function UsageTrendChart({
                   maxBarSize={36}
                   isAnimationActive={false}
                 />)
+              ) : chartType === "bar" ? (
+                <Bar
+                  dataKey={dataKey}
+                  name={metricLabel}
+                  fill="var(--chart-1)"
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={36}
+                  isAnimationActive={false}
+                />
               ) : (
                 <Area
                   type="monotone"

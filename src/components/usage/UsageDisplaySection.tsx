@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown } from "lucide-react";
 import { fieldClass, Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -263,6 +264,7 @@ export function UsageDisplaySection({
   };
 
   const [chartType, setChartType] = useState<TrendChartType>(savedChartType);
+  const [savingSegmentation, setSavingSegmentation] = useState(false);
   useEffect(() => {
     if (!pendingSaves.current) setChartType(savedChartType);
   }, [savedChartType]);
@@ -393,6 +395,22 @@ export function UsageDisplaySection({
               ))}
             </SelectContent>
           </Select>
+          <label htmlFor={`${rateId}-segments`} className="text-body text-fg-2 md:col-start-3 md:ps-5">
+            {t("usage.display.segmentTrendByModel")}
+          </label>
+          <Switch
+            id={`${rateId}-segments`}
+            checked={value?.segmentTrendByModel ?? false}
+            disabled={chartType !== "bar" || savingSegmentation}
+            onCheckedChange={async (enabled) => {
+              setSavingSegmentation(true);
+              try {
+                await save({ segmentTrendByModel: enabled });
+              } finally {
+                setSavingSegmentation(false);
+              }
+            }}
+          />
           {currency !== "USD" && (
             <>
               <label htmlFor={rateId} className="text-body text-fg-2">

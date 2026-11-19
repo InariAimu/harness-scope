@@ -236,6 +236,7 @@ export interface UsageDisplaySettings {
   sidebarTodayItems?: string[];
   requestLogColumns?: Record<string, boolean>;
   trendChartType?: string;
+  segmentTrendByModel?: boolean;
   numberUnitStyle?: string;
   numberDecimals?: number;
   speedCalculation?: string;
