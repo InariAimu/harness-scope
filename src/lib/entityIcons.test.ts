@@ -15,6 +15,9 @@ describe("entity icon identity and references", () => {
     expect(defaultHarnessIcon("cherry")).toBe("builtin:cherry");
     expect(defaultProviderIcon("deepseek")).toBe("builtin:deepseek");
     expect(defaultProviderIcon("openai-codex")).toBe("builtin:openai");
+    expect(defaultProviderIcon("google")).toBe("builtin:google-pixel");
+    expect(defaultHarnessIcon("gemini")).toBe("builtin:google-pixel");
+    expect(defaultHarnessIcon("antigravity")).toBe("builtin:google-pixel");
     expect(defaultProviderIcon("custom:deepseek")).toBeUndefined();
   });
   it("resolves the shared preset catalog to bundled artwork for both community styles", () => {

@@ -30,10 +30,12 @@ export const ICON_QUERY_KEY = ["icon-library"] as const;
 const HARNESS_DEFAULTS: Record<string, string> = {
   claude: "claude", "claude-desktop": "claude", codex: "openai", dsh: "deepseek",
   "gpt-img-studio": "openai-pixel",
+  gemini: "google-pixel", antigravity: "google-pixel",
   opencode: "opencode", cherry: "cherry", copliot: "copilot", "copliot-deprecated": "copilot",
 };
 const PROVIDER_DEFAULTS: Record<string, string> = {
   deepseek: "deepseek", "openai-codex": "openai", "opencode-go": "opencode",
+  google: "google-pixel",
 };
 export function defaultHarnessIcon(id: string): IconRef | undefined {
   return HARNESS_DEFAULTS[id] ? `builtin:${HARNESS_DEFAULTS[id]}` : undefined;

@@ -35,7 +35,10 @@ fn sample(row: &Row) -> Option<Sample> {
     Some(Sample {
         generation_ms: estimate.duration_ms?,
         first_ms,
-        estimated: timing.duration_source != "lmstudio_prediction_stats",
+        estimated: !matches!(
+            timing.duration_source.as_str(),
+            "lmstudio_prediction_stats" | "antigravity_chat_model"
+        ),
     })
 }
 

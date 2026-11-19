@@ -196,6 +196,9 @@ fn view(engine: &Engine, item: &Stored, vault: &Vault, store: &Store) -> Result<
     Ok(value)
 }
 fn can_refresh(account: &Account, vault: &Vault) -> bool {
+    if account.provider == "google" {
+        return false;
+    }
     if let Some(settings) = &account.custom {
         settings.enabled && (!settings.script.contains("{{apiKey}}") || vault.exists(&account.id))
     } else {
@@ -218,7 +221,7 @@ fn validate(input: &Save) -> Result<()> {
         );
     }
     anyhow::ensure!(
-        ["deepseek", "opencode-go", "openai-codex"].contains(&input.provider.as_str())
+        ["deepseek", "opencode-go", "openai-codex", "google"].contains(&input.provider.as_str())
             || custom::is_provider(&input.provider),
         "Unsupported provider"
     );
@@ -233,6 +236,16 @@ fn validate(input: &Save) -> Result<()> {
         anyhow::ensure!(
             input.custom.is_none(),
             "Custom settings require a custom provider"
+        );
+    }
+    if input.provider == "google" {
+        anyhow::ensure!(
+            input.shared_subscription_id.is_none(),
+            "Google local usage has no shared quota history"
+        );
+        anyhow::ensure!(
+            input.api_key.as_deref().is_none_or(|v| v.trim().is_empty()) && !input.clear_api_key,
+            "Google local usage does not use an API key"
         );
     }
     if input.provider == "openai-codex" {
@@ -267,7 +280,8 @@ fn validate(input: &Save) -> Result<()> {
     let mut links = HashSet::new();
     for link in &input.links {
         anyhow::ensure!(
-            crate::providers::valid(&link.provider)
+            (crate::providers::valid(&link.provider)
+                || link.provider == format!("{} (Session)", link.harness))
                 && !link.harness.is_empty()
                 && link.harness.len() <= 64,
             "Invalid linked route"
@@ -328,7 +342,7 @@ pub(crate) fn execute(engine: &Engine, vault: &Vault, name: &str, args: Value) -
         "provider_account_routes" => {
             let store = engine.read_lock()?;
             let selected = Selection::new(&store, &json!({"scope":"all"}), i64::MIN, i64::MAX)?;
-            let mut statement = store.conn.prepare_cached(&format!("SELECT u.harness,u.provider,COUNT(*) FROM usage_index u WHERE {} AND u.provider IS NOT NULL GROUP BY u.harness,u.provider ORDER BY u.harness,u.provider", selected.sql))?;
+            let mut statement = store.conn.prepare_cached(&format!("SELECT u.harness,COALESCE(u.provider,u.harness||' (Session)'),COUNT(*) FROM usage_index u WHERE {} AND (u.provider IS NOT NULL OR u.harness IN ('gemini','antigravity')) GROUP BY u.harness,u.provider ORDER BY u.harness,u.provider", selected.sql))?;
             let rows = statement.query_map(rusqlite::params_from_iter(selected.params.iter()), |r| Ok(json!({"harness":r.get::<_,String>(0)?,"provider":r.get::<_,String>(1)?,"records":r.get::<_,i64>(2)?})))?.collect::<Result<Vec<_>,_>>()?;
             Ok(json!(rows))
         }
@@ -530,6 +544,10 @@ fn refresh_with(
             .iter_mut()
             .find(|a| a.account.id == id)
             .context("Provider account no longer exists")?;
+        anyhow::ensure!(
+            item.account.provider != "google",
+            "Google accounts track linked local usage; official quota lookup is unavailable"
+        );
         let key = if let Some(settings) = &item.account.custom {
             if !settings.enabled {
                 anyhow::bail!("Custom usage query is disabled");
@@ -728,7 +746,9 @@ fn linked_selection(store: &Store, account: &Account, start: i64, end: i64) -> R
             if i > 0 {
                 selected.sql.push_str(" OR ");
             }
-            selected.sql.push_str("(u.harness=? AND u.provider=?)");
+            selected
+                .sql
+                .push_str("(u.harness=? AND COALESCE(u.provider,u.harness||' (Session)')=?)");
             selected
                 .params
                 .extend([link.harness.clone().into(), link.provider.clone().into()]);

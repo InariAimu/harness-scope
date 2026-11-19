@@ -13,6 +13,7 @@
 | DeepSeek | API Key | 官方原币总余额、充值余额、赠金 |
 | OpenCode Go | API Key | 官方额度窗口、剩余比例与重置时间 |
 | OpenAI／Codex | 本机已有 Codex 登录 | App Server 返回的套餐标识和额度窗口 |
+| Google／Gemini／Antigravity | 无需凭据 | 关联本机和已同步设备的会话用量、手填订阅；暂不查询官方额度 |
 | 自定义供应商 | 按需填写 Base URL、API Key 和查询脚本 | 提取器返回的余额或额度 |
 
 Codex 默认检测桌面版或 PATH 中的程序，也可指定程序和数据目录。查询使用 `account/read`、`account/rateLimits/read`，不发送模型请求；只保存白名单额度字段及身份摘要，认证仍由 Codex 管理。缺失窗口不视为无限额度。

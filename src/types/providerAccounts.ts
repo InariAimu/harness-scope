@@ -4,7 +4,7 @@ import type {
   ResolvedCodexCapacity,
 } from "./codexAllowances";
 
-export type AccountProvider = "deepseek" | "opencode-go" | "openai-codex" | "custom" | `custom:${string}`;
+export type AccountProvider = "deepseek" | "opencode-go" | "openai-codex" | "google" | "custom" | `custom:${string}`;
 export interface CustomQuerySettings {
   enabled: boolean;
   baseUrl: string;

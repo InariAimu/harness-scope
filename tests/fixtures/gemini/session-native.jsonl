@@ -1,0 +1,8 @@
+{"sessionId":"gemini-synthetic","projectHash":"synthetic-project","startTime":"2026-11-19T01:00:00Z"}
+{"id":"user-1","type":"user","timestamp":"2026-11-19T01:00:00Z","content":"Private synthetic Gemini prompt"}
+{"id":"call-1","type":"gemini","timestamp":"2026-11-19T01:00:01Z","content":"old content","model":"gemini-2.5-pro"}
+{"id":"call-1","type":"gemini","timestamp":"2026-11-19T01:00:01Z","content":"Private synthetic response","model":"gemini-2.5-pro","tokens":{"input":100,"output":20,"cached":40,"thoughts":10,"tool":5,"total":135}}
+{"$patch":{"id":"call-1","content":"patched content"}}
+{"$rewindTo":"call-1"}
+{"id":"call-2","type":"gemini","timestamp":"2026-11-19T01:00:02Z","content":"active response","model":"gemini-2.5-flash","tokens":{"input":10,"output":2,"cached":0,"total":12}}
+{"$set":{"lastUpdated":"2026-11-19T01:00:02Z","summary":"Synthetic Gemini session"}}

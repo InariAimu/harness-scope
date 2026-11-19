@@ -20,6 +20,7 @@ import { appShortName } from "@/components/usage/RequestLogTable";
 import { providerAccountsApi as api } from "@/lib/api/providerAccounts";
 import {
   ACCOUNT_PROVIDER_NAMES,
+  GOOGLE_USAGE_LINKS,
   accountError,
   routeKey,
   accountProviderName,
@@ -84,7 +85,7 @@ export function ProviderAccountEditor({
           provider: isCustomProvider(provider) ? "custom" : provider,
           name: accountProviderName(provider, [], zh),
           showInSidebar: true,
-          links: [],
+          links: provider === "google" ? [...GOOGLE_USAGE_LINKS] : [],
           subscription: {
             planName: "",
             monthlyFee: null,
@@ -136,6 +137,11 @@ export function ProviderAccountEditor({
       form.provider !== "openai-codex" ||
       (v.harness === "codex" && v.provider === "openai"),
   );
+  if (form.provider === "google") {
+    for (const link of GOOGLE_USAGE_LINKS) {
+      if (!available.some(v => routeKey(v) === routeKey(link))) available.push({ ...link, records: 0 });
+    }
+  }
   for (const link of form.links)
     if (!available.some((v) => routeKey(v) === routeKey(link)))
       available.push({ ...link, records: 0 });
@@ -252,12 +258,13 @@ export function ProviderAccountEditor({
                       provider,
                       name: accountProviderName(provider, [], zh),
                       custom: provider === "custom" ? defaultCustomQuery() : undefined,
+                      sharedSubscriptionId: provider === "google" ? undefined : v.sharedSubscriptionId,
                       codex:
                         provider === "openai-codex"
                           ? { plan: "plus", binaryPath: null, homePath: null }
                           : undefined,
                       links:
-                        provider === "openai-codex"
+                        provider === "google" ? [...GOOGLE_USAGE_LINKS] : provider === "openai-codex"
                           ? v.links.filter(
                               (link) =>
                                 link.harness === "codex" &&
@@ -297,7 +304,7 @@ export function ProviderAccountEditor({
                 />
                 {l("在左侧供应商列表中显示", "Show in sidebar providers")}
               </label>
-              <Field label={l("跨终端订阅历史", "Subscription history across devices")} help={<>
+              {form.provider !== "google" && <Field label={l("跨终端订阅历史", "Subscription history across devices")} help={<>
                 {l("第一台终端创建共享订阅；其他终端同步后选择同一项。关联会补传本账号已有历史，请确认它们属于同一订阅。各终端可同时使用；保持同步以合并用量，额度回退的异常采样会被筛除。凭据和查询配置各端单独设置。", "Create a shared subscription on the first device; sync and select it on the next. Linking uploads this account’s existing history, so verify it belongs to that subscription. Devices can run concurrently; sync to merge usage. Regressing quota samples are filtered out. Credentials and query settings stay local.")}
                 {initial?.account.sharedSubscriptionId && l(" 已关联的账号不能改绑；使用另一份订阅时请添加新账号。", " This binding is fixed; add a new account for another subscription.")}
               </>}>
@@ -321,7 +328,7 @@ export function ProviderAccountEditor({
                   {initial?.account.sharedSubscriptionId && !sharedSubscriptions.data?.some((s) => s.id === initial.account.sharedSubscriptionId) &&
                     <option value={initial.account.sharedSubscriptionId}>{initial.account.sharedSubscriptionId}</option>}
                 </OptionSelect>
-              </Field>
+              </Field>}
               {form.provider === "openai-codex" ? (
                 <section className="rounded-control border border-border p-3 space-y-3">
                   <Field label={l("参考套餐档位", "Reference plan")} help={l(
@@ -404,6 +411,11 @@ export function ProviderAccountEditor({
                     />
                   </Field>
                 </section>
+              ) : form.provider === "google" ? (
+                <p className="text-caption text-fg-2">{l(
+                  "关联 Gemini CLI / Antigravity 的本机会话用量，可填写共用订阅信息；无需 API Key。暂不查询 Google 官方剩余额度。",
+                  "Link local Gemini CLI / Antigravity usage and record shared subscription details. No API key is needed. Google remaining quotas are not queried.",
+                )}</p>
               ) : (
                 <Field label="API Key">
                   <Input
@@ -425,7 +437,7 @@ export function ProviderAccountEditor({
                   />
                 </Field>
               )}
-              {form.provider !== "openai-codex" && initial?.keyConfigured && (
+              {form.provider !== "openai-codex" && form.provider !== "google" && initial?.keyConfigured && (
                 <label className="flex items-center gap-2 text-caption text-fg-2">
                   <Checkbox
                     checked={clearKey}
@@ -503,7 +515,7 @@ export function ProviderAccountEditor({
                   </Field>
                 </div>
               </section>
-              <section className="border-t border-border pt-4 space-y-3">
+              {form.provider !== "google" && <section className="border-t border-border pt-4 space-y-3">
                 <h3 className="font-semibold text-fg-1">
                   {l("余额／额度自动刷新", "Automatic balance / quota refresh")}
                   <ProviderHelp label={l("自动刷新设置说明", "About automatic refresh settings")}>
@@ -548,7 +560,7 @@ export function ProviderAccountEditor({
                     </Field>
                   ))}
                 </div>
-              </section>
+              </section>}
               <section className="border-t border-border pt-4 space-y-2">
                 <h3 className="font-semibold text-fg-1">
                   {isCustomProvider(form.provider) ? l("Provider ID 归属", "Provider ID links") : l("关联跨设备用量", "Link usage across devices")}
@@ -563,7 +575,7 @@ export function ProviderAccountEditor({
                 {isCustomProvider(form.provider) && <div className="space-y-2">
                   <div className="flex gap-2">
                     <OptionSelect aria-label={l("关联工具", "Linked tool")} className="scope-select w-28 shrink-0" value={routeHarness} onValueChange={setRouteHarness}>
-                      {["codex", "claude", "opencode", "dsh", "cherry", "gemini", "copliot"].map(id => <option key={id} value={id}>{appShortName(id)}</option>)}
+                      {["codex", "claude", "opencode", "dsh", "cherry", "gemini", "antigravity", "copliot"].map(id => <option key={id} value={id}>{appShortName(id)}</option>)}
                     </OptionSelect>
                     <Input aria-label="Provider ID" placeholder="provider-id" maxLength={128} value={routeId} onChange={e => setRouteId(e.target.value)} />
                     <Button type="button" variant="neutral" disabled={!routeId.trim()} onClick={() => {
