@@ -25,6 +25,7 @@ export const APP_DISPLAY_NAME: Record<AppId, string> = {
 };
 const BADGE: Record<string, typeof Terminal | undefined> = {
   claude: Terminal,
+  gemini: Terminal,
   "claude-desktop": Monitor,
 };
 export function AppGlyph({

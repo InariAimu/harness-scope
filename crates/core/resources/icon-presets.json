@@ -36,6 +36,12 @@
     "file": "cherry-studio.png"
   },
   {
+    "id": "antigravity",
+    "name": "Antigravity",
+    "group": "brand",
+    "file": "antigravity.png"
+  },
+  {
     "id": "anthropic-portrait",
     "name": "Anthropic",
     "group": "portrait",

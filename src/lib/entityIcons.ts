@@ -8,14 +8,14 @@ import copilot from "@/assets/harness/copilot.svg?raw";
 import presetCatalog from "../../crates/core/resources/icon-presets.json";
 
 const brandArtwork: Record<string, string> = { claude, openai, deepseek, opencode, copilot };
-const communityArtwork = import.meta.glob<string>("../../assets/icons/*.png", {
+const pngArtwork = import.meta.glob<string>("../../assets/icons/*.png", {
   eager: true, query: "?url", import: "default",
 });
 // The service validates against the same catalog, so every visible preset can be saved.
 export const ICON_PRESETS = presetCatalog.map(preset => ({
   ...preset,
   svg: preset.group === "brand" ? brandArtwork[preset.id] : undefined,
-  src: preset.file.endsWith(".png") ? communityArtwork[`../../assets/icons/${preset.file}`] : undefined,
+  src: preset.file.endsWith(".png") ? pngArtwork[`../../assets/icons/${preset.file}`] : undefined,
 }));
 export type IconRef = `builtin:${string}` | `asset:${string}`;
 export interface IconTarget { kind: "harness" | "account"; id: string }
@@ -30,7 +30,7 @@ export const ICON_QUERY_KEY = ["icon-library"] as const;
 const HARNESS_DEFAULTS: Record<string, string> = {
   claude: "claude", "claude-desktop": "claude", codex: "openai", dsh: "deepseek",
   "gpt-img-studio": "openai-pixel",
-  gemini: "google-pixel", antigravity: "google-pixel",
+  gemini: "google-pixel", antigravity: "antigravity",
   opencode: "opencode", cherry: "cherry", copliot: "copilot", "copliot-deprecated": "copilot",
 };
 const PROVIDER_DEFAULTS: Record<string, string> = {

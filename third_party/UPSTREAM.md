@@ -142,3 +142,7 @@ Additional copied support: `src/lib/inputModality.ts`, `src/lib/unsavedChanges.t
 ## Cherry Studio app icon
 
 `assets/icons/cherry-studio.png` is the application icon extracted from the installed Cherry Studio [v2.0.14](https://github.com/CherryHQ/cherry-studio/releases/tag/v2.0.14) package at `resources/app.asar/out/main/icon.png`. The original PNG SHA-256 is `8706b76d225c761820b18e7d79c3c8d0dd9f712b3d6a6737d90fb96e7c8fc2a4`; it was resized from 1024 × 1024 to 128 × 128 with alpha preserved. Cherry Studio's upstream license is included as [Cherry-Studio-LICENSE](Cherry-Studio-LICENSE); this artwork is not part of the CC Switch assets. Cherry Studio names and marks belong to their respective owner.
+
+## Google Antigravity application icon
+
+`assets/icons/antigravity.png` is the original 128 × 128 PNG (`ic07`) from `Contents/Resources/icon.icns` in the Google LLC–signed Antigravity 2.33.0 macOS package. PNG SHA-256 is `33c5e92d0637cf66a19ea13077cb12f0e95291c0f74d0fc4d88bfb3c4d818917`. The icon identifies Google Antigravity in the interface.

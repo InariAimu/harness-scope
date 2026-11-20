@@ -1,4 +1,8 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { AppGlyph } from "@/components/shell/AppGlyph";
 import { ICON_PRESETS, configuredIcon, defaultHarnessIcon, defaultProviderIcon, iconUses, type IconLibrary } from "./entityIcons";
 
 describe("entity icon identity and references", () => {
@@ -17,12 +21,23 @@ describe("entity icon identity and references", () => {
     expect(defaultProviderIcon("openai-codex")).toBe("builtin:openai");
     expect(defaultProviderIcon("google")).toBe("builtin:google-pixel");
     expect(defaultHarnessIcon("gemini")).toBe("builtin:google-pixel");
-    expect(defaultHarnessIcon("antigravity")).toBe("builtin:google-pixel");
+    expect(defaultHarnessIcon("antigravity")).toBe("builtin:antigravity");
     expect(defaultProviderIcon("custom:deepseek")).toBeUndefined();
+  });
+  it("shows the CLI badge on Gemini and Claude Code and the official artwork on Antigravity", () => {
+    const client = new QueryClient();
+    const glyph = (app: "claude" | "gemini" | "antigravity") => renderToStaticMarkup(
+      createElement(QueryClientProvider, { client }, createElement(AppGlyph, { app })),
+    );
+    expect(glyph("claude")).toContain("lucide-terminal");
+    expect(glyph("gemini")).toContain("lucide-terminal");
+    const antigravity = glyph("antigravity");
+    expect(antigravity).toContain("antigravity.png");
+    expect(antigravity).not.toContain("lucide-terminal");
   });
   it("resolves the shared preset catalog to bundled artwork for both community styles", () => {
     expect(new Set(ICON_PRESETS.map(p => p.id)).size).toBe(ICON_PRESETS.length);
-    expect(ICON_PRESETS.filter(p => p.group === "brand")).toHaveLength(6);
+    expect(ICON_PRESETS.find(p => p.id === "antigravity")).toMatchObject({ group: "brand", file: "antigravity.png" });
     const providers = ["anthropic", "deepseek", "bytedance", "google", "zhipu", "openai", "xai", "moonshot"];
     for (const group of ["portrait", "pixel"]) {
       expect(ICON_PRESETS.filter(p => p.group === group)).toHaveLength(providers.length);
@@ -34,7 +49,7 @@ describe("entity icon identity and references", () => {
       }
     }
     for (const preset of ICON_PRESETS.filter(p => p.group === "brand")) {
-      if (preset.id === "cherry") {
+      if (preset.file.endsWith(".png")) {
         expect(preset.src).toBeTruthy();
         expect(preset.svg).toBeUndefined();
       } else {

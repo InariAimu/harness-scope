@@ -60,7 +60,7 @@ OpenCode 用量采集只读取统计和计时所需字段；无关正文中的�
 
 点击「应用」页的应用图标，或「供应商」页品牌名称左侧的图标，打开悬浮选择条。预置按「品牌图标」「社区头像」「像素头像」分组，点击后立即保存；弹层不改变页面布局。
 
-品牌图标保留 Claude、OpenAI、DeepSeek、OpenCode 和 GitHub Copilot。社区头像与像素头像各提供 Anthropic（Claude）、DeepSeek、ByteDance（Doubao）、Google（Gemini）、Zhipu（GLM）、OpenAI（GPT）、xAI（Grok）、Moonshot（Kimi）8 个选项，应用和供应商均可使用。普通头像背景透明，像素头像铺满方形背景，均为 128×128 PNG。这些可选头像基于 `assets` 中的社区拟人形象制作，不替换默认品牌标志，也不占用自定义素材库容量。
+Antigravity 默认使用官方应用图标。Gemini CLI 默认使用 Google 像素头像，右下角带有与 Claude Code 相同的终端角标。品牌图标还包括 Claude、OpenAI、DeepSeek、OpenCode、GitHub Copilot 和 Cherry Studio。社区头像与像素头像各提供 Anthropic（Claude）、DeepSeek、ByteDance（Doubao）、Google（Gemini）、Zhipu（GLM）、OpenAI（GPT）、xAI（Grok）、Moonshot（Kimi）8 个选项，应用和供应商均可使用。普通头像背景透明，像素头像铺满方形背景，均为 128×128 PNG。这些可选头像基于 `assets` 中的社区拟人形象制作，不替换默认品牌标志，也不占用自定义素材库容量。
 
 上传支持 SVG、PNG、JPG、WebP，文件最大 1 MB。默认居中裁剪为方形，可调整缩放和水平／垂直位置，也可选择「保留完整图片」添加透明留白。预览同时展示深浅背景；应用后尺寸不超过 128×128，小图不放大。SVG 保留矢量格式，普通图片保存为 PNG；SVG 仅支持静态图形、渐变、裁剪和蒙版，不支持脚本、外部资源或样式表，复杂图标可先导出为 PNG。
 
