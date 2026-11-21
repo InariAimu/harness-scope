@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ROOT, versions } from './version.mjs';
@@ -79,17 +79,10 @@ function oneFile(directory, suffix) {
 }
 
 function buildInfo(target, ctx) {
-  const base = target.endsWith('apple-darwin') ? join(ROOT, 'target', target) : join(ROOT, 'target');
-  const directory = join(base, 'release', 'build');
-  const matches = [];
-  for (const name of readdirSync(directory).filter(n => n.startsWith('harness-scope-core-'))) {
-    const path = join(directory, name, 'out', 'build-info.json');
-    if (!existsSync(path)) continue;
-    const info = JSON.parse(readFileSync(path, 'utf8'));
-    try { validateBuildInfo(info, { ...ctx, target }); matches.push(info); } catch { /* Ignore cached builds from other revisions. */ }
-  }
-  assert.ok(matches.length, `No verified release build metadata for ${target}`);
-  return matches.sort((a, b) => b.builtAt.localeCompare(a.builtAt))[0];
+  const path = join(ROOT, 'output', 'release-build-info', `${target}.json`);
+  const info = JSON.parse(readFileSync(path, 'utf8'));
+  validateBuildInfo(info, { ...ctx, target });
+  return info;
 }
 
 function stage(platform) {

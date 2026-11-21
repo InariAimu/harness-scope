@@ -75,17 +75,28 @@ fn main() {
     let release = dirty == Some(false) && tag.as_deref() == Some(format!("v{version}").as_str());
     let now = chrono::Utc::now();
     let build_id = now.format("%Y%m%d%H%M%S%3f").to_string();
+    let target = env::var("TARGET").unwrap();
     let info = serde_json::json!({
         "version": version,
         "displayVersion": if release { version.clone() } else { format!("{version}-dev.{build_id}") },
         "channel": if release { "release" } else { "dev" },
         "buildId":build_id, "builtAt":now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
         "gitCommit":commit, "dirty":dirty, "profile":env::var("PROFILE").unwrap(),
-        "target":env::var("TARGET").unwrap(),
-    });
+        "target":target,
+    }).to_string();
     fs::write(
         Path::new(&env::var("OUT_DIR").unwrap()).join("build-info.json"),
-        info.to_string(),
+        &info,
     )
     .unwrap();
+
+    // Export the embedded metadata for packaging without relying on Cargo's cache layout.
+    println!("cargo:rerun-if-env-changed=RELEASE_TAG");
+    if env::var_os("RELEASE_TAG").is_some() {
+        let directory = root.join("output/release-build-info");
+        fs::create_dir_all(&directory).expect("create release metadata directory");
+        let path = directory.join(format!("{target}.json"));
+        fs::write(&path, &info).expect("export release build metadata");
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
 }
