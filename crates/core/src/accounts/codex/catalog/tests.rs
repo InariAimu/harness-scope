@@ -2,40 +2,43 @@ use super::*;
 
 #[test]
 fn unchanged_previous_defaults_follow_the_new_bundle_but_edits_stay_local() {
-    let old: Catalog = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/fixtures/codex/allowances-2026-10-20.json"
-    )))
-    .unwrap();
-    assert_eq!(revision(&old), PREVIOUS_DEFAULT_REVISION);
     let tmp = tempfile::tempdir().unwrap();
     let s = Store::open(&tmp.path().join("scope.db")).unwrap();
-    s.set_meta(META, &old).unwrap();
-    let loaded = load(&s).unwrap();
-    assert_eq!(loaded.version, "modeldial-2026-11-02");
-    assert!(find(&loaded, "gpt-6.1-terra").is_some());
-    assert_eq!(
-        revision(&s.meta::<Catalog>(META).unwrap().unwrap()),
-        PREVIOUS_DEFAULT_REVISION
-    );
-    let mut edited = old;
-    edited.models[0]
-        .estimates
-        .get_mut("plus")
-        .unwrap()
-        .weekly
-        .as_mut()
-        .unwrap()
-        .api_equivalent_usd = "77".into();
-    s.set_meta(META, &edited).unwrap();
-    assert_eq!(revision(&load(&s).unwrap()), revision(&edited));
+    for snapshot in [
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/codex/allowances-2026-10-20.json"
+        )),
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/codex/allowances-2026-11-02.json"
+        )),
+    ] {
+        let mut old: Catalog = serde_json::from_str(snapshot).unwrap();
+        s.set_meta(META, &old).unwrap();
+        assert_eq!(revision(&load(&s).unwrap()), revision(&defaults()));
+        assert_eq!(
+            revision(&s.meta::<Catalog>(META).unwrap().unwrap()),
+            revision(&old)
+        );
+        old.models[0]
+            .estimates
+            .get_mut("plus")
+            .unwrap()
+            .weekly
+            .as_mut()
+            .unwrap()
+            .api_equivalent_usd = "77".into();
+        s.set_meta(META, &old).unwrap();
+        assert_eq!(revision(&load(&s).unwrap()), revision(&old));
+    }
     assert!(s.pending().unwrap().is_empty());
 }
 
 #[test]
 fn every_current_model_has_four_weekly_samples_and_terra_keeps_its_source_basis() {
     let c = defaults();
-    assert_eq!(c.models.len(), 5);
+    assert_eq!(c.models.len(), 7);
     for model in &c.models {
         for plan in ["plus", "pro100", "pro200", "pro500"] {
             assert_eq!(
@@ -142,6 +145,40 @@ fn current_source_values_preserve_per_model_api_equivalents_and_tokens() {
     }
     assert_eq!(plan(&c, "pro100").unwrap().monthly_fee_usd, "100");
 }
+
+#[test]
+fn gpt_62_models_resolve_shared_api_values_and_model_specific_tokens() {
+    let c = defaults();
+    for (plan, window, usd, astra_tokens, sol_tokens) in [
+        ("plus", "rolling", "11", "13959391", "55837563"),
+        ("plus", "weekly", "66", "83756345", "335025381"),
+        ("pro100", "weekly", "962", "1220812183", "4883248731"),
+        (
+            "pro200",
+            "weekly",
+            "1337.076923076923",
+            "1696798126",
+            "6787192503",
+        ),
+        ("pro500", "weekly", "3210", "4073604061", "16294416244"),
+    ] {
+        for (id, tokens) in [("gpt-6.2-astra", astra_tokens), ("gpt-6.2-sol", sol_tokens)] {
+            let model = find(&c, id).unwrap();
+            let value = resolve(&c, model, plan, window, "modeldial")
+                .unwrap()
+                .unwrap();
+            assert_eq!(value.basis, "modeldial");
+            assert_eq!(value.api_equivalent_usd, usd);
+            assert_eq!(value.tokens.as_deref(), Some(tokens));
+            if plan != "plus" {
+                assert!(resolve(&c, model, plan, "rolling", "modeldial")
+                    .unwrap()
+                    .is_none());
+            }
+        }
+    }
+}
+
 #[test]
 fn theoretical_mode_and_missing_sample_fallback_are_explicit_and_never_use_monthly_fees() {
     let mut c = defaults();

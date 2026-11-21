@@ -20,15 +20,6 @@ export function CodexAllowanceTable({
   const formatQuantity = useUsageNumberFormat();
   const money = (s: string) =>
     nativeMoney(Number(s).toPrecision(4), "USD", locale);
-  const basisLabel = (basis: string) =>
-    basis === "theoretical"
-      ? l("Plus 理论倍率推算", "Plus theoretical multiplier")
-      : basis === "weekly_division"
-        ? l(
-            "由每周值按配置窗口数推算",
-            "Derived from weekly estimate / configured divisor",
-          )
-        : l("ModelDial 估算样本", "ModelDial estimate");
   return (
     <section className="text-caption">
       <h3 className="font-medium">
@@ -85,9 +76,16 @@ export function CodexAllowanceTable({
                               : "—"}{" "}
                             Tokens
                           </span>
-                          <span className="block text-fg-3">
-                            {basisLabel(v.basis)}
-                          </span>
+                          {v.basis !== "modeldial" && (
+                            <span className="block text-fg-3">
+                              {v.basis === "theoretical"
+                                ? l("Plus 理论倍率推算", "Plus theoretical multiplier")
+                                : l(
+                                    "由每周值按配置窗口数推算",
+                                    "Derived from weekly estimate / configured divisor",
+                                  )}
+                            </span>
+                          )}
                         </>
                       ) : (
                         l("无可比样本", "No comparable sample")

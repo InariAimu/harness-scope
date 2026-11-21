@@ -6,7 +6,7 @@ on:
       tag:
         description: Version tag to build (must match the application version)
         required: true
-        default: v0.2.0
+        default: v0.3.0
         type: string
 
 permissions:

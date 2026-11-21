@@ -67,16 +67,16 @@ npm run tauri -- build --debug --no-bundle -- --locked
 工作流以选定提交为源，在 runner 内创建与应用版本一致的本地标签来生成正式构建标识。已有标签若指向其他提交会拒绝构建。流程仅上传 Actions artifacts，不修改远程标签或发布 Release；应先完成所有平台构建及同一提交的 `checks`，再发布：
 
 ```powershell
-gh workflow run release.yml --ref main -f tag=v0.2.0
+gh workflow run release.yml --ref main -f tag=v0.3.0
 gh run list --workflow release.yml
 # 使用上一步实际成功的运行 ID。
-gh run download <RUN_ID> -n release-assets -D output/release-v0.2.0/assets
+gh run download <RUN_ID> -n release-assets -D output/release-v0.3.0/assets
 # 按 build-manifest.json 核对提交、平台和版本，并校验 SHA256SUMS.txt。
-git tag -a v0.2.0 <VERIFIED_COMMIT> -m "Harness Scope v0.2.0"
-git push origin refs/tags/v0.2.0
-gh release create v0.2.0 'output/release-v0.2.0/assets/*' --verify-tag --draft --title 'Harness Scope v0.2.0' --notes-file .github/release-notes/v0.2.0.md
-gh release view v0.2.0
-gh release edit v0.2.0 --draft=false --latest
+git tag -a v0.3.0 <VERIFIED_COMMIT> -m "Harness Scope v0.3.0"
+git push origin refs/tags/v0.3.0
+gh release create v0.3.0 'output/release-v0.3.0/assets/*' --verify-tag --draft --title 'Harness Scope v0.3.0' --notes-file .github/release-notes/v0.3.0.md
+gh release view v0.3.0
+gh release edit v0.3.0 --draft=false --latest
 ```
 
 下载文件的完整性由 `SHA256SUMS.txt` 和 `build-manifest.json` 记录，后者也保留各架构的源代码提交及实际构建身份。缺少平台、混入开发构建或校验和不符时，汇总步骤失败。

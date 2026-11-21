@@ -5,10 +5,11 @@ use std::{
     fs,
 };
 const META: &str = "codex_allowance_catalog_v1";
-// Canonical revision of the 2026-10-20 bundled catalog. Only an unchanged saved
-// default follows the new bundle; edited catalogs and draft files stay local.
-const PREVIOUS_DEFAULT_REVISION: &str =
-    "c8a44082e2dc2e5e1b3ce40599dd9e06222bdd6195ebd20dc26bbb8f24e1129b";
+// Saved copies of these bundled catalogs follow the current default on read.
+const PREVIOUS_DEFAULT_REVISIONS: &[&str] = &[
+    "c8a44082e2dc2e5e1b3ce40599dd9e06222bdd6195ebd20dc26bbb8f24e1129b", // 2026-10-20
+    "99f054bc33037abc1aaf69e8a9a4d3027036db53cdb710fc1253196a05e1f57f", // 2026-11-02
+];
 const MAX_BYTES: usize = 262144;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -204,11 +205,9 @@ pub fn validate(c: &Catalog) -> Result<()> {
     Ok(())
 }
 pub fn load(s: &Store) -> Result<Catalog> {
-    let c = s.meta(META)?.unwrap_or_else(defaults);
-    let c = if revision(&c) == PREVIOUS_DEFAULT_REVISION {
-        defaults()
-    } else {
-        c
+    let c = match s.meta::<Catalog>(META)? {
+        Some(saved) if !PREVIOUS_DEFAULT_REVISIONS.contains(&revision(&saved).as_str()) => saved,
+        _ => defaults(),
     };
     validate(&c)?;
     Ok(c)

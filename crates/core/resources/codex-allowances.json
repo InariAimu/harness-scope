@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "version": "modeldial-2026-11-02",
+  "version": "modeldial-2026-11-21",
   "sourceUrl": "https://modeldial.com/subscriptions/codex?period=week&provider=OpenAI&view=catalog",
-  "checkedAt": "2026-11-02",
-  "notes": "2026-11-02 核对 ModelDial 当前 OpenAI 周额度数据（页面更新至 2026-10-31），保留数据源原始周 API 等值，Token 四舍五入为整数。Plus 为五小时用户记录按六窗口估算；Pro 为标准速度参考，包含原记录倍率更新或同系列套餐比例换算；Terra 按同档 Sol 的两倍 Token、相同 API 等值估算。API 等值不是月费、现金余额或官方额度承诺，Token 含缓存，各模型共享套餐额度、不可相加；样本和估算口径见各模型说明。",
+  "checkedAt": "2026-11-21",
+  "notes": "2026-11-21 核对 ModelDial 的 OpenAI 额度记录，新增 2026-11-20 发布的 GPT-6.2 Astra 和 Sol 测算。采用来源的原始 API 等值，Token 含缓存并四舍五入为整数。额度为标准速度参考，同一套餐的模型共享额度。各模型说明列出样本、校准或比例换算的依据。",
   "defaultMode": "modeldial",
   "theoreticalFallback": true,
   "plusWeeklyToFiveHourDivisor": "6",
@@ -231,6 +231,84 @@
           "weekly": {
             "apiEquivalentUsd": "2485.846153846154",
             "tokens": "24276923077"
+          },
+          "rolling": null
+        }
+      }
+    },
+    {
+      "id": "gpt-6.2-astra",
+      "name": "GPT-6.2 Astra",
+      "aliases": [],
+      "notes": "ModelDial 于 2026-11-20 使用 Pro 200 的 Codex CLI 额度读数校准，并参考社区记录估算其他套餐。按 97% 缓存输入、2.5% 普通输入和 0.5% 输出折算，每百万 Token 的 API 等值为 $0.788。Plus 同时提供五小时和每周参考值，Pro 提供每周参考值。",
+      "estimates": {
+        "plus": {
+          "weekly": {
+            "apiEquivalentUsd": "66",
+            "tokens": "83756345"
+          },
+          "rolling": {
+            "apiEquivalentUsd": "11",
+            "tokens": "13959391"
+          }
+        },
+        "pro100": {
+          "weekly": {
+            "apiEquivalentUsd": "962",
+            "tokens": "1220812183"
+          },
+          "rolling": null
+        },
+        "pro200": {
+          "weekly": {
+            "apiEquivalentUsd": "1337.076923076923",
+            "tokens": "1696798126"
+          },
+          "rolling": null
+        },
+        "pro500": {
+          "weekly": {
+            "apiEquivalentUsd": "3210",
+            "tokens": "4073604061"
+          },
+          "rolling": null
+        }
+      }
+    },
+    {
+      "id": "gpt-6.2-sol",
+      "name": "GPT-6.2 Sol",
+      "aliases": [],
+      "notes": "ModelDial 于 2026-11-20 使用 Pro 200 的 Codex CLI 额度读数校准，并参考社区记录估算其他套餐。按 97% 缓存输入、2.5% 普通输入和 0.5% 输出折算，每百万 Token 的 API 等值为 $0.197。Plus 同时提供五小时和每周参考值，Pro 提供每周参考值。",
+      "estimates": {
+        "plus": {
+          "weekly": {
+            "apiEquivalentUsd": "66",
+            "tokens": "335025381"
+          },
+          "rolling": {
+            "apiEquivalentUsd": "11",
+            "tokens": "55837563"
+          }
+        },
+        "pro100": {
+          "weekly": {
+            "apiEquivalentUsd": "962",
+            "tokens": "4883248731"
+          },
+          "rolling": null
+        },
+        "pro200": {
+          "weekly": {
+            "apiEquivalentUsd": "1337.076923076923",
+            "tokens": "6787192503"
+          },
+          "rolling": null
+        },
+        "pro500": {
+          "weekly": {
+            "apiEquivalentUsd": "3210",
+            "tokens": "16294416244"
           },
           "rolling": null
         }
