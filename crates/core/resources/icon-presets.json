@@ -42,6 +42,12 @@
     "file": "antigravity.png"
   },
   {
+    "id": "google",
+    "name": "Google",
+    "group": "brand",
+    "file": "google-g.png"
+  },
+  {
     "id": "anthropic-portrait",
     "name": "Anthropic",
     "group": "portrait",

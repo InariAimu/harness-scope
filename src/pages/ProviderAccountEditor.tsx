@@ -22,6 +22,7 @@ import {
   ACCOUNT_PROVIDER_NAMES,
   GOOGLE_USAGE_LINKS,
   accountError,
+  defaultAccountRefresh,
   routeKey,
   accountProviderName,
   isCustomProvider,
@@ -93,7 +94,7 @@ export function ProviderAccountEditor({
             periodStart: null,
             renewalDate: null,
           },
-          refresh: { foregroundSeconds: 60, backgroundSeconds: 300 },
+          refresh: defaultAccountRefresh(provider),
           ...(isCustomProvider(provider) ? { custom: defaultCustomQuery() } : {}),
           ...(provider === "openai-codex"
             ? {
@@ -256,6 +257,9 @@ export function ProviderAccountEditor({
                     setForm((v) => ({
                       ...v,
                       provider,
+                      refresh: provider === "google" || v.provider === "google"
+                        ? defaultAccountRefresh(provider)
+                        : v.refresh,
                       name: accountProviderName(provider, [], zh),
                       custom: provider === "custom" ? defaultCustomQuery() : undefined,
                       sharedSubscriptionId: provider === "google" ? undefined : v.sharedSubscriptionId,
@@ -413,8 +417,8 @@ export function ProviderAccountEditor({
                 </section>
               ) : form.provider === "google" ? (
                 <p className="text-caption text-fg-2">{l(
-                  "关联 Gemini CLI / Antigravity 的本机会话用量，可填写共用订阅信息；无需 API Key。暂不查询 Google 官方剩余额度。",
-                  "Link local Gemini CLI / Antigravity usage and record shared subscription details. No API key is needed. Google remaining quotas are not queried.",
+                  "关联 Gemini CLI / Antigravity 会话用量。关联 Antigravity 会话路由后，可自动刷新本机 Antigravity CLI 登录账号的订阅额度。无需 API Key。",
+                  "Link Gemini CLI / Antigravity session usage. Linking the Antigravity session route enables automatic quota refresh for the local Antigravity CLI login. No API key is needed.",
                 )}</p>
               ) : (
                 <Field label="API Key">
@@ -515,7 +519,7 @@ export function ProviderAccountEditor({
                   </Field>
                 </div>
               </section>
-              {form.provider !== "google" && <section className="border-t border-border pt-4 space-y-3">
+              <section className="border-t border-border pt-4 space-y-3">
                 <h3 className="font-semibold text-fg-1">
                   {l("余额／额度自动刷新", "Automatic balance / quota refresh")}
                   <ProviderHelp label={l("自动刷新设置说明", "About automatic refresh settings")}>
@@ -560,7 +564,7 @@ export function ProviderAccountEditor({
                     </Field>
                   ))}
                 </div>
-              </section>}
+              </section>
               <section className="border-t border-border pt-4 space-y-2">
                 <h3 className="font-semibold text-fg-1">
                   {isCustomProvider(form.provider) ? l("Provider ID 归属", "Provider ID links") : l("关联跨设备用量", "Link usage across devices")}

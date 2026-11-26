@@ -4,24 +4,27 @@ import { useTranslation } from "react-i18next";
 import { AlertCircle, ArrowDown, ArrowDownUp, ArrowUp, Check, ChevronDown, RefreshCw, Wallet } from "lucide-react";
 import { providerAccountsApi as api } from "@/lib/api/providerAccounts";
 import { useProviderAccounts, useProviderSidebarOrder } from "@/lib/query/providerAccounts";
-import { accountError, nativeMoney, quotaDisplay, accountCanRefresh, customUsageValue, customRemainingPercent } from "@/lib/providerAccounts";
+import { accountError, nativeMoney, quotaDisplay, accountCanRefresh, customUsageValue, customRemainingPercent, orderAntigravityQuotaWindows } from "@/lib/providerAccounts";
 import { quotaCountdown, quotaWindowShortLabel, snapshotAge } from "@/lib/sidebarSubscriptions";
 import { moveProviderSidebarAccount, reconcileProviderSidebarOrder } from "@/lib/providerSidebarOrder";
 import { toast } from "@/lib/toast";
-import type { ProviderAccountView, QuotaWindow } from "@/types/providerAccounts";
+import type { AntigravityQuotaWindow, ProviderAccountView, QuotaWindow } from "@/types/providerAccounts";
 import { ProviderGlyph } from "@/components/icons/ProviderGlyph";
 
 const EXPANDED_KEY = "harness-scope.sidebar-subscriptions-expanded";
 
-function QuotaRow({ window, now, zh }: { window: QuotaWindow; now: number; zh: boolean }) {
+function QuotaRow({ window, now, zh }: { window: QuotaWindow | AntigravityQuotaWindow; now: number; zh: boolean }) {
   const display = quotaDisplay(window, now);
   const ready = !display.expired && window.status !== "unknown";
   const label = quotaWindowShortLabel(window, zh);
   const countdown = quotaCountdown(window.resetsAt, now);
   const percent = Number(display.remaining.toFixed(1));
+  const resetLabel = window.resetsAt == null
+    ? zh ? "重置时间未公布" : "Reset time unavailable"
+    : `${zh ? "距重置" : "Resets in"} ${countdown}`;
   const description = !ready
     ? zh ? "等待刷新或供应商确认额度" : "Awaiting refresh or provider confirmation"
-    : `${zh ? "距重置" : "Resets in"} ${countdown} · ${zh ? "剩余" : "Remaining"} ${percent}%`;
+    : `${resetLabel} · ${zh ? "剩余" : "Remaining"} ${percent}%`;
   return (
     <span className={`scope-subscription-quota ${ready && percent <= 10 ? "is-low" : ""}`} title={`${label} · ${description}`}>
       <span className="text-fg-2">{label}</span>
@@ -52,9 +55,14 @@ function AccountSummary({ view, now, zh, locale, onOpen, sorting }: {
 }) {
   const { account, snapshot } = view;
   const data = snapshot?.data;
-  const age = view.account.provider === "google" ? (zh ? "本地用量" : "Local usage") : snapshotAge(snapshot?.fetchedAt, now, zh);
+  const age = view.account.provider === "google" && !accountCanRefresh(view)
+    ? (zh ? "本地用量" : "Local usage")
+    : snapshotAge(snapshot?.fetchedAt, now, zh);
   const groups = data?.kind === "codexQuota"
     ? data.buckets.map((bucket) => ({ id: bucket.id, name: bucket.name ?? bucket.id, windows: bucket.windows }))
+    : data?.kind === "antigravityQuota" ? data.groups.map(group => ({
+      ...group, windows: orderAntigravityQuotaWindows(group.windows),
+    }))
     : data?.kind === "quota" ? [{ id: "quota", name: "", windows: data.windows }] : [];
   const details = [account.name,
     snapshot ? `${zh ? "最后成功" : "Last success"}: ${new Date(snapshot.fetchedAt * 1000).toLocaleString(locale)}` : age,
@@ -83,7 +91,7 @@ function AccountSummary({ view, now, zh, locale, onOpen, sorting }: {
       })}
       {groups.map((group) => (
         <span key={group.id} className="block">
-          {groups.length > 1 && <span className="block truncate text-[10px] leading-4 text-fg-3">{group.name}</span>}
+          {(groups.length > 1 || data?.kind === "antigravityQuota") && <span className="block truncate text-[10px] leading-4 text-fg-3">{group.name}</span>}
           {group.windows.map((window) => <QuotaRow key={window.id} window={window} now={now} zh={zh} />)}
         </span>
       ))}

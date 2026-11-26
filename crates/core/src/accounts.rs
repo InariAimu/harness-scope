@@ -14,6 +14,7 @@ use std::{
 
 const META: &str = "provider_accounts_v1";
 mod analysis;
+mod antigravity;
 pub(crate) mod codex;
 mod custom;
 mod go_usage;
@@ -35,6 +36,18 @@ impl Default for RefreshPolicy {
         Self {
             foreground_seconds: 60,
             background_seconds: 300,
+        }
+    }
+}
+impl RefreshPolicy {
+    fn for_provider(provider: &str) -> Self {
+        if provider == "google" {
+            Self {
+                foreground_seconds: 600,
+                background_seconds: 3600,
+            }
+        } else {
+            Self::default()
         }
     }
 }
@@ -105,8 +118,7 @@ struct Save {
     api_key: Option<String>,
     #[serde(default)]
     clear_api_key: bool,
-    #[serde(default)]
-    refresh: RefreshPolicy,
+    refresh: Option<RefreshPolicy>,
     #[serde(default)]
     codex: Option<codex::Settings>,
     #[serde(default)]
@@ -124,9 +136,21 @@ struct Stored {
     error: Option<String>,
     #[serde(default)]
     request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    google_refresh_initialized: bool,
 }
 fn load(store: &Store) -> Result<Vec<Stored>> {
-    Ok(store.meta(META)?.unwrap_or_default())
+    let mut items: Vec<Stored> = store.meta(META)?.unwrap_or_default();
+    for item in &mut items {
+        if item.account.provider == "google" && !item.google_refresh_initialized {
+            // Older clients saved the shared defaults even with Google polling disabled.
+            if item.account.refresh == RefreshPolicy::default() {
+                item.account.refresh = RefreshPolicy::for_provider("google");
+            }
+            item.google_refresh_initialized = true;
+        }
+    }
+    Ok(items)
 }
 pub(crate) fn exists(store: &Store, id: &str) -> Result<bool> {
     Ok(load(store)?.iter().any(|item| item.account.id == id))
@@ -197,7 +221,7 @@ fn view(engine: &Engine, item: &Stored, vault: &Vault, store: &Store) -> Result<
 }
 fn can_refresh(account: &Account, vault: &Vault) -> bool {
     if account.provider == "google" {
-        return false;
+        return antigravity::linked(&account.links);
     }
     if let Some(settings) = &account.custom {
         settings.enabled && (!settings.script.contains("{{apiKey}}") || vault.exists(&account.id))
@@ -211,10 +235,8 @@ fn id(args: &Value) -> Result<&str> {
     Ok(id)
 }
 fn validate(input: &Save) -> Result<()> {
-    for interval in [
-        input.refresh.foreground_seconds,
-        input.refresh.background_seconds,
-    ] {
+    let refresh = input.refresh.unwrap_or_default();
+    for interval in [refresh.foreground_seconds, refresh.background_seconds] {
         anyhow::ensure!(
             interval == 0 || (15..=86400).contains(&interval),
             "Refresh interval must be 0 or 15–86400 seconds"
@@ -434,6 +456,8 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
             .map(|v| (&v.binary_path, &v.home_path))
             != input.codex.as_ref().map(|v| (&v.binary_path, &v.home_path))
             || input.provider == "openai-codex" && items[i].account.links != input.links
+            || input.provider == "google"
+                && antigravity::linked(&items[i].account.links) != antigravity::linked(&input.links)
             || items[i].account.custom != input.custom
     });
     let new_key = input
@@ -466,6 +490,7 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
             last_attempt_at: None,
             error: None,
             request_id: None,
+            google_refresh_initialized: false,
         });
     let previous_measurement = measurement_revision(&item).to_owned();
     let measurement_changed = new
@@ -477,6 +502,13 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
         || item.account.codex != input.codex
         || item.account.subscription.plan_name != input.subscription.plan_name;
     let previous_shared = item.account.shared_subscription_id.clone();
+    let refresh = input.refresh.unwrap_or_else(|| {
+        if input.provider == "google" && !new && !provider_changed {
+            item.account.refresh
+        } else {
+            RefreshPolicy::for_provider(&input.provider)
+        }
+    });
     item.account = Account {
         id: account_id.clone(),
         shared_subscription_id: previous_shared.clone(),
@@ -487,10 +519,11 @@ fn save(engine: &Engine, vault: &Vault, mut input: Save) -> Result<Value> {
             .unwrap_or(item.account.show_in_sidebar),
         links: input.links,
         subscription: input.subscription,
-        refresh: input.refresh,
+        refresh,
         codex: input.codex,
         custom: input.custom,
     };
+    item.google_refresh_initialized = item.account.provider == "google";
     item.revision = uuid::Uuid::new_v4().to_string();
     item.measurement_revision = if measurement_changed {
         None
@@ -544,11 +577,13 @@ fn refresh_with(
             .iter_mut()
             .find(|a| a.account.id == id)
             .context("Provider account no longer exists")?;
-        anyhow::ensure!(
-            item.account.provider != "google",
-            "Google accounts track linked local usage; official quota lookup is unavailable"
-        );
-        let key = if let Some(settings) = &item.account.custom {
+        let key = if item.account.provider == "google" {
+            anyhow::ensure!(
+                antigravity::linked(&item.account.links),
+                "Link the Antigravity session route to query Antigravity quota"
+            );
+            Ok(String::new())
+        } else if let Some(settings) = &item.account.custom {
             if !settings.enabled {
                 anyhow::bail!("Custom usage query is disabled");
             }
@@ -594,7 +629,8 @@ fn refresh_with(
         let mut result = view(engine, item, vault, &store)?;
         let observed = succeeded.then(|| item.clone());
         store.transaction(|| {
-            if let Some(observed) = observed.as_ref() {
+            // The CLI's report has no account identity for attributing quota history.
+            if let Some(observed) = observed.as_ref().filter(|v| v.account.provider != "google") {
                 history::record(&store, observed, observed_at, &store.config()?.timezone)?;
                 if observed.account.provider == "openai-codex" {
                     codex::calibration::record(
@@ -617,6 +653,9 @@ fn refresh_with(
     }
 }
 fn fetch(engine: &Engine, provider: &str, key: &str) -> Result<Value> {
+    if provider == "google" {
+        return antigravity::fetch();
+    }
     let network = crate::network::load(&*engine.read_lock()?)?;
     if custom::is_provider(provider) {
         let (settings, secret): (custom::Settings, String) = serde_json::from_str(key)?;

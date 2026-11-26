@@ -146,3 +146,7 @@ Additional copied support: `src/lib/inputModality.ts`, `src/lib/unsavedChanges.t
 ## Google Antigravity application icon
 
 `assets/icons/antigravity.png` is the original 128 × 128 PNG (`ic07`) from `Contents/Resources/icon.icns` in the Google LLC–signed Antigravity 2.33.0 macOS package. PNG SHA-256 is `33c5e92d0637cf66a19ea13077cb12f0e95291c0f74d0fc4d88bfb3c4d818917`. The icon identifies Google Antigravity in the interface.
+
+## Google G brand icon
+
+`assets/icons/google-g.png` is Google's unmodified 200 × 204 four-color gradient G, used to identify Google subscription accounts. PNG SHA-256 is `d1ce9c2af0b10a7333abc99bc706f9a6a199e5b65bf3e3009624f076b8638e6a`. [Official artwork](https://developers.google.com/static/identity/images/g-logo.png)

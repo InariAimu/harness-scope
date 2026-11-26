@@ -32,6 +32,125 @@ fn quota() -> Value {
     let row = json!({"percent":12.5,"status":"ok","resetsAt":"2026-10-20T12:00:00+08:00"});
     json!({"usage":{"rolling":row,"weekly":row,"monthly":row}})
 }
+
+#[test]
+fn linked_google_account_respects_foreground_and_background_refresh_intervals() {
+    use std::time::Instant;
+    let (_directory, engine, vault) = setup();
+    let view = engine
+        .execute(
+            "provider_account_save",
+            json!({
+                "provider":"google","name":"Google",
+                "links":[{"harness":"antigravity","provider":"antigravity (Session)"}]
+            }),
+        )
+        .unwrap();
+    let account_id = view["account"]["id"].as_str().unwrap();
+    assert_eq!(view["canRefresh"], true);
+    assert_eq!(
+        view["account"]["refresh"],
+        json!({"foregroundSeconds":600,"backgroundSeconds":3600})
+    );
+    assert_eq!(
+        polling::due_at(&engine, &vault, Utc::now().timestamp(), Instant::now()).unwrap(),
+        vec![account_id]
+    );
+    let data = json!({"kind":"antigravityQuota","groups":[]});
+    let refreshed = refresh_with(&engine, &vault, account_id, |provider, key| {
+        assert_eq!(provider, "google");
+        assert!(key.is_empty());
+        Ok(data.clone())
+    })
+    .unwrap();
+    assert_eq!(refreshed["snapshot"]["data"], data);
+    let attempt = refreshed["lastAttemptAt"].as_i64().unwrap();
+    let clock = Instant::now();
+    assert!(polling::due_at(&engine, &vault, attempt + 3599, clock)
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        polling::due_at(&engine, &vault, attempt + 3600, clock).unwrap(),
+        vec![account_id]
+    );
+    engine
+        .execute(
+            "provider_account_activity",
+            json!({"id":account_id,"lease":uuid::Uuid::new_v4().to_string(),"active":true}),
+        )
+        .unwrap();
+    let clock = Instant::now();
+    assert!(polling::due_at(&engine, &vault, attempt + 599, clock)
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        polling::due_at(&engine, &vault, attempt + 600, clock).unwrap(),
+        vec![account_id]
+    );
+
+    let mut update = edit(&refreshed);
+    update["refresh"] = json!({"foregroundSeconds":0,"backgroundSeconds":0});
+    let disabled = engine.execute("provider_account_save", update).unwrap();
+    assert_eq!(disabled["canRefresh"], true);
+    assert!(polling::due_at(&engine, &vault, attempt + 3600, clock)
+        .unwrap()
+        .is_empty());
+    let samples: i64 = engine
+        .lock()
+        .unwrap()
+        .conn
+        .query_row(
+            "SELECT COUNT(*) FROM provider_account_observations",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(samples, 0);
+
+    let mut update = edit(&disabled);
+    update["links"] = json!([]);
+    let updated = engine.execute("provider_account_save", update).unwrap();
+    assert_eq!(updated["canRefresh"], false);
+    assert!(updated["snapshot"].is_null());
+    assert!(refresh_with(&engine, &vault, account_id, |_, _| unreachable!()).is_err());
+}
+
+#[test]
+fn legacy_google_defaults_upgrade_without_replacing_custom_refresh_settings() {
+    let (_directory, engine, _) = setup();
+    let view = engine
+        .execute(
+            "provider_account_save",
+            json!({"provider":"google","name":"Google"}),
+        )
+        .unwrap();
+    let shared_defaults = json!({"foregroundSeconds":60,"backgroundSeconds":300});
+    let google_defaults = json!({"foregroundSeconds":600,"backgroundSeconds":3600});
+    let custom = json!({"foregroundSeconds":120,"backgroundSeconds":0});
+    for (legacy, expected) in [(&shared_defaults, &google_defaults), (&custom, &custom)] {
+        {
+            let store = engine.lock().unwrap();
+            let mut rows: Value = store.meta(META).unwrap().unwrap();
+            rows[0]
+                .as_object_mut()
+                .unwrap()
+                .remove("googleRefreshInitialized");
+            rows[0]["account"]["refresh"] = legacy.clone();
+            store.set_meta(META, &rows).unwrap();
+        }
+        let list = engine.execute("provider_accounts", json!({})).unwrap();
+        assert_eq!(&list[0]["account"]["refresh"], expected);
+    }
+
+    let mut patch = edit(&view);
+    patch["refresh"] = shared_defaults.clone();
+    engine.execute("provider_account_save", patch).unwrap();
+    assert_eq!(
+        engine.execute("provider_accounts", json!({})).unwrap()[0]["account"]["refresh"],
+        shared_defaults
+    );
+}
+
 #[test]
 fn balance_and_quota_parsers_keep_precision_and_allowlist_only_known_fields() {
     let mut value = balance("6.68249010");

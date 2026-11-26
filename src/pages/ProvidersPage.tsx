@@ -15,6 +15,7 @@ import type { Snapshot } from "@/App";
 import type {
   AccountProvider,
   AccountUsageRange,
+  AntigravityQuotaWindow,
   ProviderAccountView,
   QuotaWindow,
 } from "@/types/providerAccounts";
@@ -31,6 +32,7 @@ import {
   ACCOUNT_PROVIDER_NAMES,
   accountError,
   nativeMoney,
+  orderAntigravityQuotaWindows,
   quotaDisplay,
   routeKey,
   accountCanRefresh,
@@ -58,13 +60,14 @@ function QuotaCard({
   zh,
   date,
 }: {
-  window?: QuotaWindow;
+  window?: QuotaWindow | AntigravityQuotaWindow;
   label: string;
   now: number;
   zh: boolean;
   date: (v: number) => string;
 }) {
   const view = window ? quotaDisplay(window, now) : null;
+  const reset = window?.resetsAt == null ? null : date(window.resetsAt);
   return (
     <section className="scope-card !p-4 space-y-2.5">
       <div className="flex justify-between gap-2 text-caption text-fg-2">
@@ -101,10 +104,12 @@ function QuotaCard({
       </div>
       <p
         className="text-caption text-fg-3 min-h-4"
-        title={window ? date(window.resetsAt) : undefined}
+        title={reset ?? undefined}
       >
         {window
-          ? `${zh ? "重置" : "Resets"} ${date(window.resetsAt)}`
+          ? reset == null
+            ? zh ? "重置时间未公布" : "Reset time unavailable"
+            : `${zh ? "重置" : "Resets"} ${reset}`
           : zh
             ? "查询后显示官方额度"
             : "Fetch to see provider limits"}
@@ -235,6 +240,7 @@ export function ProvidersPage({
       minute: "2-digit",
     });
   const data = selected?.snapshot?.data;
+  const antigravityLinked = selected?.account.provider === "google" && accountCanRefresh(selected);
   const periodDate = (value: number) =>
     new Date(value * 1000).toLocaleString(locale, {
       year: "numeric",
@@ -366,8 +372,8 @@ export function ProvidersPage({
             </h2>
             <p className="max-w-md text-body text-fg-2">
               {l(
-                "查看 DeepSeek 余额、OpenCode Go 或 OpenAI／Codex 订阅额度，并关联所有已同步设备的用量。",
-                "View DeepSeek balances, OpenCode Go or OpenAI/Codex subscription limits, and link usage from all synced devices.",
+                "查看各供应商的余额或订阅额度，并关联已同步设备的用量。",
+                "View provider balances or subscription limits and link usage from synced devices.",
               )}
             </p>
             <Button variant="neutral" onClick={() => setEditing(null)}>
@@ -387,21 +393,23 @@ export function ProvidersPage({
               </span>
               <span className="inline-flex items-center gap-1">
                 <KeyRound size={12} />
-                {account!.provider === "google" ? l("本地会话用量", "Local session usage") : account!.custom && !account!.custom.enabled ? l("用量查询已关闭", "Usage query disabled") : account!.provider === "openai-codex"
+                {account!.provider === "google" ? antigravityLinked
+                  ? l("本机 Antigravity CLI 登录", "Local Antigravity CLI login")
+                  : l("本地会话用量", "Local session usage") : account!.custom && !account!.custom.enabled ? l("用量查询已关闭", "Usage query disabled") : account!.provider === "openai-codex"
                   ? l("使用本机 Codex 登录", "Local Codex login")
                   : selected.keyConfigured
                     ? l("Key 已保存", "Key saved")
                     : l("未配置 Key", "No key configured")}
               </span>
               <span>
-                {account!.provider === "google" ? l("无需查询凭据", "No query credentials required") : selected.snapshot
+                {account!.provider === "google" && !antigravityLinked ? l("无需查询凭据", "No query credentials required") : selected.snapshot
                   ? `${l("上次成功", "Last success")} ${date(selected.snapshot.fetchedAt)}`
                   : l("尚未查询", "Not fetched yet")}
               </span>
               {refreshing && (
                 <span>{l("正在查询官方数据…", "Fetching provider data…")}</span>
               )}
-              {account!.provider !== "google" && <span>
+              {(account!.provider !== "google" || antigravityLinked) && <span>
                 {l("自动刷新", "Auto refresh")}: {l("前台", "Foreground")}{" "}
                 {intervalText(account!.refresh.foregroundSeconds)} ·{" "}
                 {l("后台", "Background")}{" "}
@@ -438,10 +446,37 @@ export function ProvidersPage({
                 </div>
               )}
             {account!.provider === "google" ? (
-              <section className="scope-card !p-4 text-caption text-fg-2">{l(
-                "Google 本地用量分类：汇总已关联的 Gemini CLI / Antigravity 会话，并记录订阅信息。模型费用是 API 价表参考值；官方剩余额度暂不可查询。",
-                "Google local usage: aggregates linked Gemini CLI / Antigravity sessions and records subscription details. Model costs are API reference estimates. Official remaining quotas are currently unavailable.",
-              )}</section>
+              <section className="space-y-3">
+                <div className="scope-card !p-4 space-y-1">
+                  <h2 className="text-section">{l("Antigravity 订阅额度", "Antigravity subscription quota")}</h2>
+                  <p className="text-caption text-fg-2">
+                    {antigravityLinked ? l(
+                      "显示本机 Antigravity CLI 当前登录账号的模型组额度。",
+                      "Shows model group quotas for the account signed into the local Antigravity CLI.",
+                    ) : l(
+                      "关联 Antigravity 会话路由后，可通过本机 Antigravity CLI 查询额度。",
+                      "Link the Antigravity session route to fetch quotas through the local Antigravity CLI.",
+                    )}
+                  </p>
+                </div>
+                {data?.kind === "antigravityQuota" && data.groups.map((group) => (
+                  <div key={group.id} className="space-y-2">
+                    <h3 className="text-caption text-fg-2 font-medium">{group.name}</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {orderAntigravityQuotaWindows(group.windows).map((window) => (
+                        <QuotaCard
+                          key={window.id}
+                          window={window}
+                          label={window.durationMinutes ? codexWindowLabel(window.durationMinutes, zh) : window.name}
+                          now={now}
+                          zh={zh}
+                          date={periodDate}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </section>
             ) : account!.custom ? (
               data?.kind === "customUsage" ? <CustomUsagePanel data={data} zh={zh} locale={locale} timezone={snapshot.config.timezone} /> :
               <section className="scope-card !p-4 text-caption text-fg-3">{account!.custom.enabled

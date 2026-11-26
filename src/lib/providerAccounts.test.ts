@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { isEntirelyUnpriced, nativeMoney, quotaDisplay, routeKey, accountCanRefresh, accountProviderName, customProviderName, customRemainingPercent, GOOGLE_USAGE_LINKS } from "./providerAccounts";
-import type { ProviderAccountView, CustomUsageItem } from "@/types/providerAccounts";
+import { isEntirelyUnpriced, nativeMoney, orderAntigravityQuotaWindows, quotaDisplay, routeKey, accountCanRefresh, accountProviderName, customProviderName, customRemainingPercent, GOOGLE_USAGE_LINKS } from "./providerAccounts";
+import type { AntigravityQuotaWindow, ProviderAccountView, CustomUsageItem } from "@/types/providerAccounts";
 import type { QuotaWindow } from "@/types/providerAccounts";
 
 const customAccount = (id: string, harness: string, name: string): ProviderAccountView => ({
@@ -10,19 +10,20 @@ const customAccount = (id: string, harness: string, name: string): ProviderAccou
   keyConfigured: false, snapshot: null, lastAttemptAt: null, error: null, refreshing: false,
 });
 
-it("offers a Google category linked to both local clients without credentials or quota polling", () => {
+it("keeps Google session links and uses backend eligibility for manual quota refresh", () => {
   const view = customAccount("google-test", "gemini", "Google");
   view.account.provider = "google";
   view.account.custom = undefined;
-  view.keyConfigured = true;
-  view.canRefresh = true;
+  view.canRefresh = false;
   expect(accountProviderName("google")).toBe("Google / Gemini / Antigravity");
   expect(accountCanRefresh(view)).toBe(false);
   expect(GOOGLE_USAGE_LINKS).toEqual([
     { harness: "gemini", provider: "gemini (Session)" },
     { harness: "antigravity", provider: "antigravity (Session)" },
   ]);
-  view.account.links=[...GOOGLE_USAGE_LINKS];
+  view.account.links = [...GOOGLE_USAGE_LINKS];
+  view.canRefresh = true;
+  expect(accountCanRefresh(view)).toBe(true);
   expect(customProviderName([view],"antigravity (Session)","antigravity")).toBe("Google");
   expect(customProviderName([view],"antigravity (Session)","gemini")).toBeUndefined();
 });
@@ -36,6 +37,17 @@ it("keeps custom providers independent and resolves only exact unambiguous route
   expect(customProviderName([a, b], "shared-route", "claude")).toBeUndefined();
   expect(customProviderName([a, b], "shared-route")).toBeUndefined();
   expect(customProviderName([a, b], "SHARED-ROUTE", "codex")).toBeUndefined();
+});
+
+it("shows the Antigravity five-hour window before the weekly window in saved snapshots", () => {
+  const weekly: AntigravityQuotaWindow = {
+    id: "gemini-weekly", name: "Weekly", durationMinutes: 10080,
+    usedPercent: 4, status: "ok", resetsAt: null,
+  };
+  const fiveHour = { ...weekly, id: "gemini-5h", name: "5-hour", durationMinutes: 300 };
+  const saved = [weekly, fiveHour];
+  expect(orderAntigravityQuotaWindows(saved)).toEqual([fiveHour, weekly]);
+  expect(saved).toEqual([weekly, fiveHour]);
 });
 
 it("queries require an enabled configuration and only require a key when referenced", () => {

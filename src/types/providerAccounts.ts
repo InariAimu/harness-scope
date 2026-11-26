@@ -71,6 +71,15 @@ export interface QuotaWindow {
   status: "ok" | "rate-limited" | "unknown";
   resetsAt: number;
 }
+export interface AntigravityQuotaWindow extends Omit<QuotaWindow, "resetsAt" | "durationMinutes"> {
+  name: string;
+  durationMinutes: number | null;
+  resetsAt: number | null;
+}
+export interface AntigravityQuota {
+  kind: "antigravityQuota";
+  groups: { id: string; name: string; windows: AntigravityQuotaWindow[] }[];
+}
 export type ProviderData =
   | {
       kind: "balance";
@@ -83,6 +92,7 @@ export type ProviderData =
       }[];
     }
   | { kind: "quota"; windows: QuotaWindow[] }
+  | AntigravityQuota
   | CustomUsage
   | CodexQuota;
 export interface CodexQuota {

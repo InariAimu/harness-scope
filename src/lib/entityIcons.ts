@@ -35,7 +35,7 @@ const HARNESS_DEFAULTS: Record<string, string> = {
 };
 const PROVIDER_DEFAULTS: Record<string, string> = {
   deepseek: "deepseek", "openai-codex": "openai", "opencode-go": "opencode",
-  google: "google-pixel",
+  google: "google",
 };
 export function defaultHarnessIcon(id: string): IconRef | undefined {
   return HARNESS_DEFAULTS[id] ? `builtin:${HARNESS_DEFAULTS[id]}` : undefined;

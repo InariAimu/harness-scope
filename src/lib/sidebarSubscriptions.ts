@@ -1,18 +1,18 @@
-import type { QuotaWindow } from "@/types/providerAccounts";
+import type { AntigravityQuotaWindow, QuotaWindow } from "@/types/providerAccounts";
 
-export function quotaWindowShortLabel(window: QuotaWindow, zh: boolean) {
+export function quotaWindowShortLabel(window: QuotaWindow | AntigravityQuotaWindow, zh: boolean) {
   if (window.id === "weekly" || window.durationMinutes === 10080)
     return zh ? "周" : "7d";
   if (window.id === "monthly") return zh ? "月" : "mo";
   const minutes = window.durationMinutes ?? (window.id === "rolling" ? 300 : 0);
-  if (!minutes) return "—";
+  if (!minutes) return "name" in window ? window.name : "—";
   if (minutes % 1440 === 0) return `${minutes / 1440}d`;
   if (minutes % 60 === 0) return `${minutes / 60}h`;
   return `${minutes}m`;
 }
 
-export function quotaCountdown(resetsAt: number, now: number) {
-  if (!Number.isFinite(resetsAt) || resetsAt <= now) return "—";
+export function quotaCountdown(resetsAt: number | null, now: number) {
+  if (resetsAt == null || !Number.isFinite(resetsAt) || resetsAt <= now) return "—";
   const minutes = Math.ceil((resetsAt - now) / 60);
   if (minutes >= 1440)
     return `${Math.floor(minutes / 1440)}d${Math.floor((minutes % 1440) / 60)}h`;

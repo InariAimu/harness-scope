@@ -19,7 +19,9 @@ Antigravity 的首字时间使用原生 `chat_model.time_to_first_token`，输�
 
 「供应商」新增 **Google / Gemini / Antigravity**，无需 API Key。新增账号默认关联这两个来源的会话路由，可取消或修改关联，并填写计划名称、月费及订阅周期。查询与筛选保留 `gemini (Session)` / `antigravity (Session)` 路由键，供应商列按工具来源默认显示 Google；已关联账号名称优先。提示说明来源分类不等于已验证的上游或订阅扣费，不改写历史日志的原生路由。
 
-本次不接入官方剩余额度查询、OAuth 凭据和订阅扣费换算。Google 账号不轮询网络，也不显示虚构额度；模型用量按关联的本机及已同步设备记录汇总。一条来源路由只能关联一个账号，日志无法可靠区分同一路由的多个 Google 账号。
+关联 `antigravity (Session)` 后，在「供应商」点击「刷新」，通过本机 [Antigravity CLI](https://antigravity.google/docs/getting-started?tab=cli) 的 [`/usage` 查询](https://antigravity.google/docs/cli/headless/)读取当前登录账号的模型组余量。客户端从系统默认安装目录或 PATH 查找 `agy`，需要支持非交互 `/usage` 的版本（1.1.11 起）。CLI 自行处理登录，查询无需模型生成。页面按模型组显示返回的窗口余量和重置时间，未报告重置时间时保留为空。
+
+额度反映 CLI 当前登录的账号，换账号后可立即刷新。自动刷新默认前台 600 秒、后台 3600 秒，可在编辑账号时调整，设为 0 关闭对应时段的自动刷新。额度快照仅保存在本机。模型参考费用来自已关联的本机和同步会话。一条来源路由只能关联一个账号，日志无法区分同一路由的多个 Google 账号。
 
 Antigravity 阅读器投影用户消息、模型响应、思考和工具调用；未知插件的结果不伪装为空或成功。当前不支持删除原会话、恢复命令、媒体解码或旧版加密 `.pb`。
 

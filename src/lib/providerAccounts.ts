@@ -1,4 +1,4 @@
-import type { QuotaWindow, ProviderAccountView, AccountProvider, CustomUsageItem } from "@/types/providerAccounts";
+import type { AntigravityQuotaWindow, QuotaWindow, ProviderAccountView, AccountProvider, CustomUsageItem, RefreshPolicy } from "@/types/providerAccounts";
 import type { UsageSummary } from "@/types/usage";
 
 export function isEntirelyUnpriced(
@@ -20,13 +20,17 @@ export const GOOGLE_USAGE_LINKS = [
   { harness: "gemini", provider: "gemini (Session)" },
   { harness: "antigravity", provider: "antigravity (Session)" },
 ];
+export function defaultAccountRefresh(provider: AccountProvider): RefreshPolicy {
+  return provider === "google"
+    ? { foregroundSeconds: 600, backgroundSeconds: 3600 }
+    : { foregroundSeconds: 60, backgroundSeconds: 300 };
+}
 export const isCustomProvider = (provider: string) => provider === "custom" || provider.startsWith("custom:");
 export function accountProviderName(provider: AccountProvider, accounts: ProviderAccountView[] = [], zh = true) {
   if (isCustomProvider(provider)) return accounts.find(v => v.account.provider === provider)?.account.name ?? (zh ? "自定义供应商" : "Custom provider");
   return ACCOUNT_PROVIDER_NAMES[provider as keyof typeof ACCOUNT_PROVIDER_NAMES];
 }
 export function accountCanRefresh(view: ProviderAccountView) {
-  if (view.account.provider === "google") return false;
   return view.canRefresh ?? (view.account.custom
     ? view.account.custom.enabled && (!view.account.custom.script.includes("{{apiKey}}") || view.keyConfigured)
     : view.account.provider === "openai-codex" || view.keyConfigured);
@@ -49,14 +53,22 @@ export function customProviderName(accounts: ProviderAccountView[], provider: st
 export const routeKey = (route: { harness: string; provider: string }) =>
   JSON.stringify([route.harness, route.provider]);
 
-export function quotaDisplay(window: QuotaWindow, now: number) {
+export function orderAntigravityQuotaWindows(windows: readonly AntigravityQuotaWindow[]) {
+  const isFiveHourWindow = (window: AntigravityQuotaWindow) => window.durationMinutes === 300;
+  return [
+    ...windows.filter(isFiveHourWindow),
+    ...windows.filter(window => !isFiveHourWindow(window)),
+  ];
+}
+
+export function quotaDisplay(window: QuotaWindow | AntigravityQuotaWindow, now: number) {
   return {
     remaining:
       window.status === "rate-limited"
         ? 0
         : Math.max(0, Math.min(100, 100 - window.usedPercent)),
     used: Math.max(0, Math.min(100, window.usedPercent)),
-    expired: window.resetsAt <= now,
+    expired: window.resetsAt != null && window.resetsAt <= now,
     limited: window.status === "rate-limited" || window.usedPercent >= 100,
   };
 }
@@ -80,6 +92,10 @@ export function nativeMoney(
 }
 export function accountError(message: string, zh: boolean) {
   if (!zh) return message;
+  if (message.includes("Antigravity CLI executable not found")) return "找不到官方 Antigravity CLI（agy）。安装后可重新刷新额度。";
+  if (message.includes("Antigravity CLI 1.1.11 or later")) return "请升级 Antigravity CLI（agy）至 1.1.11 或更新版本。";
+  if (message.includes("local Antigravity login")) return "无法读取 Antigravity 额度，请检查本机 Antigravity CLI 的登录状态和版本。";
+  if (message.includes("No Antigravity subscription quota was reported")) return "Antigravity 本次未返回可用的订阅额度。";
   if (message.includes("This account is already linked")) return "此账号已关联共享订阅；使用另一份订阅时请添加新账号。";
   if (message.includes("Shared subscription already linked")) return "此共享订阅已关联本机其他账号。";
   if (message.includes("Shared subscription provider")) return "共享订阅的供应商类型不匹配。";

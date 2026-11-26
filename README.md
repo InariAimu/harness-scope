@@ -77,7 +77,7 @@ npm run desktop
 
 - **OpenAI / Codex**　已有本机 Codex 登录时，在「供应商 → 添加账号」选择「OpenAI / Codex」，保存后即可刷新套餐与额度窗口。macOS 上可以留空「Codex 程序路径」和「Codex 数据目录」。应用先查找系统及用户「应用程序」目录下 ChatGPT.app 内置的 Codex，再查找 `PATH` 中的 `codex`。
 - **跨设备额度历史**　在首台设备的「编辑账号 → 跨终端订阅历史」创建共享订阅并同步。其他设备先同步，再在各自的账号编辑页选中同一订阅，即可合并额度历史。每台设备使用各自的本机登录。[共享订阅配置](docs/PROVIDERS.md#跨终端订阅历史)
-- **Google / Gemini / Antigravity**　可关联 Gemini CLI 和 Antigravity 会话，汇总本机及已同步设备的 Tokens 与参考费用，无需 API Key。套餐信息可手动记录，官方剩余额度暂不支持查询。[Google 工具与计量说明](docs/GOOGLE_CLIENTS.md)
+- **Google / Gemini / Antigravity**　可关联 Gemini CLI 和 Antigravity 会话，汇总本机及已同步设备的 Tokens 与参考费用。关联 Antigravity 会话路由后，可通过官方 Antigravity CLI 自动刷新模型组订阅额度，无需 API Key。[Google 工具与计量说明](docs/GOOGLE_CLIENTS.md)
 
 ## 数据与边界
 
