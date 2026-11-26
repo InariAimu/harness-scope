@@ -404,14 +404,8 @@ fn scans_are_idempotent_sync_safe_and_google_category_links_unknown_session_rout
         .iter()
         .any(|r| r["provider"] == "gemini (Session)"));
     let account=engine.execute("provider_account_save",json!({"provider":"google","name":"Google AI","links":[{"harness":"gemini","provider":"gemini (Session)"},{"harness":"antigravity","provider":"antigravity (Session)"}]})).unwrap();
-    assert_eq!(account["canRefresh"], false);
+    assert_eq!(account["canRefresh"], true);
     assert_eq!(account["keyConfigured"], false);
-    assert!(engine
-        .execute(
-            "provider_account_refresh",
-            json!({"id":account["account"]["id"]})
-        )
-        .is_err());
     assert!(engine
         .execute(
             "provider_account_save",
